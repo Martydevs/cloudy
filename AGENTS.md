@@ -104,6 +104,19 @@ lucide icons; DM Sans. Every data view renders four states: loading (`SkeletonLi
 WCAG 2.2 AA in both themes, visible focus, keyboard navigable, labeled controls, reduced motion
 respected. Do not use `text-warning` on `base-100` in the light theme (1.85:1 contrast).
 
+## No destructive actions by agents (project rule)
+
+Agents never **execute** destructive actions in this project, **even if the user asks**: no `TRUNCATE`,
+`DROP`, `DELETE FROM` or column/constraint drops against any database or branch (dev, test or prod), no
+deleting storage objects or buckets, no deleting Neon branches/databases, no `rm -r`/`rm -f`,
+`Remove-Item -Recurse/-Force`, `git reset --hard`, force pushes, `git clean -f`, `git branch -D` or
+discarding uncommitted work. Instead, hand the exact command or SQL to the person so they run it themselves
+(e.g. in the Neon SQL editor). Writing application code that deletes data (trash purge, cron cleanup) is
+still fine; executing it ad hoc is not. Enforced by `.claude/hooks/block-destructive.mjs` (PreToolUse on
+Bash, PowerShell and MCP tools, including scripts those commands run) and `permissions.deny` in
+`.claude/settings.json`; agents must not edit either. The e2e suite still resets its own isolated test
+branch (`test/e2e/setup/global-setup.ts`) as part of `bun run test:e2e`.
+
 ## Platform & security constraints
 
 - Vercel functions are stateless: no shared in-memory state (rate limits live in Postgres, "realtime"
