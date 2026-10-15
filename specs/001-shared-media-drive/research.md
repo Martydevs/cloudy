@@ -273,3 +273,27 @@ Con esto se resuelve el `TODO(PERF_BUDGET_TOOLING)` de la constitución, excepto
 **Hallazgo**: `nuxt typecheck` requiere `vue-tsc` y `typescript`, que no están instalados.
 
 **Decisión**: Agregarlos como **devDependencies**, justificado en el Complexity Tracking del plan porque la propia constitución los exige. Se agrega el script `"typecheck": "nuxt typecheck"`. Con esto se resuelve el `TODO(TYPECHECK_TOOLING)`.
+
+---
+
+## Resultado del spike (T052, 2026-10-14)
+
+Ejecutado contra la rama de desarrollo con `bun run dev`.
+
+**R1 — Neon Auth vía proxy `/api/auth/*`**: ✅
+- `sign-up/email` → 200 con las cookies `__Secure-neon-auth.session_token` y `__Secure-neon-auth.local.session_data` (`HttpOnly; Secure; SameSite=Lax`). No exige verificación de correo.
+- `sign-in/email` → 200; `get-session` → sesión y usuario.
+- `GET /api/me` con esa cookie: `useAuthServer().getSession()` + `ensureProfile` crean el primer perfil como `active/admin` (FR-002). El perfil del spike se borró después de la BD de desarrollo.
+- **Desviación**: `NUXT_NEON_AUTH_BASE_URL` en `.env` era el placeholder de la documentación (`ep-xxx…us-east-1…/neondb/auth`) y respondía `endpoint not found`. Neon Auth está aprovisionado en la rama de desarrollo para la BD `neondb` (no `produccion`): `https://<endpoint>.neonauth.c-2.us-east-2.aws.neon.tech/neondb/auth`. Se corrigió el `.env`. La identidad vive en `neondb.neon_auth`; Cloudy solo guarda el id, así que no importa que las tablas de la app estén en `produccion`.
+
+**R15 — Recuperación de contraseña**: ⚠️ parcial
+- `request-password-reset` con `redirectTo=<origen>/restablecer` → 200 (`"If this email exists…"`).
+- `reset-password` con un token inválido → 400 `INVALID_TOKEN`, que la UI traduce a "El enlace caducó o ya se usó".
+- **Pendiente manual**: la entrega del correo y la aceptación de un token real no se pudieron verificar sin un buzón (quickstart §4, escenario 12). No se activó el plan B.
+
+**R5 — Object Storage**: ✅
+- `presignPut` con `content-type` y `content-length` firmados → PUT 200. Un PUT con otra longitud → 403, así que el tamaño también se impone en el bucket.
+- `HeadObject` (tamaño y tipo), `GetObject` con `Range: bytes=0-4095` y `presignGet` con `ResponseContentDisposition=attachment` funcionan.
+- Preflight CORS desde `http://localhost:3000` → 200 tras `bun run storage:setup`. `DeleteObjects` funciona.
+- **Necesario**: `requestChecksumCalculation: 'WHEN_REQUIRED'` en el `S3Client`; el SDK actual agrega checksums CRC por defecto.
+- **Desviación**: `NUXT_TEST_S3_BUCKET` (`test-peticiones`) no existe en este endpoint (los buckets son por rama). Los e2e usan el bucket principal con el prefijo `e2e/<runId>/`, como preveía R13.

@@ -6,16 +6,25 @@ export default defineConfig({
   test: {
     projects: [
       {
+        resolve: {
+          alias: {
+            '#shared': fileURLToPath(new URL('./shared', import.meta.url)),
+            '~~': fileURLToPath(new URL('.', import.meta.url)),
+          },
+        },
         test: {
           name: 'unit',
-          include: ['test/unit/*.{test,spec}.ts'],
+          include: ['test/unit/**/*.{test,spec}.ts'],
           environment: 'node',
         },
       },
       await defineVitestProject({
         test: {
           name: 'nuxt',
-          include: ['test/nuxt/*.{test,spec}.ts'],
+          // La caché de módulos de Vitest 5 guarda la entrada virtual de @nuxt/test-utils y en la
+          // siguiente corrida rompe sus imports relativos ("Failed to resolve ./error.js").
+          fsModuleCache: false,
+          include: ['test/nuxt/**/*.{test,spec}.ts'],
           environment: 'nuxt',
           environmentOptions: {
             nuxt: {
@@ -28,14 +37,22 @@ export default defineConfig({
       {
         test: {
           name: 'e2e',
-          include: ['test/e2e/*.{test,spec}.ts'],
+          include: ['test/e2e/**/*.{test,spec}.ts'],
           environment: 'node',
+          globalSetup: ['test/e2e/setup/global-setup.ts'],
+          testTimeout: 120000,
+          hookTimeout: 300000,
+          fileParallelism: false,
+          // Red real (Neon) y transiciones de UI: 1 s por defecto es poco para `expect.poll`.
+          expect: { poll: { timeout: 10000 } },
         },
       },
     ],
     coverage: {
-      enabled: true,
+      enabled: false,
       provider: 'v8',
+      include: ['server/utils/**', 'shared/**'],
+      thresholds: { lines: 80 },
     },
   },
 })
