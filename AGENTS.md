@@ -30,16 +30,19 @@ Do not add dependencies or external services without a justification in the feat
 
 ```bash
 bun install
-bun run dev              # http://localhost:3000
+bun run dev              # http://localhost:3000 — loads .env.development
 bun run build
+bun run typecheck
 bun run test:unit        # test/unit — pure logic
-bun run test:nuxt        # test/nuxt — components (happy-dom)
-bun run test:e2e         # test/e2e — real browser against NUXT_TEST_DATABASE_URL
-bun run test:coverage
+bun run test:nuxt        # test/nuxt — components (happy-dom, loads .env.test)
+bun run test:e2e         # test/e2e — real browser against the test branch (.env.test)
+bun run test:coverage    # unit + nuxt with coverage thresholds
+bun run db:generate      # new Drizzle migration from server/db/schema.ts
+bun run db:migrate       # development branch · db:migrate:test · db:migrate:prod
+bun run storage:setup    # bucket CORS, development · storage:setup:test · storage:setup:prod
 ```
 
-Added by feature 001 (see plan "Correcciones" §5) — use them once they exist in `package.json`:
-`typecheck`, `db:generate`, `db:migrate`, `db:migrate:test`, `storage:setup`, `check:bundle`.
+`check:bundle` lands with the performance tasks of feature 001.
 
 ## Project layout
 
@@ -91,8 +94,8 @@ authorization. Neon Auth and storage are accessed **only** through `server/utils
 **V. Testing** — Unit tests for pure logic and business rules; component tests for stateful/role-
 dependent components; e2e for every user story and every protected route (no session + wrong role).
 Every bug fix ships a regression test. Select elements with `getByRole`/`getByLabel`. Coverage ≥ 80 %
-lines in `server/utils/**` and `shared/**`. E2E never touches dev/prod data: the DB is
-`NUXT_TEST_DATABASE_URL`, identities and storage keys are unique per run (`e2e/<runId>/`).
+lines in `server/utils/**` and `shared/**`. E2E never touches dev/prod data: everything comes
+from `.env.test` (test branch DB, bucket, Neon Auth); identities and storage keys are unique per run (`e2e/<runId>/`).
 
 **VI. UX consistency** — Colors only via daisyUI semantic classes/theme tokens (no hard-coded colors);
 lucide icons; DM Sans. Every data view renders four states: loading (`SkeletonList`), empty
@@ -109,9 +112,17 @@ respected. Do not use `text-warning` on `base-100` in the light theme (1.85:1 co
 - Schema changes only via Drizzle migrations; never edit the production database by hand.
 - Guests: store only name + note; IPs only as salted hashes.
 
-## Environment variables (names only)
+## Environments and variables (names only)
 
-`NUXT_DATABASE_URL`, `NUXT_TEST_DATABASE_URL`, `NUXT_NEON_AUTH_BASE_URL`,
+One Neon branch per environment, one env file per branch, **same variable names in every file**
+(template: `.env.example`): `.env.development` (dev server, `db:migrate`, `storage:setup`), `.env.test`
+(e2e and component tests, `*:test` scripts) and `.env` (production values for `preview` and `*:prod`).
+Nuxt picks the file with `nuxi --dotenv`; drizzle-kit and scripts use `APP_ENV`
+(`development` by default, never production by omission) through `scripts/env.ts`. Bun's own `.env` auto-loading is
+off (`bunfig.toml`, `env = false`) so no command silently inherits another branch. In Vercel there are no
+files: set the same names per environment in the project settings.
+
+`NUXT_DATABASE_URL`, `NUXT_NEON_AUTH_BASE_URL`,
 `NUXT_NEON_AUTH_COOKIE_SECRET`, `NUXT_AWS_ENDPOINT_URL_S3`, `NUXT_AWS_ACCESS_KEY_ID`,
 `NUXT_AWS_SECRET_ACCESS_KEY`, `NUXT_AWS_REGION`, `NUXT_S3_BUCKET`, `NUXT_PUBLIC_SITE_URL`,
 `CRON_SECRET`, `NUXT_RATE_LIMIT_SALT`. `NUXT_NEON_JWKS_URL` is present but intentionally unused in v1.

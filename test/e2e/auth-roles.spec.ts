@@ -2,7 +2,7 @@
 import { neon } from '@neondatabase/serverless'
 import { createPage, setup } from '@nuxt/test-utils/e2e'
 import { beforeAll, describe, expect, it } from 'vitest'
-import { E2E_URL, email, login, registerViaUi, setProfile } from './setup/fixtures'
+import { E2E_URL, email, login, registerViaUi, setProfile, testSql } from './setup/fixtures'
 
 await setup({ host: E2E_URL, browser: true })
 
@@ -12,7 +12,7 @@ describe('US2 · registro y acceso por rol', () => {
 
   beforeAll(async () => {
     // El primer perfil del sistema es admin (FR-002): se parte de una tabla vacía.
-    await neon(process.env.NUXT_TEST_DATABASE_URL!)`TRUNCATE profiles CASCADE`
+    await testSql()`TRUNCATE profiles CASCADE`
   })
 
   it('el primer registro entra como administrador', async () => {

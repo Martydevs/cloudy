@@ -1,54 +1,41 @@
-// Aplica la política CORS a los buckets de Cloudy (research R5). Uso: `bun run storage:setup`.
-import 'dotenv/config'
+// Aplica la política CORS al bucket del entorno elegido con APP_ENV (research R5).
+// Uso: `bun run storage:setup` (desarrollo), `storage:setup:test` o `storage:setup:prod`.
 import { PutBucketCorsCommand, S3Client } from '@aws-sdk/client-s3'
+import { loadEnv, requireVar, resolveAppEnv } from './env'
 
-function required(name: string): string {
-  const value = process.env[name]
-  if (!value) throw new Error(`Falta la variable de entorno ${name}.`)
-  return value
-}
+const appEnv = resolveAppEnv()
+loadEnv(appEnv)
+const env = process.env
+const need = (name: string) => requireVar(process.env, name, appEnv)
 
 const client = new S3Client({
-  endpoint: required('NUXT_AWS_ENDPOINT_URL_S3'),
+  endpoint: need('NUXT_AWS_ENDPOINT_URL_S3'),
   region: process.env.NUXT_AWS_REGION || 'auto',
   forcePathStyle: true,
   credentials: {
-    accessKeyId: required('NUXT_AWS_ACCESS_KEY_ID'),
-    secretAccessKey: required('NUXT_AWS_SECRET_ACCESS_KEY'),
+    accessKeyId: need('NUXT_AWS_ACCESS_KEY_ID'),
+    secretAccessKey: need('NUXT_AWS_SECRET_ACCESS_KEY'),
   },
   requestChecksumCalculation: 'WHEN_REQUIRED',
   responseChecksumValidation: 'WHEN_REQUIRED',
 })
 
-// 3000: `bun run dev` · 3100: servidor de los e2e (test/e2e/setup/fixtures.ts).
-const origins = [...new Set(
-  [process.env.NUXT_PUBLIC_SITE_URL, 'http://localhost:3000', 'http://localhost:3100'].filter(Boolean),
-)] as string[]
-const mainBucket = required('NUXT_S3_BUCKET')
-const buckets = new Set([mainBucket, process.env.NUXT_TEST_S3_BUCKET].filter(Boolean) as string[])
+// Producción solo acepta su dominio; desarrollo y pruebas, los puertos locales
+// (3000: `bun run dev` · 3100: servidor de los e2e, ver test/e2e/setup/constants.ts).
+const local = appEnv === 'production' ? [] : ['http://localhost:3000', 'http://localhost:3100']
+const origins = [...new Set([env.NUXT_PUBLIC_SITE_URL, ...local].filter(Boolean))] as string[]
+const Bucket = need('NUXT_S3_BUCKET')
 
-for (const Bucket of buckets) {
-  try {
-    await client.send(new PutBucketCorsCommand({
-      Bucket,
-      CORSConfiguration: {
-        CORSRules: [{
-          AllowedOrigins: origins,
-          AllowedMethods: ['PUT', 'GET', 'HEAD'],
-          AllowedHeaders: ['content-type', 'content-length'],
-          ExposeHeaders: ['etag'],
-          MaxAgeSeconds: 3600,
-        }],
-      },
-    }))
-    console.log(`CORS aplicado al bucket ${Bucket} para: ${origins.join(', ')}`)
-  }
-  catch (error) {
-    // Los buckets son por rama de Neon: uno de otra rama no existe en este endpoint.
-    if (Bucket !== mainBucket && (error as { name?: string }).name === 'NoSuchBucket') {
-      console.warn(`Se omite ${Bucket}: no existe en este endpoint (bucket de otra rama).`)
-      continue
-    }
-    throw error
-  }
-}
+await client.send(new PutBucketCorsCommand({
+  Bucket,
+  CORSConfiguration: {
+    CORSRules: [{
+      AllowedOrigins: origins,
+      AllowedMethods: ['PUT', 'GET', 'HEAD'],
+      AllowedHeaders: ['content-type', 'content-length'],
+      ExposeHeaders: ['etag'],
+      MaxAgeSeconds: 3600,
+    }],
+  },
+}))
+console.log(`[${appEnv}] CORS aplicado al bucket ${Bucket} para: ${origins.join(', ')}`)
