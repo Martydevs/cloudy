@@ -6,7 +6,7 @@ definePageMeta({ layout: 'dashboard', access: 'private' })
 useHead({ title: 'Inicio · Cloudy' })
 
 const { profile } = useMe()
-const { data, status, error, refresh } = await useApiFetch<DashboardSummary>('/api/dashboard')
+const { data, error, refresh } = await useApiFetch<DashboardSummary>('/api/dashboard', { lazy: true })
 const upload = useUploadDialog()
 watch(upload.version, () => refresh())
 
@@ -51,7 +51,7 @@ const firstName = computed(() => profile.value?.name.split(' ')[0] ?? '')
       </button>
     </section>
 
-    <SkeletonList v-if="status === 'pending' && !data" :rows="8" variant="grid" />
+    <SkeletonList v-if="!data && !error" :rows="8" variant="grid" />
     <ErrorState v-else-if="error" message="No pudimos cargar el resumen. Revisa tu conexión." @retry="refresh()" />
     <template v-else-if="data">
       <section aria-labelledby="resumen-title">
