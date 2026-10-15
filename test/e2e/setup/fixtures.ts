@@ -1,4 +1,7 @@
 // Utilidades compartidas por los e2e. Las identidades son únicas por corrida (`e2e+<runId>-…`).
+import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { neon } from '@neondatabase/serverless'
 import { inject } from 'vitest'
@@ -35,6 +38,28 @@ export async function waitForHydration(page: Page) {
   await page.waitForFunction(() => !!(document.querySelector('#__nuxt') as { __vue_app__?: unknown } | null)?.__vue_app__)
 }
 
+/**
+ * Neon Auth (Better Auth) limita sign-up/sign-in por IP del lado del servidor y el proxy no le
+ * reenvía la IP del navegador: todas las peticiones de los e2e cuentan como una sola IP. Se
+ * espacian para no superar ese límite (≈3 cada 10 s). El registro se comparte entre archivos.
+ */
+const AUTH_WINDOW_MS = 10_000
+const AUTH_MAX_IN_WINDOW = 2
+
+export async function paceAuthRequest() {
+  const file = join(tmpdir(), `cloudy-e2e-${runId()}-auth.json`)
+  for (;;) {
+    const now = Date.now()
+    const recent = (existsSync(file) ? JSON.parse(readFileSync(file, 'utf8')) as number[] : [])
+      .filter(t => now - t < AUTH_WINDOW_MS)
+    if (recent.length < AUTH_MAX_IN_WINDOW) {
+      writeFileSync(file, JSON.stringify([...recent, now]))
+      return
+    }
+    await new Promise(resolve => setTimeout(resolve, AUTH_WINDOW_MS - (now - recent[0]!) + 50))
+  }
+}
+
 export async function registerViaUi(page: Page, { name = 'Persona de prueba', email, password = PASSWORD }: Credentials) {
   await page.goto(`${E2E_URL}/registro`)
   await waitForHydration(page)
@@ -42,6 +67,7 @@ export async function registerViaUi(page: Page, { name = 'Persona de prueba', em
   await page.getByLabel('Correo electrónico').fill(email)
   await page.getByLabel('Contraseña', { exact: true }).fill(password)
   await page.getByLabel('Confirmar contraseña').fill(password)
+  await paceAuthRequest()
   await page.getByRole('button', { name: 'Crear cuenta' }).click()
   const alert = page.getByRole('alert')
   await Promise.race([
@@ -57,6 +83,7 @@ export async function login(page: Page, { email, password = PASSWORD }: Credenti
   await waitForHydration(page)
   await page.getByLabel('Correo electrónico').fill(email)
   await page.getByLabel('Contraseña').fill(password)
+  await paceAuthRequest()
   await page.getByRole('button', { name: 'Iniciar sesión' }).click()
   // Si el servidor responde con un error, se informa su texto en vez de esperar 30 s a ciegas.
   const alert = page.getByRole('alert')
@@ -91,8 +118,12 @@ async function authPost(path: string, body: Record<string, string>): Promise<Res
  * sin pasar por la UI. Devuelve la cookie de sesión.
  */
 export async function ensureAccount({ name = 'Persona de prueba', email, password = PASSWORD }: Credentials): Promise<string> {
+  await paceAuthRequest()
   let res = await authPost('sign-up/email', { name, email, password })
-  if (!res.ok) res = await authPost('sign-in/email', { email, password })
+  if (!res.ok) {
+    await paceAuthRequest()
+    res = await authPost('sign-in/email', { email, password })
+  }
   if (!res.ok) throw new Error(`No se pudo preparar la cuenta ${email}: ${res.status}`)
   const cookie = cookieHeader(res)
   // La primera petición autenticada crea el perfil (FR-002).

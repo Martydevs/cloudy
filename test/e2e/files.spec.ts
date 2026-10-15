@@ -82,7 +82,11 @@ describe('US1 · archivos del equipo', () => {
 
     // Ordenar por tamaño (mayor primero): el MP3 es el más pesado.
     await page.getByLabel('Ordenar por').selectOption('size-desc')
-    await expect.poll(async () => (await page.getByRole('link', { name: /^Abrir .+\.(jpg|mp3|pptx)$/ }).first().getAttribute('aria-label'))).toBe('Abrir audio.mp3')
+    // Se compara el orden completo: por nombre el MP3 también va primero, así que mirar solo el
+    // primero podría pasar con los datos anteriores.
+    const fileOrder = () => page.getByRole('link', { name: /^Abrir .+\.(jpg|mp3|pptx)$/ })
+      .evaluateAll(links => links.map(link => link.getAttribute('aria-label')))
+    await expect.poll(fileOrder).toEqual(['Abrir audio.mp3', 'Abrir foto.jpg', 'Abrir deck.pptx'])
 
     // Renombrar conserva la extensión.
     await itemAction(page, 'deck.pptx', 'Renombrar')
