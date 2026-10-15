@@ -40,6 +40,8 @@ bun run dev                                # http://localhost:3000
 
 Los scripts `typecheck`, `db:*`, `storage:setup` y `check:bundle` se agregan a `package.json` en la implementación (plan, "Correcciones" §5).
 
+> **Nota (T008)**: `typescript` se fija en `~5.9`. TypeScript 7 (compilador nativo) no expone `lib/tsc`, y `vue-tsc` 3 falla con `ERR_PACKAGE_PATH_NOT_EXPORTED`. Con 5.9, `bun run typecheck` corre sin errores.
+
 ## 4. Escenarios de validación manual
 
 Cada escenario indica el resultado esperado y la referencia al spec.
