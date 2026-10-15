@@ -3,39 +3,57 @@ import tailwindcss from '@tailwindcss/vite';
 // https://nuxt.com/docs/api/configuration/nuxt-config
 export default defineNuxtConfig({
   modules: [
-    '@nuxt/icon/module', 
-    '@nuxt/fonts', 
-    '@vueuse/nuxt/module', 
+    '@nuxt/icon/module',
+    '@nuxt/fonts',
+    '@vueuse/nuxt/module',
     '@nuxt/image',
     '@nuxt/test-utils/module',
   ],
+  // Valores sobrescritos por las variables NUXT_* (ver AGENTS.md). NUXT_NEON_JWKS_URL no se usa (R17).
   runtimeConfig: {
-    session: {
-      password: ""
+    databaseUrl: '',
+    testDatabaseUrl: '',
+    neonAuthBaseUrl: '',
+    neonAuthCookieSecret: '',
+    awsEndpointUrlS3: '',
+    awsAccessKeyId: '',
+    awsSecretAccessKey: '',
+    awsRegion: '',
+    s3Bucket: '',
+    // Vacío en producción; los e2e usan `e2e/<runId>/` para aislar sus objetos.
+    storageKeyPrefix: '',
+    cronSecret: process.env.CRON_SECRET ?? '',
+    rateLimitSalt: '',
+    public: {
+      siteUrl: '',
     },
-    testDatabaseUrl: "",
-    databaseUrl: "",
-    neonAuthBaseUrl: "",
-    neonAuthCookieSecret: ""
   },
+  // Los componentes se nombran por archivo (`ThemeToggle`, no `AppThemeToggle`); las carpetas solo agrupan.
+  components: [{ path: '~/components', pathPrefix: false }],
   app: {
     head: {
       title: 'Cloudy',
       htmlAttrs: { lang: 'es' },
-      meta: [{ name: 'theme-color', content: '#0a0a0a' }]
-    }
+    },
+  },
+  icon: {
+    serverBundle: { collections: ['lucide'] },
   },
   fonts: {
     families: [
-      { name: 'DM Sans', provider: 'google', weights: [400, 500, 600, 700], subsets: ['latin', 'latin-ext'], global: true }
-    ]
+      { name: 'DM Sans', provider: 'google', weights: [400, 500, 600, 700], subsets: ['latin', 'latin-ext'], global: true },
+    ],
+  },
+  nitro: {
+    // Necesario para `useEvent()` en el adaptador de Neon Auth (research R1).
+    experimental: { asyncContext: true },
   },
   compatibilityDate: '2025-07-15',
   devtools: { enabled: true },
   vite: {
     plugins: [
-      tailwindcss({optimize: true})
-    ]
+      tailwindcss({ optimize: true }),
+    ],
   },
-  css: ["~/assets/css/globals.css"]
-})
+  css: ['~/assets/css/globals.css'],
+});
