@@ -7,50 +7,52 @@ useHead({ title: 'Actividad · Cloudy' })
 const api = useApi()
 const action = ref('')
 const actor = ref('')
+const filters = computed(() => ({
+  ...(action.value ? { action: action.value } : {}),
+  ...(actor.value ? { actor: actor.value } : {}),
+}))
 
-const items = ref<ActivityEntry[]>([])
+// La primera página llega con el SSR (LCP sin esperar a la hidratación); al cambiar un filtro se vuelve a pedir.
+const { data: firstPage, error, pending, refresh } = await useApiFetch<Paginated<ActivityEntry>>('/api/activity', {
+  lazy: true,
+  query: filters,
+})
+
+// Páginas siguientes del scroll infinito; se descartan cuando cambia la primera página.
+const more = ref<ActivityEntry[]>([])
 const nextCursor = ref<string | null>(null)
-const loading = ref(false)
-const failed = ref(false)
-const loadedOnce = ref(false)
+const loadingMore = ref(false)
+const moreFailed = ref(false)
+watch(firstPage, (page) => {
+  more.value = []
+  nextCursor.value = page?.nextCursor ?? null
+  moreFailed.value = false
+}, { immediate: true })
 
-async function load(reset = false) {
-  if (loading.value) return
-  if (reset) {
-    items.value = []
-    nextCursor.value = null
-    loadedOnce.value = false
-  }
-  loading.value = true
-  failed.value = false
+const items = computed(() => [...(firstPage.value?.items ?? []), ...more.value])
+
+async function loadMore() {
+  if (loadingMore.value || !nextCursor.value) return
+  loadingMore.value = true
+  moreFailed.value = false
   try {
-    const page = await api<Paginated<ActivityEntry>>('/api/activity', {
-      query: {
-        ...(action.value ? { action: action.value } : {}),
-        ...(actor.value ? { actor: actor.value } : {}),
-        ...(nextCursor.value ? { cursor: nextCursor.value } : {}),
-      },
-    })
-    items.value = reset ? page.items : [...items.value, ...page.items]
+    const page = await api<Paginated<ActivityEntry>>('/api/activity', { query: { ...filters.value, cursor: nextCursor.value } })
+    more.value = [...more.value, ...page.items]
     nextCursor.value = page.nextCursor
-    loadedOnce.value = true
   }
   catch {
-    failed.value = true
+    moreFailed.value = true
   }
   finally {
-    loading.value = false
+    loadingMore.value = false
   }
 }
-
-watch([action, actor], () => load(true))
-onMounted(() => load(true))
 
 // Scroll infinito: cuando el centinela del final entra en pantalla se pide la página siguiente.
 const sentinel = useTemplateRef<HTMLElement>('sentinel')
 const sentinelVisible = useElementVisibility(sentinel)
 watch(sentinelVisible, (visible) => {
-  if (visible && nextCursor.value && !loading.value) load()
+  if (visible) loadMore()
 })
 
 // Filtro por persona: la lista de cuentas (sin las eliminadas) es corta.
@@ -83,10 +85,10 @@ const dateFormat = new Intl.DateTimeFormat('es-MX', { dateStyle: 'medium', timeS
       </label>
     </div>
 
-    <SkeletonList v-if="!loadedOnce && loading" :rows="8" />
-    <ErrorState v-else-if="failed && items.length === 0" message="No pudimos cargar la actividad. Revisa tu conexión." @retry="load(true)" />
+    <SkeletonList v-if="!firstPage && pending" :rows="8" />
+    <ErrorState v-else-if="error" message="No pudimos cargar la actividad. Revisa tu conexión." @retry="refresh()" />
     <EmptyState
-      v-else-if="loadedOnce && items.length === 0"
+      v-else-if="items.length === 0"
       icon="lucide:activity"
       title="Sin actividad todavía"
       description="Aquí verás las subidas, cambios y aprobaciones del equipo."
@@ -108,10 +110,10 @@ const dateFormat = new Intl.DateTimeFormat('es-MX', { dateStyle: 'medium', timeS
           </div>
         </li>
       </ul>
-      <div ref="sentinel" class="flex justify-center py-2">
-        <span v-if="loading" class="loading loading-spinner" aria-label="Cargando más actividad" />
-        <button v-else-if="nextCursor" type="button" class="btn" @click="load()">Cargar más</button>
-        <p v-else-if="failed" role="alert" class="text-error">No pudimos cargar más. <button type="button" class="link" @click="load()">Reintentar</button></p>
+      <div ref="sentinel" class="flex min-h-11 justify-center py-2">
+        <span v-if="loadingMore" class="loading loading-spinner" aria-label="Cargando más actividad" />
+        <button v-else-if="nextCursor" type="button" class="btn" @click="loadMore()">Cargar más</button>
+        <p v-else-if="moreFailed" role="alert" class="text-error">No pudimos cargar más. <button type="button" class="link" @click="loadMore()">Reintentar</button></p>
       </div>
     </template>
   </div>

@@ -198,6 +198,7 @@ describe('Actividad', () => {
     await nextTick()
     expect(loading.find('[aria-busy="true"]').exists()).toBe(true)
 
+    clearNuxtData()
     mockApi('GET', '/api/activity', failWith(500))
     const wrapper = await mountSuspended(ActividadPage)
     await flush()

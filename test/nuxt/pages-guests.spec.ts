@@ -140,8 +140,9 @@ describe('SubmissionCard', () => {
     mockApi('GET', '/api/folders/tree', [{ id: 'd1', name: 'Domingo', parentId: null }])
     const wrapper = await mountSuspended(SubmissionCard, { props: { submission: submission() } })
     await button(wrapper, 'Aprobar').trigger('click')
-    await flush()
-    expect(wrapper.text()).toContain('Aprobar hacia…')
+    // El selector de carpetas es un componente Lazy: se espera a que cargue.
+    await vi.waitFor(() => expect(wrapper.text()).toContain('Aprobar hacia…'))
+    await vi.waitFor(() => expect(wrapper.findAll('[role="radio"]').some(r => r.text().includes('Domingo'))).toBe(true))
     await wrapper.findAll('[role="radio"]').find(r => r.text().includes('Domingo'))!.trigger('click')
     await button(wrapper, 'Aprobar aquí').trigger('click')
     expect(wrapper.emitted('approve')).toEqual([['d1']])
@@ -180,7 +181,7 @@ describe('/pendientes', () => {
     expect(wrapper.text()).toContain('Eva')
 
     await button(wrapper, 'Aprobar').trigger('click')
-    await flush()
+    await vi.waitFor(() => expect(buttonsWithText(wrapper, 'Aprobar aquí')).toHaveLength(1))
     await button(wrapper, 'Aprobar aquí').trigger('click')
     await flush()
     expect(calls.find(c => c.url === '/api/submissions/s1/approve')?.body).toEqual({ folderId: null })
@@ -229,7 +230,8 @@ describe('/pendientes', () => {
     list = [submission({ senderName: 'Nueva' })]
     usePulse().pendingCount.value = 1
     await flush(10)
-    expect(calls.filter(c => c.url === '/api/submissions').length).toBe(before + 1)
+    // Las páginas montadas por pruebas anteriores siguen vivas y también reaccionan al pulso.
+    expect(calls.filter(c => c.url === '/api/submissions').length).toBeGreaterThanOrEqual(before + 1)
     expect(wrapper.text()).toContain('Nueva')
   })
 

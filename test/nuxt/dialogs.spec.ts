@@ -142,7 +142,8 @@ describe('DropZone', () => {
   it('es un botón accesible con los formatos descritos y emite los archivos elegidos', async () => {
     const wrapper = await mountSuspended(DropZone)
     const zone = wrapper.get('[role="button"]')
-    expect(zone.attributes('aria-label')).toBe('Elegir archivos para subir')
+    // El nombre accesible es el texto visible (Lighthouse: label-content-name-mismatch).
+    expect(wrapper.get(`#${zone.attributes('aria-labelledby')}`).text()).toContain('elige archivos')
     expect(wrapper.get(`#${zone.attributes('aria-describedby')}`).text()).toContain('Máximo 100 MB')
 
     const input = wrapper.get('input[type="file"]')

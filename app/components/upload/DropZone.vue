@@ -7,6 +7,7 @@ const zone = useTemplateRef<HTMLElement>('zone')
 const input = useTemplateRef<HTMLInputElement>('input')
 const hintId = useId()
 const inputId = useId()
+const labelId = useId()
 
 const { isOverDropZone } = useDropZone(zone, {
   onDrop: (files) => {
@@ -35,13 +36,14 @@ function onChange(event: Event) {
     class="flex cursor-pointer flex-col items-center gap-2 rounded-box border-2 border-dashed p-6 text-center transition-colors"
     :class="isOverDropZone ? 'border-primary bg-primary/10' : 'border-base-300 hover:border-primary'"
     :aria-describedby="hintId"
-    aria-label="Elegir archivos para subir"
+    :aria-labelledby="labelId"
     @click="choose"
     @keydown.enter.prevent="choose"
     @keydown.space.prevent="choose"
   >
     <Icon name="lucide:cloud-upload" class="size-10 text-primary" aria-hidden="true" />
-    <p class="font-medium">
+    <!-- El nombre accesible es el texto visible (WCAG 2.5.3, "label in name"). -->
+    <p :id="labelId" class="font-medium">
       <span class="hidden sm:inline">Arrastra archivos aquí o </span><span class="link link-primary">elige archivos</span>
     </p>
     <p :id="hintId" class="text-sm text-base-content/70">
