@@ -7,8 +7,9 @@ const mobileOpen = ref(false)
 const collapsed = useLocalStorage('cloudy-sidebar-collapsed', false, { initOnMounted: true })
 const isDesktop = useBreakpoints(breakpointsTailwind).greaterOrEqual('lg')
 
-const { pendingCount } = usePulse()
+const { pendingCount, pendingUsers } = usePulse()
 usePulsePolling()
+const badges = computed(() => ({ '/pendientes': pendingCount.value, '/usuarios': pendingUsers.value }))
 
 const upload = useUploadDialog()
 
@@ -44,11 +45,12 @@ watch(() => mobileOpen.value && !isDesktop.value, (locked) => {
         <slot />
       </main>
     </div>
-    <div class="drawer-side z-40">
-      <button type="button" class="drawer-overlay" aria-label="Cerrar menú" tabindex="-1" @click="mobileOpen = false" />
+    <div class="drawer-side z-40 lg:sticky lg:top-0 lg:h-dvh lg:overflow-hidden">
+      <!-- En escritorio el overlay (inline-block de 24 px de línea) empujaba el aside hacia abajo. -->
+      <button type="button" class="drawer-overlay lg:hidden" aria-label="Cerrar menú" tabindex="-1" @click="mobileOpen = false" />
       <AppSidebar
         :collapsed="collapsed && isDesktop"
-        :pending-count="pendingCount"
+        :badges="badges"
         @navigate="mobileOpen = false"
         @toggle-collapse="collapsed = !collapsed"
       />

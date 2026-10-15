@@ -12,8 +12,6 @@ const { updateUser, changePassword } = useAuthClient()
 const api = useApi()
 const toast = useToast()
 
-const ROLE_LABELS = { admin: 'Administrador', editor: 'Editor' } as const
-
 const nameFields: FormField[] = [{ name: 'name', label: 'Nombre', autocomplete: 'name' }]
 const passwordFields: FormField[] = [
   { name: 'currentPassword', label: 'Contraseña actual', type: 'password', autocomplete: 'current-password' },
@@ -76,7 +74,7 @@ async function savePassword(data: Infer<typeof changePasswordInput>) {
           </div>
           <div>
             <dt class="text-sm text-base-content/70">Rol</dt>
-            <dd><span class="badge badge-primary badge-soft">{{ profile.role ? ROLE_LABELS[profile.role] : 'Sin rol' }}</span></dd>
+            <dd><span class="badge badge-primary badge-soft">{{ roleLabel(profile.role) }}</span></dd>
           </div>
         </dl>
       </div>

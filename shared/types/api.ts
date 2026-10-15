@@ -26,6 +26,11 @@ export interface Me {
   profile: Profile
 }
 
+export interface UsersPage {
+  items: Profile[]
+  total: number
+}
+
 export interface Breadcrumb {
   id: string | null
   name: string
@@ -129,6 +134,8 @@ export interface Pulse {
   cursor: string
   pendingCount: number
   newSubmissions: { id: string, senderName: string, fileCount: number, createdAt: string }[]
+  /** Cuentas por aprobar; solo el admin recibe el valor real (los demás, 0). */
+  pendingUsers: number
 }
 
 export interface DashboardSummary {
