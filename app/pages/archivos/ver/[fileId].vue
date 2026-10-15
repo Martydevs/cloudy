@@ -10,7 +10,7 @@ definePageMeta({
 
 const route = useRoute()
 const fileId = computed(() => String(route.params.fileId))
-const { data: file, status, error, refresh } = await useApiFetch<FileItem>(() => `/api/files/${fileId.value}`)
+const { data: file, error, refresh } = await useApiFetch<FileItem>(() => `/api/files/${fileId.value}`, { lazy: true })
 
 useHead({ title: computed(() => `${file.value?.name ?? 'Archivo'} · Cloudy`) })
 
@@ -41,7 +41,7 @@ const ORIGIN_LABELS = { team: 'Equipo', guest: 'Invitado' } as const
       {{ file?.path?.length ? file.path[file.path.length - 1] : 'Archivos' }}
     </NuxtLink>
 
-    <SkeletonList v-if="status === 'pending' && !file" :rows="4" />
+    <SkeletonList v-if="!file && !error" :rows="4" />
     <EmptyState
       v-else-if="notFound"
       icon="lucide:file-x"

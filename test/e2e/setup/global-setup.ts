@@ -6,6 +6,7 @@ import { randomUUID } from 'node:crypto'
 import { existsSync } from 'node:fs'
 import { neon } from '@neondatabase/serverless'
 import type { TestProject } from 'vitest/node'
+import { ENV_FILES, readEnvFile, requireVar } from '../../../scripts/env'
 import { E2E_PORT, E2E_URL } from './constants'
 
 const TABLES = [
@@ -34,18 +35,33 @@ async function waitForServer(url: string, timeoutMs: number) {
   throw new Error(`El servidor de e2e no respondió en ${url}`)
 }
 
-export default async function setup(project: TestProject) {
-  const testDb = process.env.NUXT_TEST_DATABASE_URL
-  if (!testDb) throw new Error('Falta NUXT_TEST_DATABASE_URL: los e2e no pueden correr sin BD de pruebas.')
-  if (testDb === process.env.NUXT_DATABASE_URL) {
-    throw new Error('NUXT_TEST_DATABASE_URL es igual a NUXT_DATABASE_URL: los e2e nunca deben tocar la BD de desarrollo.')
+/** La BD de pruebas no puede coincidir con la de ningún otro entorno (Constitución V). */
+function assertIsolated(testDb: string) {
+  for (const other of ['development', 'production'] as const) {
+    let otherDb: string | undefined
+    try {
+      otherDb = readEnvFile(other).NUXT_DATABASE_URL
+    }
+    catch {
+      continue // Ese archivo no existe en esta máquina (p. ej. en CI).
+    }
+    if (otherDb === testDb) {
+      throw new Error(`${ENV_FILES.test} apunta a la misma BD que ${ENV_FILES[other]}: los e2e solo corren en la rama de pruebas.`)
+    }
   }
+}
+
+export default async function setup(project: TestProject) {
+  // Las variables de .env.test ganan a las del shell: un NUXT_* suelto no puede sacar los e2e de la rama de pruebas.
+  const testEnv = { ...process.env, ...readEnvFile('test') }
+  const testDb = requireVar(testEnv, 'NUXT_DATABASE_URL', 'test')
+  assertIsolated(testDb)
 
   const runId = randomUUID().slice(0, 8)
   const prefix = `e2e/${runId}/`
   project.provide('runId', runId)
 
-  execSync('bunx drizzle-kit migrate', { stdio: 'inherit', env: { ...process.env, DRIZZLE_TARGET: 'test' } })
+  execSync('bunx drizzle-kit migrate', { stdio: 'inherit', env: { ...testEnv, APP_ENV: 'test' } })
   const sql = neon(testDb)
   await sql.query(`TRUNCATE ${TABLES.join(', ')} RESTART IDENTITY CASCADE`)
 
@@ -55,9 +71,8 @@ export default async function setup(project: TestProject) {
 
   const server: ChildProcess = spawn('node', ['.output/server/index.mjs'], {
     env: {
-      ...process.env,
+      ...testEnv,
       PORT: String(E2E_PORT),
-      NUXT_DATABASE_URL: testDb,
       NUXT_STORAGE_KEY_PREFIX: prefix,
       NUXT_PUBLIC_SITE_URL: E2E_URL,
     },
@@ -67,20 +82,20 @@ export default async function setup(project: TestProject) {
 
   return async () => {
     server.kill()
-    // El teardown borra los objetos de esta corrida; el storage se carga con las variables NUXT_*.
+    // El teardown borra los objetos de esta corrida del bucket de pruebas.
     const { S3Client, ListObjectsV2Command, DeleteObjectsCommand } = await import('@aws-sdk/client-s3')
     const s3 = new S3Client({
-      endpoint: process.env.NUXT_AWS_ENDPOINT_URL_S3,
-      region: process.env.NUXT_AWS_REGION || 'auto',
+      endpoint: testEnv.NUXT_AWS_ENDPOINT_URL_S3,
+      region: testEnv.NUXT_AWS_REGION || 'auto',
       forcePathStyle: true,
       credentials: {
-        accessKeyId: process.env.NUXT_AWS_ACCESS_KEY_ID ?? '',
-        secretAccessKey: process.env.NUXT_AWS_SECRET_ACCESS_KEY ?? '',
+        accessKeyId: testEnv.NUXT_AWS_ACCESS_KEY_ID ?? '',
+        secretAccessKey: testEnv.NUXT_AWS_SECRET_ACCESS_KEY ?? '',
       },
       requestChecksumCalculation: 'WHEN_REQUIRED',
       responseChecksumValidation: 'WHEN_REQUIRED',
     })
-    const Bucket = process.env.NUXT_S3_BUCKET
+    const Bucket = testEnv.NUXT_S3_BUCKET
     const listed = await s3.send(new ListObjectsV2Command({ Bucket, Prefix: prefix }))
     const keys = (listed.Contents ?? []).map(o => ({ Key: o.Key! }))
     if (keys.length > 0) {

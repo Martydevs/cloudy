@@ -30,6 +30,8 @@ export default defineConfig({
             nuxt: {
               rootDir: fileURLToPath(new URL('.', import.meta.url)),
               domEnvironment: 'happy-dom',
+              // Las pruebas de componentes nunca leen credenciales de producción (.env).
+              dotenv: { fileName: '.env.test' },
             },
           },
         },
@@ -51,8 +53,10 @@ export default defineConfig({
     coverage: {
       enabled: false,
       provider: 'v8',
-      include: ['server/utils/**', 'shared/**'],
-      thresholds: { lines: 80 },
+      // Todo el producto. Sin exclusiones: los e2e cubren lo mismo contra Neon real, pero corren
+      // en otro proceso y no suman cobertura.
+      include: ['app/**/*.{ts,vue}', 'server/**/*.ts', 'shared/**/*.ts', 'scripts/env.ts'],
+      thresholds: { lines: 90, statements: 90, branches: 90, functions: 90 },
     },
   },
 })

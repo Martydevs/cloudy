@@ -6,11 +6,17 @@ import { fileURLToPath } from 'node:url'
 import { neon } from '@neondatabase/serverless'
 import { inject } from 'vitest'
 import type { Page } from 'playwright-core'
+import { readEnvFile, requireVar } from '../../../scripts/env'
 import { E2E_URL } from './constants'
 
 export { E2E_URL }
 
 export const runId = (): string => inject('runId')
+
+/** Consultas directas a la BD de la rama de pruebas (.env.test), nunca a otra. */
+export function testSql() {
+  return neon(requireVar(readEnvFile('test'), 'NUXT_DATABASE_URL', 'test'))
+}
 
 export const PASSWORD = 'cloudy-e2e-123'
 
@@ -47,7 +53,8 @@ const AUTH_WINDOW_MS = 10_000
 const AUTH_MAX_IN_WINDOW = 2
 
 export async function paceAuthRequest() {
-  const file = join(tmpdir(), `cloudy-e2e-${runId()}-auth.json`)
+  // Compartido entre corridas: dos corridas seguidas también cuentan para el límite de Neon Auth.
+  const file = join(tmpdir(), 'cloudy-e2e-auth.json')
   for (;;) {
     const now = Date.now()
     const recent = (existsSync(file) ? JSON.parse(readFileSync(file, 'utf8')) as number[] : [])
@@ -97,7 +104,7 @@ export async function login(page: Page, { email, password = PASSWORD }: Credenti
 
 /** Cambia el estado/rol directamente en la BD de pruebas (simula la aprobación del admin). */
 export async function setProfile(targetEmail: string, values: { status: 'pending' | 'active' | 'disabled' | 'removed', role: 'admin' | 'editor' | null }) {
-  const sql = neon(process.env.NUXT_TEST_DATABASE_URL!)
+  const sql = testSql()
   await sql`UPDATE profiles SET status = ${values.status}, role = ${values.role}, updated_at = now() WHERE email = ${targetEmail}`
 }
 

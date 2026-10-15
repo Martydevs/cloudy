@@ -1,18 +1,14 @@
-import 'dotenv/config';
 import { defineConfig } from 'drizzle-kit';
+import { ENV_FILES, loadEnv, requireVar, resolveAppEnv } from './scripts/env';
 
-// `bun run db:migrate:test` fija DRIZZLE_TARGET=test para migrar la BD de pruebas.
-const isTest = process.env.DRIZZLE_TARGET === 'test';
-const variable = isTest ? 'NUXT_TEST_DATABASE_URL' : 'NUXT_DATABASE_URL';
-const url = process.env[variable];
-
-if (!url) {
-  throw new Error(`Falta la variable de entorno ${variable} para drizzle-kit.`);
-}
+// La rama de Neon se elige con APP_ENV (development por defecto): `bun run db:migrate:test`, etc.
+const appEnv = resolveAppEnv();
+loadEnv(appEnv);
+console.info(`drizzle-kit → ${ENV_FILES[appEnv]} (APP_ENV=${appEnv})`);
 
 export default defineConfig({
   out: './drizzle',
   schema: './server/db/schema.ts',
   dialect: 'postgresql',
-  dbCredentials: { url },
+  dbCredentials: { url: requireVar(process.env, 'NUXT_DATABASE_URL', appEnv) },
 });

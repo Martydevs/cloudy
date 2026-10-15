@@ -5,40 +5,47 @@ Guía para levantar Cloudy en local y comprobar de punta a punta que la feature 
 ## 1. Requisitos previos
 
 - **Bun**, que es el gestor del proyecto.
-- **Proyecto de Neon** con una rama de desarrollo y una **rama de pruebas** (su URL de BD va en `NUXT_TEST_DATABASE_URL`). En la rama de desarrollo:
+- **Proyecto de Neon** con tres ramas: **producción**, **desarrollo** y **pruebas**. Cada rama tiene su propia BD y su propio bucket. En cada rama:
   - **Neon Auth**, con **Sign-up with Email** activado en *Settings → Better Auth*.
-  - **Object Storage**, con el bucket `NUXT_S3_BUCKET` y una credencial S3.
+  - **Object Storage**, con un bucket y una credencial S3.
 - **Extensión `pg_trgm`**: la crea la migración inicial (`CREATE EXTENSION IF NOT EXISTS pg_trgm`) en cada BD.
 - **Producción** (opcional): un SMTP propio en Neon Auth.
 
-## 2. Variables de entorno
+## 2. Variables de entorno: un archivo por rama
 
-Estado actual del `.env`: **todas las variables requeridas ya están definidas**. Ningún archivo `.env*` se versiona.
+Cada rama de Neon tiene su archivo, con **los mismos nombres de variables** (plantilla: `.env.example`). Ningún archivo `.env*` real se versiona.
 
-| Variable | Uso | Estado |
-|----------|-----|--------|
-| `NUXT_DATABASE_URL` | BD de la app (pooled) | ✅ |
-| `NUXT_TEST_DATABASE_URL` | BD que usan los e2e en lugar de la anterior (R13) | ✅ |
-| `NUXT_NEON_AUTH_BASE_URL`, `NUXT_NEON_AUTH_COOKIE_SECRET` (≥ 32 car.) | Neon Auth | ✅ |
-| `NUXT_NEON_JWKS_URL` | **No se usa en la v1** (R17); se puede conservar o quitar | opcional |
-| `NUXT_AWS_ENDPOINT_URL_S3`, `NUXT_AWS_ACCESS_KEY_ID`, `NUXT_AWS_SECRET_ACCESS_KEY`, `NUXT_AWS_REGION`, `NUXT_S3_BUCKET` | Neon Object Storage | ✅ |
-| `NUXT_PUBLIC_SITE_URL` | Origen público: CORS, enlaces, `redirectTo` del reset | ✅ |
-| `CRON_SECRET` | Bearer del cron de Vercel | ✅ |
-| `NUXT_RATE_LIMIT_SALT` | Sal para el hash de IPs | ✅ |
-| `NUXT_TEST_NEON_AUTH_BASE_URL`, `NUXT_TEST_S3_BUCKET` | Aislamiento e2e total, si se agregan (R13) | opcional |
+| Archivo | Rama | Lo usan |
+|---------|------|---------|
+| `.env.development` | desarrollo | `bun run dev`, `db:migrate`, `storage:setup` |
+| `.env.test` | pruebas | `test:e2e` (BD, bucket y Neon Auth), `test:nuxt`, `db:migrate:test`, `storage:setup:test` |
+| `.env` | producción | `bun run preview`, `db:migrate:prod`, `storage:setup:prod` |
+
+Nuxt elige el archivo con `nuxi --dotenv`. drizzle-kit y los scripts lo eligen con `APP_ENV` (`development` por omisión, nunca producción) a través de `scripts/env.ts`. En **Vercel** no hay archivos: las mismas variables se cargan por entorno en *Project → Settings → Environment Variables*. Con la integración de Neon para Vercel, cada *preview* puede tener su propia rama.
+
+| Variable | Uso |
+|----------|-----|
+| `NUXT_DATABASE_URL` | BD de la rama (pooled) |
+| `NUXT_NEON_AUTH_BASE_URL`, `NUXT_NEON_AUTH_COOKIE_SECRET` (≥ 32 car.) | Neon Auth de la rama |
+| `NUXT_AWS_ENDPOINT_URL_S3`, `NUXT_AWS_ACCESS_KEY_ID`, `NUXT_AWS_SECRET_ACCESS_KEY`, `NUXT_AWS_REGION`, `NUXT_S3_BUCKET` | Neon Object Storage de la rama |
+| `NUXT_PUBLIC_SITE_URL` | Origen público: CORS, enlaces, `redirectTo` del reset |
+| `CRON_SECRET` | Bearer del cron de Vercel |
+| `NUXT_RATE_LIMIT_SALT` | Sal para el hash de IPs |
+| `NUXT_NEON_JWKS_URL` | **No se usa en la v1** (R17); opcional |
 
 ## 3. Instalación y preparación
 
 ```bash
 bun install
-bun run db:migrate                         # migra NUXT_DATABASE_URL
-bun run db:migrate:test                    # migra NUXT_TEST_DATABASE_URL
-bun run storage:setup                      # CORS del bucket (PutBucketCors), una vez por bucket u origen
+bun run db:migrate                         # rama de desarrollo (.env.development)
+bun run db:migrate:test                    # rama de pruebas (.env.test)
+bun run db:migrate:prod                    # producción (.env), solo al desplegar cambios de esquema
+bun run storage:setup                      # CORS del bucket de desarrollo; storage:setup:test / :prod para las otras ramas
 bunx playwright-core install chromium      # navegador para e2e y medición de rendimiento, una vez
-bun run dev                                # http://localhost:3000
+bun run dev                                # http://localhost:3000 con .env.development
 ```
 
-Los scripts `typecheck`, `db:*`, `storage:setup` y `check:bundle` se agregan a `package.json` en la implementación (plan, "Correcciones" §5).
+`check:bundle` llega con las tareas de rendimiento.
 
 > **Nota (T008)**: `typescript` se fija en `~5.9`. TypeScript 7 (compilador nativo) no expone `lib/tsc`, y `vue-tsc` 3 falla con `ERR_PACKAGE_PATH_NOT_EXPORTED`. Con 5.9, `bun run typecheck` corre sin errores.
 
@@ -95,7 +102,7 @@ bun run typecheck        # Constitución IV: sin errores de tipos
 bun run build && bun run check:bundle   # Constitución I: JS inicial ≤ 200 KB gzip por ruta
 bun run test:unit        # validadores, firmas binarias, permisos, utilidades
 bun run test:nuxt        # componentes (sidebar por rol, ThemeToggle, UploadQueue, formularios)
-bun run test:e2e         # navegador real contra NUXT_TEST_DATABASE_URL (incluye performance.spec: LCP ≤ 2.5 s, CLS ≤ 0.1 en 4G emulado)
+bun run test:e2e         # navegador real contra la rama de pruebas (.env.test) (incluye performance.spec: LCP ≤ 2.5 s, CLS ≤ 0.1 en 4G emulado)
 bun run test:coverage    # todo + cobertura v8
 ```
 
@@ -104,8 +111,8 @@ Resultado esperado: todo en verde, con cobertura ≥ 80 % de líneas en `server/
 ## 6. Despliegue en Vercel
 
 1. Importar el repositorio en Vercel. El preset Nitro `vercel` se detecta solo.
-2. Cargar las variables de la sección 2 (excepto `NUXT_TEST_*`) apuntando a la rama de producción de Neon, con `NUXT_PUBLIC_SITE_URL` igual al dominio final.
-3. Correr `bun run storage:setup` contra producción para que CORS incluya el dominio.
+2. Cargar en Vercel las variables de `.env` (producción), con `NUXT_PUBLIC_SITE_URL` igual al dominio final. Para los *previews*, usar la rama de desarrollo o la integración de Neon para Vercel.
+3. Correr `bun run storage:setup:prod` para que el CORS del bucket de producción incluya el dominio.
 4. `vercel.json` registra el cron diario `/api/cron/cleanup`. Verificarlo en *Project → Cron Jobs*.
 5. Hacer una prueba de humo con los escenarios 1, 4 y 6 en el dominio final.
 

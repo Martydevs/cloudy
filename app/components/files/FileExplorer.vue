@@ -36,8 +36,19 @@ const sortOption = computed<SortOption>(() => {
   return key in SORTS ? key as SortOption : 'name-asc'
 })
 
+// `route.query` se actualiza recién al terminar la navegación: dos cambios seguidos (p. ej. quitar
+// el filtro y ordenar) se acumulan aquí para que el segundo no reponga el valor anterior.
+let pendingQuery: Record<string, unknown> | null = null
+
 function setQuery(changes: Record<string, string | undefined>) {
-  router.replace({ query: { ...route.query, ...changes } })
+  const next = { ...(pendingQuery ?? route.query), ...changes }
+  for (const key of Object.keys(next)) {
+    if (next[key] === undefined) delete next[key]
+  }
+  pendingQuery = next
+  router.replace({ query: next as Record<string, string> }).finally(() => {
+    if (pendingQuery === next) pendingQuery = null
+  })
 }
 
 function setSort(option: SortOption) {
@@ -54,7 +65,8 @@ const query = computed(() => ({
   dir: SORTS[sortOption.value].dir,
 }))
 
-const { data, status, error, refresh } = await useApiFetch<FolderChildren | SearchResult>(url, { query })
+// `lazy`: la vista se muestra al instante con el skeleton en lugar de dejar la página anterior.
+const { data, error, refresh } = await useApiFetch<FolderChildren | SearchResult>(url, { query, lazy: true })
 
 const moreFiles = ref<FileItem[]>([])
 const cursor = ref<string | null>(null)
@@ -193,7 +205,7 @@ const TYPE_FILTERS: { value: FileCategory | undefined, label: string }[] = [
       </div>
     </div>
 
-    <SkeletonList v-if="status === 'pending' && !data" :rows="12" :variant="view" />
+    <SkeletonList v-if="!data && !error" :rows="12" :variant="view" />
     <ErrorState v-else-if="error" message="No pudimos cargar los archivos. Revisa tu conexión." @retry="refresh()" />
     <EmptyState
       v-else-if="isEmpty && q"

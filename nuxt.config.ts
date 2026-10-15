@@ -12,7 +12,6 @@ export default defineNuxtConfig({
   // Valores sobrescritos por las variables NUXT_* (ver AGENTS.md). NUXT_NEON_JWKS_URL no se usa (R17).
   runtimeConfig: {
     databaseUrl: '',
-    testDatabaseUrl: '',
     neonAuthBaseUrl: '',
     neonAuthCookieSecret: '',
     awsEndpointUrlS3: '',

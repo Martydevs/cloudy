@@ -32,7 +32,8 @@ describe('US5 · dashboard responsivo', () => {
     // Tocar fuera (el overlay) también.
     await page.getByRole('button', { name: 'Abrir menú' }).click()
     await expect.poll(() => sidebar.isVisible()).toBe(true)
-    await page.mouse.click(350, 400)
+    // Se toca el overlay a la derecha del panel; Playwright espera a que termine la animación.
+    await page.getByRole('button', { name: 'Cerrar menú' }).click({ position: { x: 340, y: 400 } })
     await expect.poll(() => sidebar.isVisible()).toBe(false)
     await page.close()
   })
