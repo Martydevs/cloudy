@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { authAs, created, expectGuarded, expectStatus, installNitro, loadHandler, makeEvent, profileRow } from './helpers/nitro'
+import { authAs, created, expectGuarded, expectStatus, installNitro, loadHandler, makeEvent, profileRow, sqlText } from './helpers/nitro'
 
 const proxy = vi.hoisted(() => ({ handleAuthProxyRequest: vi.fn() }))
 
@@ -84,23 +84,36 @@ describe('GET /api/dashboard', () => {
 })
 
 describe('GET /api/realtime/pulse', () => {
-  const rows = [
-    { id: 's2', sender_name: 'Luis', created_at: '2026-10-14T10:05:00.000Z', file_count: 2 },
-    { id: 's1', sender_name: 'Eva', created_at: '2026-10-14T09:00:00.000Z', file_count: 1 },
-  ]
+  const fresh = [{ id: 's2', sender_name: 'Luis', created_at: '2026-10-14T10:05:00.000Z', completed_at: '2026-10-14T10:06:00.000Z', file_count: 2 }]
+  // Cola por pulso: conteo de pendientes, nuevos desde el cursor, usuarios pendientes.
+  const pulse = (count: number, rows: unknown[], users: number) => [{ rows: [{ count }] }, { rows }, { rows: [{ count: users }] }]
 
-  it('cuenta los pendientes y lista los nuevos desde el cursor', async () => {
-    installNitro([{ rows }, { rows }])
+  it('cuenta los pendientes y lista los nuevos desde el cursor por completed_at (T120a)', async () => {
+    const fake = installNitro([...pulse(2, [], 0), ...pulse(2, fresh, 0)])
     const handler = await loadHandler('api/realtime/pulse.get.ts')
     const first = await handler(makeEvent())
-    expect(first).toMatchObject({ pendingCount: 2, newSubmissions: [] })
+    expect(first).toMatchObject({ pendingCount: 2, newSubmissions: [], pendingUsers: 0 })
     expect(typeof (first as { cursor: string }).cursor).toBe('string')
+    expect(sqlText(fake.db.execute.mock.calls[0]![0])).toContain('completed_at IS NOT NULL')
 
     const next = await handler(makeEvent({ url: '/api/realtime/pulse?since=2026-10-14T10:00:00.000Z' }))
     expect(next).toMatchObject({
       pendingCount: 2,
       newSubmissions: [{ id: 's2', senderName: 'Luis', fileCount: 2, createdAt: '2026-10-14T10:05:00.000Z' }],
     })
+    const sinceSql = sqlText(fake.db.execute.mock.calls[4]![0])
+    expect(sinceSql).toContain('completed_at >')
+    expect(sinceSql).toContain('2026-10-14T10:00:00.000Z')
+  })
+
+  it('solo el admin recibe el conteo de usuarios pendientes (T134a)', async () => {
+    const fake = installNitro([...pulse(0, [], 3), ...pulse(0, [], 3)])
+    const handler = await loadHandler('api/realtime/pulse.get.ts')
+    expect(await handler(makeEvent({ auth: authAs({ role: 'admin' }) }))).toMatchObject({ pendingUsers: 3 })
+    expect(sqlText(fake.db.execute.mock.calls[2]![0])).toContain('profiles')
+    // Un editor no consulta profiles: la tercera consulta es la constante 0.
+    expect(await handler(makeEvent())).toMatchObject({ pendingUsers: 3 })
+    expect(sqlText(fake.db.execute.mock.calls[5]![0])).not.toContain('profiles')
   })
 
   it('rechaza un cursor mal formado y exige rol', async () => {

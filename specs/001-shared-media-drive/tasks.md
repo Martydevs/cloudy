@@ -44,7 +44,7 @@ description: "Task list for Cloudy — Disco multimedia compartido (feature 001)
 - [X] T002 Actualizar `package.json`:
   - Fijar `"@neondatabase/auth": "0.6.0-beta"` como versión exacta.
   - Agregar con `bun add -d vue-tsc typescript` (research R19).
-  - Agregar los scripts `"typecheck": "nuxt typecheck"`, `"db:generate": "drizzle-kit generate"`, `"db:migrate": "drizzle-kit migrate"`, `"db:migrate:test": "DRIZZLE_TARGET=test drizzle-kit migrate"`, `"storage:setup": "bun scripts/storage-setup.ts"` y `"check:bundle": "bun scripts/check-bundle.ts"`.
+  - Agregar los scripts `"typecheck": "nuxt typecheck"`, `"db:generate": "drizzle-kit generate"`, `"db:migrate": "drizzle-kit migrate"`, `"db:migrate:test": "DRIZZLE_TARGET=test drizzle-kit migrate"`, `"storage:setup": "bun scripts/storage-setup.ts"` y `"analyze": "SONDA=1 nuxt build"` (Sonda).
 - [X] T003 [P] Corregir `drizzle.config.ts`:
   - `url` = `process.env.DRIZZLE_TARGET === 'test' ? process.env.NUXT_TEST_DATABASE_URL : process.env.NUXT_DATABASE_URL`, que falla con un mensaje claro si no existe.
   - `out: './drizzle'` y `schema: './server/db/schema.ts'`.
@@ -502,6 +502,13 @@ description: "Task list for Cloudy — Disco multimedia compartido (feature 001)
 
 **Checkpoint**: el **MVP** (US2 + US6 + US5 + US1) es funcional y desplegable, y todos los tests de las fases 2 a 6 pasan.
 
+### Fase 6b: bugs visuales de la prueba humana del MVP
+
+- [X] T110a [US5] Barra lateral sin scroll vertical ni hueco: en `app/components/app/AppSidebar.vue` el `aside` pasa a `h-full min-h-dvh overflow-hidden` y el scroll queda solo en el `nav` (`min-h-0 flex-1 overflow-y-auto`); en `app/layouts/dashboard.vue`, `drawer-side` lleva `lg:sticky lg:top-0 lg:h-dvh`.
+- [X] T110b [US5] Avatar completo: en `app/components/app/AppTopbar.vue` el botón pasa a `btn btn-circle avatar avatar-placeholder p-0 border-0` y el `span` a `size-full rounded-full`.
+- [X] T110c [US1] Filtros de Archivos sin barras de scroll al hacer clic: en `app/components/files/FileExplorer.vue` el contenedor de los filtros agrega `overflow-y-hidden py-1 [scrollbar-width:none] lg:overflow-visible`.
+- [X] T110d [US5] Tests de regresión en `test/e2e/responsive-theme.spec.ts`, a 360 y 1280 px: `.drawer-side` sin scroll y `aside` del alto del viewport; el `span` del avatar mide lo mismo que su botón; tras hacer clic en un filtro, el contenedor cumple `scrollHeight <= clientHeight`.
+
 ---
 
 ## Phase 7: User Story 3 — Envío público de invitados con cola de aprobación (Priority: P2)
@@ -512,8 +519,8 @@ description: "Task list for Cloudy — Disco multimedia compartido (feature 001)
 
 ### Tests for User Story 3 ⚠️
 
-- [ ] T111 [P] [US3] Crear `test/unit/validation-submissions.spec.ts`: `submissionInput` exige `senderName` de 1–80, `note` de hasta 500, de 1 a 20 `files`, cada uno válido, y `reason` de hasta 300.
-- [ ] T112 [P] [US3] Crear `test/e2e/guest-queue.spec.ts`:
+- [X] T111 [P] [US3] Crear `test/unit/validation-submissions.spec.ts`: `submissionInput` exige `senderName` de 1–80, `note` de hasta 500, de 1 a 20 `files`, cada uno válido, y `reason` de hasta 300.
+- [X] T112 [P] [US3] Crear `test/e2e/guest-queue.spec.ts`:
   - **Envío**: en un contexto A (editor en `/`) y un contexto B (anónimo, `phone`) que envía 2 imágenes con nombre, B ve "Recibimos tu envío" y A ve el toast y el badge "1" en ≤ 5 s (`expect.poll`, timeout 5000).
   - **Aprobación**: A aprueba hacia una carpeta y los archivos aparecen con el badge "invitado".
   - **Rechazo**: un segundo envío rechazado no aparece en `/archivos`.
@@ -523,44 +530,46 @@ description: "Task list for Cloudy — Disco multimedia compartido (feature 001)
 
 ### Implementation for User Story 3
 
-- [ ] T113 [P] [US3] Crear `shared/validation/submissions.ts` con:
+- [X] T113 [P] [US3] Crear `shared/validation/submissions.ts` con:
   - `submissionInput`: `senderName` "1–80 car.", `note` "≤ 500 car." opcional, y `files` de 1 a `MAX_GUEST_FILES` elementos validados con `uploadInput` sin `folderId`.
   - `approveInput`: `{ folderId: uuid|null }`.
   - `rejectInput`: `{ reason?: ≤ 300 }`.
-- [ ] T114 [US3] Crear `server/api/public/submissions/index.post.ts` (público):
+- [X] T114 [US3] Crear `server/api/public/submissions/index.post.ts` (público):
   - Aplica `hitRateLimit('guest:' + hashSender(ip), { limit: 5, windowSec: 3600 })`.
   - Valida con `submissionInput`.
   - Hace un `db.batch` que inserta `guest_submissions` (con `sender_key`) y los `guest_submission_files` (`upload_status='uploading'`, `storage_key = key('guest/{submissionId}/{uuid}')`).
   - Devuelve `{ submissionId, uploads: [{ fileId, uploadUrl, headers }] }` (FR-016, FR-020).
-- [ ] T115 [US3] Crear `server/api/public/submissions/[id]/complete.post.ts` (público). Para cada archivo `uploading` hace `head` + `readRange` + `matchesSignature`; si falla, borra el objeto y la fila. Marca los válidos como `ready` y devuelve `{ status: 'pending', accepted, rejected }`. Si no queda ningún archivo válido, borra el envío y responde 422.
-- [ ] T116 [P] [US3] Crear `server/api/submissions/index.get.ts` (con `requireRole('editor')`): filtra por `status` (por defecto `pending`) y devuelve `Submission[]` con `expiresAt = created_at + 7 d` y los archivos `ready`.
-- [ ] T117 [P] [US3] Crear `server/api/submissions/[id]/files/[fileId]/content.get.ts` (con `requireRole('editor')`): responde 302 a `presignGet` del archivo del envío.
-- [ ] T118 [US3] Crear `server/api/submissions/[id]/approve.post.ts`. Hace un `db.batch` con:
+- [X] T115 [US3] Crear `server/api/public/submissions/[id]/complete.post.ts` (público). Para cada archivo `uploading` hace `head` + `readRange` + `matchesSignature`; si falla, borra el objeto y la fila. Marca los válidos como `ready` y devuelve `{ status: 'pending', accepted, rejected }`. Si no queda ningún archivo válido, borra el envío y responde 422.
+- [X] T116 [P] [US3] Crear `server/api/submissions/index.get.ts` (con `requireRole('editor')`): filtra por `status` (por defecto `pending`) y devuelve `Submission[]` con `expiresAt = created_at + 7 d` y los archivos `ready`.
+- [X] T117 [P] [US3] Crear `server/api/submissions/[id]/files/[fileId]/content.get.ts` (con `requireRole('editor')`): responde 302 a `presignGet` del archivo del envío.
+- [X] T118 [US3] Crear `server/api/submissions/[id]/approve.post.ts`. Hace un `db.batch` con:
   1. `UPDATE guest_submissions SET status='approved', reviewed_by, reviewed_at, target_folder_id WHERE id=$1 AND status='pending' RETURNING`. Si no afecta filas, responde 409 "Este envío ya fue revisado por otra persona".
   2. `INSERT INTO files … SELECT` desde `guest_submission_files` (`origin='guest'`, `guest_name = sender_name`, `submission_id`, se reutiliza `storage_key`, `upload_status='ready'`, nombres con `withSuffix`).
   3. `activityInsert('submission.approve')`.
 
   Devuelve `{ files }` (FR-019).
-- [ ] T119 [US3] Crear `server/api/submissions/[id]/reject.post.ts`: un `UPDATE … WHERE status='pending' RETURNING` condicional (409 si ya fue revisado), seguido de `deleteMany` de los objetos, el borrado de `guest_submission_files` y `activityInsert('submission.reject')`. Responde 204.
-- [ ] T120 [US3] Extender `server/api/realtime/pulse.get.ts` para que `newSubmissions` incluya los envíos `pending` cuyos archivos estén todos `ready`, creados después de `since`, con `{ id, senderName, fileCount, createdAt }` (FR-018).
-- [ ] T121 [US3] Extender `app/composables/usePulse.ts`: cuando `newSubmissions.length > 0`, mostrar un toast "Nuevo envío de {senderName} ({n} archivos)" con un enlace a `/pendientes`.
-- [ ] T122 [US3] Crear `app/pages/enviar.vue`, con `layout: 'public'` y `access: 'public'`:
+- [X] T119 [US3] Crear `server/api/submissions/[id]/reject.post.ts`: un `UPDATE … WHERE status='pending' RETURNING` condicional (409 si ya fue revisado), seguido de `deleteMany` de los objetos, el borrado de `guest_submission_files` y `activityInsert('submission.reject')`. Responde 204.
+- [X] T120 [US3] Extender `server/api/realtime/pulse.get.ts` para que `newSubmissions` incluya los envíos `pending` cuyos archivos estén todos `ready`, creados después de `since`, con `{ id, senderName, fileCount, createdAt }` (FR-018).
+- [X] T120a [US3] Migración `0002`: `guest_submissions.completed_at timestamptz` (nullable). `readyPendingSubmissionsSql()` exige `completed_at IS NOT NULL` y `pulse.get.ts` filtra `newSubmissions` por `completed_at > since` en SQL (si la subida tarda más de 3 s, `created_at` queda antes del cursor y el aviso nunca saldría).
+- [X] T121 [US3] Extender `app/composables/usePulse.ts`: cuando `newSubmissions.length > 0`, mostrar un toast "Nuevo envío de {senderName} ({n} archivos)" con un enlace a `/pendientes`.
+- [X] T121a [US3] `useToast` admite `action?: { label, to }` y `AppToast.vue` lo muestra como `NuxtLink`; ese toast dura 8 s.
+- [X] T122 [US3] Crear `app/pages/enviar.vue`, con `layout: 'public'` y `access: 'public'`:
   - Formulario con nombre (obligatorio) y nota (opcional, contador de 500).
-  - `DropZone` + `UploadQueue` con `useUploader({ mode: 'guest' })`, que usa los endpoints públicos.
+  - `DropZone` + `UploadQueue` con `app/composables/useGuestSubmission.ts` (en vez de un `mode: 'guest'` en `useUploader`: el flujo de invitados presigna el lote con una llamada, sube de 3 en 3 y cierra con un solo `complete`). `putWithProgress` se mueve a `app/utils/upload-put.ts`.
   - Estado final "¡Gracias! Recibimos tu envío y el equipo lo revisará".
   - Un 429 muestra "Has enviado demasiados archivos; intenta en una hora".
   - Mobile first (SC-002).
-- [ ] T123 [P] [US3] Crear `app/components/guests/SubmissionCard.vue`:
+- [X] T123 [P] [US3] Crear `app/components/guests/SubmissionCard.vue`:
   - Remitente, nota, fecha relativa y "caduca en N días".
   - Miniaturas o íconos de los archivos con vista previa por `/content`.
   - Botón "Aprobar", que abre `FolderPicker`, y "Rechazar", que abre un `modal` con el motivo opcional; ambos con estado de carga.
-- [ ] T124 [US3] Crear `app/pages/pendientes.vue`:
+- [X] T124 [US3] Crear `app/pages/pendientes.vue`:
   - Lista de `SubmissionCard` con los cuatro estados; el `EmptyState` dice "No hay envíos pendientes".
   - Cabecera con "Copiar enlace para invitados" (`useClipboard` sobre `${siteUrl}/enviar`, y `useShare` si `isSupported`).
   - Refresca cuando cambia `usePulse().pendingCount`.
   - Pestañas `pending`/`approved`/`rejected` (con `tabs` de daisyUI).
   - En un 409 muestra un toast y refresca.
-- [ ] T125 [US3] Crear `server/api/cron/cleanup.get.ts`, versión inicial:
+- [X] T125 [US3] Crear `server/api/cron/cleanup.get.ts`, versión inicial:
   - Verifica `getRequestHeader(event,'authorization') === \`Bearer ${cronSecret}\``; si no coincide, responde 401.
   - Marca como `expired` los `guest_submissions` `pending` con `created_at < now() − interval '7 days'` y borra sus objetos y archivos.
   - Borra los `files` y `guest_submission_files` en `uploading` con más de 24 h, junto con sus objetos.
@@ -579,33 +588,34 @@ description: "Task list for Cloudy — Disco multimedia compartido (feature 001)
 
 ### Tests for User Story 4 ⚠️
 
-- [ ] T126 [P] [US4] Crear `test/e2e/users.spec.ts`:
+- [X] T126 [P] [US4] Crear `test/e2e/users.spec.ts`:
   - Un pendiente aparece destacado y se activa como editor, que entra.
   - Al desactivarlo, la siguiente navegación del editor lo lleva a `/pendiente`.
   - Se cambia el rol de editor a admin y de vuelta.
   - Al eliminarlo, el usuario no puede entrar.
   - El único admin, al quitarse el rol, desactivarse o eliminarse, recibe un 409 con el mensaje explicativo.
   - `/actividad` lista `user.activate` y `user.role_change`.
-- [ ] T127 [P] [US4] Extender `test/e2e/routes-guard.spec.ts`: un editor que va a `/usuarios` o `/actividad` ve "Acceso denegado", y `GET /api/users` y `GET /api/activity` como editor responden 403 (SC-009).
+- [X] T127 [P] [US4] Extender `test/e2e/routes-guard.spec.ts`: un editor que va a `/usuarios` o `/actividad` ve "Acceso denegado", y `GET /api/users` y `GET /api/activity` como editor responden 403 (SC-009).
 
 ### Implementation for User Story 4
 
-- [ ] T128 [P] [US4] Crear `shared/validation/users.ts`: `userPatchInput` = `{ status?: 'active'|'disabled', role?: 'admin'|'editor' }`. Activar desde `pending` exige `role`. También `usersQuery` con `status`, `page` y `pageSize` de hasta 50.
-- [ ] T129 [US4] Crear `server/api/users/index.get.ts` (con `requireRole('admin')`). Los perfiles excepto `removed` se ordenan con `CASE status WHEN 'pending' THEN 0 ELSE 1 END, created_at desc`, con paginación por offset. Devuelve `{ items, total }`.
-- [ ] T130 [US4] Crear `server/api/users/[id].patch.ts` (con `requireRole('admin')`):
+- [X] T128 [P] [US4] Crear `shared/validation/users.ts`: `userPatchInput` = `{ status?: 'active'|'disabled', role?: 'admin'|'editor' }`. Activar desde `pending` exige `role`. También `usersQuery` con `status`, `page` y `pageSize` de hasta 50.
+- [X] T129 [US4] Crear `server/api/users/index.get.ts` (con `requireRole('admin')`). Los perfiles excepto `removed` se ordenan con `CASE status WHEN 'pending' THEN 0 ELSE 1 END, created_at desc`, con paginación por offset. Devuelve `{ items, total }`.
+- [X] T130 [US4] Crear `server/api/users/[id].patch.ts` (con `requireRole('admin')`):
   - Hace un `UPDATE profiles SET … WHERE user_id=$1 AND NOT (<el objetivo es admin activo> AND <el cambio lo deja sin ser admin activo> AND (SELECT count(*) FROM profiles WHERE role='admin' AND status='active') <= 1) RETURNING`.
   - Si no afecta filas, responde 409 "Debe existir al menos un administrador activo" (FR-022).
   - Fija `approved_by` al activar.
   - Registra en `activityInsert` `user.activate`, `user.disable` o `user.role_change` (con `meta { from, to }`).
-- [ ] T131 [US4] Crear `server/api/users/[id].delete.ts` (con `requireRole('admin')`): la misma protección del último admin; luego `status='removed'`, `name='Usuario eliminado'`, `role=null` y `user.remove`. Responde 204.
-- [ ] T132 [US4] Crear `app/pages/usuarios.vue`, con `access: 'private'` y `roles: ['admin']`:
+- [X] T131 [US4] Crear `server/api/users/[id].delete.ts` (con `requireRole('admin')`): la misma protección del último admin; luego `status='removed'`, `name='Usuario eliminado'`, `role=null` y `user.remove`. Responde 204.
+- [X] T132 [US4] Crear `app/pages/usuarios.vue`, con `access: 'private'` y `roles: ['admin']`:
   - Tabla responsive: en móvil son `card` apiladas y desde `md` una `table`.
   - Por usuario: badge de estado, `select` de rol y acciones Activar como…, Desactivar, Reactivar y Eliminar (con `useConfirm`).
   - Paginación con `useOffsetPagination`.
   - Los cuatro estados.
   - En un 409 muestra un toast con el mensaje del servidor.
-- [ ] T133 [P] [US4] Crear `server/api/activity.get.ts` (con `requireRole('admin')`): cursor por `id` descendente, filtros por `actor` y `action`, 50 por página.
-- [ ] T134 [US4] Crear `app/pages/actividad.vue`, con `roles: ['admin']`: una lista cronológica (`timeline` o lista) con actor, acción traducida al español (mapa en `app/utils/activity-labels.ts`), objetivo y fecha relativa; `useInfiniteScroll`, filtros y los cuatro estados (FR-023).
+- [X] T133 [P] [US4] Crear `server/api/activity.get.ts` (con `requireRole('admin')`): cursor por `id` descendente, filtros por `actor` y `action`, 50 por página.
+- [X] T134 [US4] Crear `app/pages/actividad.vue`, con `roles: ['admin']`: una lista cronológica (`timeline` o lista) con actor, acción traducida al español (mapa en `app/utils/activity-labels.ts`), objetivo y fecha relativa; `useInfiniteScroll`, filtros y los cuatro estados (FR-023).
+- [X] T134a [US4] Badge de usuarios pendientes en el menú: `pulse.get.ts` devuelve `pendingUsers` (solo para admin; `0` si no), `Pulse` lo tipa, migración `0001` con el índice `profiles_status_created_idx (status, created_at)`, `usePulse` lo expone y `AppSidebar` recibe `badges: Partial<Record<string, number>>` por `item.to` (`/pendientes` y `/usuarios`).
 
 **Checkpoint**: US4 funciona, y `users.spec.ts` y la extensión de `routes-guard.spec.ts` pasan.
 
@@ -722,7 +732,7 @@ description: "Task list for Cloudy — Disco multimedia compartido (feature 001)
   - Mide LCP y CLS con `PerformanceObserver` en `page.evaluate`.
   - Toma la mediana de 3 cargas en `/` (sembrado con 50 archivos), `/archivos/<carpeta con 200 elementos>` y `/enviar`.
   - Afirma LCP ≤ 2500 ms y CLS ≤ 0.1.
-- [ ] T156 [P] Crear `scripts/check-bundle.ts`: lee `.output/public/_nuxt` y el manifiesto del build de cliente, calcula el tamaño gzip (`zlib.gzipSync`) de los chunks iniciales de cada ruta y falla con exit 1 si alguna ruta supera los 200 KB, imprimiendo una tabla por ruta (Constitución I).
+- [ ] T156 [P] Medir el bundle con Sonda (`bun run analyze`, reportes en `.sonda/`) y comprobar que el JS inicial de cada ruta sea ≤ 200 KB gzip (Constitución I). Sustituye al script propio `scripts/check-bundle.ts`.
 - [ ] T157 Optimizar lo que fallen T155 y T156:
   - Convertir componentes pesados en `Lazy*` donde se usan (`app/pages/archivos/ver/[fileId].vue`, `app/components/files/FileExplorer.vue`, `app/layouts/dashboard.vue`): `FilePreview`, `UploadDialog`, `FolderPicker` y `CommentThread`.
   - Revisar que no haya N+1 con `EXPLAIN` en `server/api/folders/[id]/children.get.ts` y `server/api/files/search.get.ts`.

@@ -18,24 +18,6 @@ export interface UploadItem {
 
 const CONCURRENCY = 3
 
-class UploadAbort extends Error {}
-
-function putWithProgress(url: string, body: Blob, headers: Record<string, string>, onProgress: (ratio: number) => void, register: (xhr: XMLHttpRequest) => void) {
-  return new Promise<void>((resolve, reject) => {
-    const xhr = new XMLHttpRequest()
-    register(xhr)
-    xhr.open('PUT', url)
-    for (const [name, value] of Object.entries(headers)) xhr.setRequestHeader(name, value)
-    xhr.upload.onprogress = (event) => {
-      if (event.lengthComputable) onProgress(event.loaded / event.total)
-    }
-    xhr.onload = () => (xhr.status >= 200 && xhr.status < 300 ? resolve() : reject(new Error(`PUT ${xhr.status}`)))
-    xhr.onerror = () => reject(new Error('network'))
-    xhr.onabort = () => reject(new UploadAbort())
-    xhr.send(body)
-  })
-}
-
 /** Mensaje para el usuario y si tiene sentido reintentar. */
 function describeError(error: unknown, name: string): { message: string, retryable: boolean } {
   if (error instanceof FetchError) {

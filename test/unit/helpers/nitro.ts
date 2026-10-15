@@ -4,9 +4,12 @@ import { IncomingMessage, ServerResponse } from 'node:http'
 import { Socket } from 'node:net'
 import * as h3 from 'h3'
 import type { H3Event } from 'h3'
+import type { SQL } from 'drizzle-orm'
+import { PgDialect } from 'drizzle-orm/pg-core'
 import { vi } from 'vitest'
 import * as activity from '../../../server/utils/activity'
 import * as auth from '../../../server/utils/auth'
+import * as cron from '../../../server/utils/cron'
 import * as fileAccess from '../../../server/utils/file-access'
 import * as fileSignature from '../../../server/utils/file-signature'
 import * as files from '../../../server/utils/files'
@@ -14,7 +17,9 @@ import * as naming from '../../../server/utils/naming'
 import * as pagination from '../../../server/utils/pagination'
 import * as rateLimit from '../../../server/utils/rate-limit'
 import * as session from '../../../server/utils/session'
+import * as submissions from '../../../server/utils/submissions'
 import * as uploads from '../../../server/utils/uploads'
+import * as users from '../../../server/utils/users'
 import * as validation from '../../../server/utils/validation'
 import type { AuthContext, ProfileRow } from '../../../server/utils/session'
 import { fakeDb } from './fake-db'
@@ -25,6 +30,7 @@ export const RUNTIME_CONFIG = {
   rateLimitSalt: 'sal',
   storageKeyPrefix: '',
   s3Bucket: 'bucket',
+  cronSecret: 'cron-secreto',
 }
 
 /** Instala los globales de Nitro; `db` reemplaza `useDb()` con una cola de resultados. */
@@ -34,6 +40,7 @@ export function installNitro(results: unknown[] = [], overrides: Record<string, 
     ...h3,
     ...activity,
     ...auth,
+    ...cron,
     ...fileAccess,
     ...fileSignature,
     ...files,
@@ -41,7 +48,9 @@ export function installNitro(results: unknown[] = [], overrides: Record<string, 
     ...pagination,
     ...rateLimit,
     ...session,
+    ...submissions,
     ...uploads,
+    ...users,
     ...validation,
     defineEventHandler: (handler: unknown) => handler,
     useDb: () => fake.db,
@@ -120,6 +129,12 @@ export async function expectStatus(promise: Promise<unknown>, statusCode: number
   const actual = (error as { statusCode?: number }).statusCode
   if (actual !== statusCode) throw new Error(`Se esperaba ${statusCode} y llegó ${actual}: ${(error as Error).message}`)
   return error as { statusCode: number, message: string, data?: unknown }
+}
+
+/** SQL y parámetros de una expresión de drizzle (`where`, `orderBy`, `sql\`…\``) para afirmar sobre su texto. */
+export function sqlText(value: unknown): string {
+  const query = new PgDialect().sqlToQuery(value as SQL)
+  return `${query.sql} ${JSON.stringify(query.params)}`
 }
 
 export const UUID = '3f2504e0-4f89-11d3-9a0c-0305e82c3301'

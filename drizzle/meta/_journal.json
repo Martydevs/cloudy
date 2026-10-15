@@ -8,6 +8,20 @@
       "when": 1792016482996,
       "tag": "0000_hot_norrin_radd",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1792087478311,
+      "tag": "0001_condemned_warpath",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1792088220386,
+      "tag": "0002_outstanding_jackal",
+      "breakpoints": true
     }
   ]
 }

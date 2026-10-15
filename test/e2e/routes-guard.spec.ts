@@ -5,8 +5,8 @@ import { E2E_URL, ensureAccount, email, login, setProfile, signedInAs } from './
 
 await setup({ host: E2E_URL, browser: true })
 
-// /pendientes, /papelera, /usuarios y /actividad se agregan con sus historias (US3, US7, US4).
-const PRIVATE_ROUTES = ['/', '/archivos', '/archivos/ver/00000000-0000-0000-0000-000000000000', '/perfil']
+// /papelera se agrega con su historia (US7).
+const PRIVATE_ROUTES = ['/', '/archivos', '/archivos/ver/00000000-0000-0000-0000-000000000000', '/perfil', '/usuarios', '/actividad', '/pendientes']
 
 describe('US6 · protección de rutas', () => {
   it.each(PRIVATE_ROUTES)('sin sesión, %s lleva a login con redirect', async (path) => {
@@ -42,13 +42,21 @@ describe('US6 · protección de rutas', () => {
     await page.close()
   })
 
-  it('un editor en una ruta de admin ve "Acceso denegado"', async () => {
+  it('un editor en una ruta de admin ve "Acceso denegado" y las APIs de admin responden 403 (T127)', async () => {
     const page = await createPage()
     await signedInAs(page, 'editor', 'guard-editor')
-    await page.goto(`${E2E_URL}/acceso-denegado`)
-    await expect.poll(() => page.getByText('No tienes permiso para ver esta página').isVisible()).toBe(true)
+    for (const path of ['/usuarios', '/actividad']) {
+      await page.goto(`${E2E_URL}${path}`)
+      await page.waitForURL(url => url.pathname === '/acceso-denegado')
+      await expect.poll(() => page.getByText('No tienes permiso para ver esta página').isVisible()).toBe(true)
+    }
     await page.getByRole('link', { name: 'Volver al inicio' }).click()
     await page.waitForURL(url => url.pathname === '/')
+
+    const cookie = (await page.context().cookies()).map(c => `${c.name}=${c.value}`).join('; ')
+    for (const path of ['/api/users', '/api/activity']) {
+      expect((await fetch(`${E2E_URL}${path}`, { headers: { cookie } })).status).toBe(403)
+    }
     await page.close()
   })
 
