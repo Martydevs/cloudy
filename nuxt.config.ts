@@ -1,4 +1,8 @@
 import tailwindcss from '@tailwindcss/vite';
+import Sonda from 'sonda/nuxt';
+
+// Sonda solo en `bun run analyze`: los builds normales (y Vercel) no generan reportes ni publican source maps.
+const analyze = process.env.SONDA === '1';
 
 // https://nuxt.com/docs/api/configuration/nuxt-config
 export default defineNuxtConfig({
@@ -8,7 +12,12 @@ export default defineNuxtConfig({
     '@vueuse/nuxt/module',
     '@nuxt/image',
     '@nuxt/test-utils/module',
+    Sonda({ enabled: analyze, server: true, gzip: true }),
   ],
+  // Sonda mide desde los source maps; `hidden` los genera sin enlazarlos desde los bundles.
+  sourcemap: {
+    client: analyze ? 'hidden' : false,
+  },
   // Valores sobrescritos por las variables NUXT_* (ver AGENTS.md). NUXT_NEON_JWKS_URL no se usa (R17).
   runtimeConfig: {
     databaseUrl: '',

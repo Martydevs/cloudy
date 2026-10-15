@@ -25,3 +25,6 @@ logs
 
 # Test coverage
 coverage/
+
+# Sonda bundle reports (bun run analyze)
+.sonda/

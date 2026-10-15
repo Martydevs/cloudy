@@ -42,7 +42,8 @@ bun run db:migrate       # development branch · db:migrate:test · db:migrate:p
 bun run storage:setup    # bucket CORS, development · storage:setup:test · storage:setup:prod
 ```
 
-`check:bundle` lands with the performance tasks of feature 001.
+`bun run analyze` builds with [Sonda](https://sonda.dev) enabled and writes interactive bundle reports
+(client + server) to `.sonda/`. Sonda is off in normal builds; use it to check the 200 KB per-route budget.
 
 ## Project layout
 

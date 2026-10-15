@@ -70,7 +70,7 @@ Se evalúa contra la constitución **v1.0.0**, que reemplaza los gates provision
 | Principio | Exigencias clave | Pre-diseño | Post-diseño: cómo se cumple |
 |-----------|------------------|------------|-----------------------------|
 | **I. Rendimiento medible** | LCP/INP/CLS, 200 KB JS por ruta, < 2 s con 5 000 elementos, índices, sin N+1, binarios fuera del servidor, miniaturas lazy, SSR | ✅ | ✅ Detalle en la fila de abajo. |
-| | | | **Medición**: test e2e de Web Vitals con 4G emulado y `scripts/check-bundle.ts` (R18); INP manual. |
+| | | | **Medición**: test e2e de Web Vitals con 4G emulado y reportes de Sonda con `bun run analyze` (R18); INP manual. |
 | | | | **Datos**: índices por cada filtro y orden, más `pg_trgm` para búsquedas (data-model); paginación con cursor de 60 elementos; `comment_count` por subconsulta agregada, sin N+1. |
 | | | | **Archivos**: PUT/GET prefirmados (R5); miniaturas WEBP generadas en el cliente con `loading="lazy"` (R9); SSR en todas las vistas privadas. |
 | **II. Funcional y efectivo** | Historias independientes, YAGNI, Nuxt → VueUse → daisyUI → paquetes antes de código propio, dependencias nuevas justificadas, sin estados a medias | ✅ | ✅ 9 historias que se entregan por separado (spec). Mapa de VueUse en R12. Utilidades propias solo donde no existe equivalente (firmas, validadores, limitador; R3/R6/R11). Las subidas en dos fases y el cron evitan huérfanos (R5, R8). Las dos dependencias nuevas se justifican en Complexity Tracking. |
@@ -140,7 +140,7 @@ server/
 ├── routes/api/auth/[...path].ts
 └── api/     me · dashboard · realtime · folders · files · uploads · trash · comments · public/submissions · submissions · users · activity · cron
 
-scripts/     storage-setup.ts · check-bundle.ts
+scripts/     storage-setup.ts
 drizzle.config.ts                # → NUXT_DATABASE_URL
 vercel.json                      # crons
 test/
@@ -165,7 +165,7 @@ test/
 4. `@neondatabase/auth`: fijar la versión exacta en `0.6.0-beta`.
 5. `package.json`:
    - **devDependencies**: `vue-tsc`, `typescript`.
-   - **scripts**: `typecheck`, `db:generate`, `db:migrate`, `db:migrate:test`, `storage:setup`, `check:bundle`.
+   - **scripts**: `typecheck`, `db:generate`, `db:migrate`, `db:migrate:test`, `storage:setup`, `analyze`.
 6. `vitest.config.ts`: globs `test/<proyecto>/**`, `globalSetup` de e2e y umbral de cobertura del 80 % en `server/utils/**` y `shared/**`.
 
 ## Riesgos y mitigaciones

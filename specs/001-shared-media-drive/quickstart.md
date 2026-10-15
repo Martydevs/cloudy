@@ -45,7 +45,7 @@ bunx playwright-core install chromium      # navegador para e2e y medición de r
 bun run dev                                # http://localhost:3000 con .env.development
 ```
 
-`check:bundle` llega con las tareas de rendimiento.
+`bun run analyze` compila con Sonda y deja los reportes del bundle en `.sonda/`.
 
 > **Nota (T008)**: `typescript` se fija en `~5.9`. TypeScript 7 (compilador nativo) no expone `lib/tsc`, y `vue-tsc` 3 falla con `ERR_PACKAGE_PATH_NOT_EXPORTED`. Con 5.9, `bun run typecheck` corre sin errores.
 
@@ -99,7 +99,7 @@ Cada escenario indica el resultado esperado y la referencia al spec.
 
 ```bash
 bun run typecheck        # Constitución IV: sin errores de tipos
-bun run build && bun run check:bundle   # Constitución I: JS inicial ≤ 200 KB gzip por ruta
+bun run analyze          # Constitución I: revisar en .sonda/ que el JS inicial sea ≤ 200 KB gzip por ruta
 bun run test:unit        # validadores, firmas binarias, permisos, utilidades
 bun run test:nuxt        # componentes (sidebar por rol, ThemeToggle, UploadQueue, formularios)
 bun run test:e2e         # navegador real contra la rama de pruebas (.env.test) (incluye performance.spec: LCP ≤ 2.5 s, CLS ≤ 0.1 en 4G emulado)

@@ -3,6 +3,16 @@
     "Neon": {
       "type": "http",
       "url": "https://mcp.neon.tech/mcp"
+    },
+    "chrome-devtools": {
+      "command": "bunx",
+      "args": [
+        "chrome-devtools-mcp@latest",
+        "--isolated",
+        "--no-usage-statistics", 
+        "--executablePath", 
+        "C:/Users/andre.perez/AppData/Local/Chromium/Application/chrome.exe"
+      ]
     }
   }
 }
