@@ -1,10 +1,234 @@
-import { integer, pgTable, varchar } from "drizzle-orm/pg-core";
+// Esquema de Cloudy (Drizzle ORM). Ver specs/001-shared-media-drive/data-model.md.
+import { relations } from 'drizzle-orm'
+import type { AnyPgColumn } from 'drizzle-orm/pg-core'
+import {
+  bigint,
+  index,
+  integer,
+  jsonb,
+  pgEnum,
+  pgTable,
+  primaryKey,
+  text,
+  timestamp,
+  uuid,
+} from 'drizzle-orm/pg-core'
 
-// EXAMPLE OF A POSTGRES DRIZZLE TABLE DEFINITION
-// NEEDS TO BE REMOVED BEFORE ACTUAL CODE PRODUCTION OR DEV CODE, JUST FOR DEMO SO DELETE
-export const usersTable = pgTable("users", {
-  id: integer().primaryKey().generatedAlwaysAsIdentity(),
-  name: varchar({ length: 255 }).notNull(),
-  age: integer().notNull(),
-  email: varchar({ length: 255 }).notNull().unique(),
-});
+const timestamps = {
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}
+
+// ---------------------------------------------------------------- enums
+
+export const userRole = pgEnum('user_role', ['admin', 'editor'])
+export const userStatus = pgEnum('user_status', ['pending', 'active', 'disabled', 'removed'])
+export const fileCategory = pgEnum('file_category', ['image', 'audio', 'video', 'presentation', 'document'])
+export const fileOrigin = pgEnum('file_origin', ['team', 'guest'])
+export const uploadStatus = pgEnum('upload_status', ['uploading', 'ready'])
+export const submissionStatus = pgEnum('submission_status', ['pending', 'approved', 'rejected', 'expired'])
+export const activityAction = pgEnum('activity_action', [
+  'file.upload',
+  'file.rename',
+  'file.move',
+  'file.trash',
+  'file.restore',
+  'file.purge',
+  'folder.create',
+  'folder.rename',
+  'folder.move',
+  'folder.trash',
+  'folder.restore',
+  'folder.purge',
+  'trash.empty',
+  'submission.approve',
+  'submission.reject',
+  'comment.admin_delete',
+  'user.activate',
+  'user.disable',
+  'user.role_change',
+  'user.remove',
+])
+
+// ---------------------------------------------------------------- profiles
+
+export const profiles = pgTable('profiles', {
+  /** id de Neon Auth */
+  userId: text('user_id').primaryKey(),
+  /** copiado de la sesión; minúsculas */
+  email: text('email').notNull().unique(),
+  /** 1–80 caracteres */
+  name: text('name').notNull(),
+  /** null mientras `pending` */
+  role: userRole('role'),
+  status: userStatus('status').notNull().default('pending'),
+  ...timestamps,
+  approvedBy: text('approved_by').references((): AnyPgColumn => profiles.userId),
+})
+
+// ---------------------------------------------------------------- folders
+
+export const folders = pgTable('folders', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  parentId: uuid('parent_id').references((): AnyPgColumn => folders.id, { onDelete: 'cascade' }),
+  /** 1–120 car., sin / \ : * ? " < > | */
+  name: text('name').notNull(),
+  createdBy: text('created_by').notNull().references(() => profiles.userId),
+  ...timestamps,
+  deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  deletedBy: text('deleted_by').references(() => profiles.userId),
+  trashRootId: uuid('trash_root_id'),
+}, t => [
+  index('folders_parent_idx').on(t.parentId),
+  index('folders_deleted_at_idx').on(t.deletedAt),
+  index('folders_trash_root_idx').on(t.trashRootId),
+])
+
+// ---------------------------------------------------------------- guest submissions
+
+export const guestSubmissions = pgTable('guest_submissions', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  /** 1–80 car. */
+  senderName: text('sender_name').notNull(),
+  /** ≤ 500 car. */
+  note: text('note'),
+  status: submissionStatus('status').notNull().default('pending'),
+  /** hash SHA-256 de IP + sal */
+  senderKey: text('sender_key').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  reviewedBy: text('reviewed_by').references(() => profiles.userId),
+  reviewedAt: timestamp('reviewed_at', { withTimezone: true }),
+  targetFolderId: uuid('target_folder_id').references(() => folders.id, { onDelete: 'set null' }),
+  /** ≤ 300 car. */
+  rejectionReason: text('rejection_reason'),
+}, t => [
+  index('guest_submissions_status_created_idx').on(t.status, t.createdAt),
+])
+
+export const guestSubmissionFiles = pgTable('guest_submission_files', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  submissionId: uuid('submission_id').notNull().references(() => guestSubmissions.id, { onDelete: 'cascade' }),
+  originalName: text('original_name').notNull(),
+  extension: text('extension').notNull(),
+  mimeType: text('mime_type').notNull(),
+  category: fileCategory('category').notNull(),
+  sizeBytes: bigint('size_bytes', { mode: 'number' }).notNull(),
+  storageKey: text('storage_key').notNull().unique(),
+  uploadStatus: uploadStatus('upload_status').notNull().default('uploading'),
+}, t => [
+  index('guest_submission_files_submission_idx').on(t.submissionId),
+])
+
+// ---------------------------------------------------------------- files
+
+export const files = pgTable('files', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  folderId: uuid('folder_id').references(() => folders.id, { onDelete: 'cascade' }),
+  /** nombre visible con extensión, 1–200 car. */
+  name: text('name').notNull(),
+  extension: text('extension').notNull(),
+  mimeType: text('mime_type').notNull(),
+  category: fileCategory('category').notNull(),
+  /** 1 … 104 857 600 */
+  sizeBytes: bigint('size_bytes', { mode: 'number' }).notNull(),
+  storageKey: text('storage_key').notNull().unique(),
+  thumbKey: text('thumb_key'),
+  uploadStatus: uploadStatus('upload_status').notNull().default('uploading'),
+  origin: fileOrigin('origin').notNull(),
+  uploadedBy: text('uploaded_by').references(() => profiles.userId),
+  /** requerido si origin='guest' */
+  guestName: text('guest_name'),
+  submissionId: uuid('submission_id').references(() => guestSubmissions.id, { onDelete: 'set null' }),
+  ...timestamps,
+  deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  deletedBy: text('deleted_by').references(() => profiles.userId),
+  trashRootId: uuid('trash_root_id'),
+}, t => [
+  index('files_folder_created_idx').on(t.folderId, t.createdAt.desc()),
+  index('files_category_idx').on(t.category),
+  index('files_deleted_at_idx').on(t.deletedAt),
+  index('files_trash_root_idx').on(t.trashRootId),
+  index('files_upload_status_created_idx').on(t.uploadStatus, t.createdAt),
+])
+
+// ---------------------------------------------------------------- comments
+
+export const comments = pgTable('comments', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  fileId: uuid('file_id').notNull().references(() => files.id, { onDelete: 'cascade' }),
+  authorId: text('author_id').notNull().references(() => profiles.userId),
+  /** 1–2 000 car. tras trim */
+  body: text('body').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  editedAt: timestamp('edited_at', { withTimezone: true }),
+}, t => [
+  index('comments_file_created_idx').on(t.fileId, t.createdAt),
+])
+
+// ---------------------------------------------------------------- activity log
+
+export const activityLog = pgTable('activity_log', {
+  id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
+  /** null = sistema (cron) */
+  actorId: text('actor_id').references(() => profiles.userId),
+  actorLabel: text('actor_label').notNull(),
+  action: activityAction('action').notNull(),
+  targetType: text('target_type').notNull(),
+  targetId: text('target_id'),
+  targetLabel: text('target_label').notNull(),
+  meta: jsonb('meta').$type<Record<string, unknown>>(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, t => [
+  index('activity_log_created_idx').on(t.createdAt.desc()),
+  index('activity_log_actor_idx').on(t.actorId),
+])
+
+// ---------------------------------------------------------------- rate limits
+
+export const rateLimits = pgTable('rate_limits', {
+  key: text('key').notNull(),
+  windowStart: timestamp('window_start', { withTimezone: true }).notNull(),
+  count: integer('count').notNull().default(0),
+}, t => [
+  primaryKey({ columns: [t.key, t.windowStart] }),
+])
+
+// ---------------------------------------------------------------- relations
+
+export const profilesRelations = relations(profiles, ({ many }) => ({
+  folders: many(folders),
+  files: many(files),
+  comments: many(comments),
+}))
+
+export const foldersRelations = relations(folders, ({ one, many }) => ({
+  parent: one(folders, { fields: [folders.parentId], references: [folders.id], relationName: 'folder_parent' }),
+  children: many(folders, { relationName: 'folder_parent' }),
+  files: many(files),
+  creator: one(profiles, { fields: [folders.createdBy], references: [profiles.userId] }),
+}))
+
+export const filesRelations = relations(files, ({ one, many }) => ({
+  folder: one(folders, { fields: [files.folderId], references: [folders.id] }),
+  uploader: one(profiles, { fields: [files.uploadedBy], references: [profiles.userId] }),
+  submission: one(guestSubmissions, { fields: [files.submissionId], references: [guestSubmissions.id] }),
+  comments: many(comments),
+}))
+
+export const guestSubmissionsRelations = relations(guestSubmissions, ({ many }) => ({
+  files: many(guestSubmissionFiles),
+  approvedFiles: many(files),
+}))
+
+export const guestSubmissionFilesRelations = relations(guestSubmissionFiles, ({ one }) => ({
+  submission: one(guestSubmissions, { fields: [guestSubmissionFiles.submissionId], references: [guestSubmissions.id] }),
+}))
+
+export const commentsRelations = relations(comments, ({ one }) => ({
+  file: one(files, { fields: [comments.fileId], references: [files.id] }),
+  author: one(profiles, { fields: [comments.authorId], references: [profiles.userId] }),
+}))
+
+export const activityLogRelations = relations(activityLog, ({ one }) => ({
+  actor: one(profiles, { fields: [activityLog.actorId], references: [profiles.userId] }),
+}))
