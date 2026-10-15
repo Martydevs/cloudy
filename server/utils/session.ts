@@ -31,9 +31,8 @@ export function toProfile(row: ProfileRow): Profile {
 }
 
 /** Usuario de la sesión de Neon Auth, o `null` si no hay sesión válida. */
-export async function getAuthUser(_event: H3Event): Promise<AuthUser | null> {
-  const { data } = await useAuthServer().getSession()
-  const user = data?.user
+export async function getAuthUser(event: H3Event): Promise<AuthUser | null> {
+  const user = (await fetchSession(event))?.user
   if (!user) return null
   return { id: user.id, email: user.email.toLowerCase(), name: user.name || user.email }
 }

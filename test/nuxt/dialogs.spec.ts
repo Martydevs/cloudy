@@ -141,18 +141,19 @@ describe('ItemDialogs', () => {
 describe('DropZone', () => {
   it('es un botón accesible con los formatos descritos y emite los archivos elegidos', async () => {
     const wrapper = await mountSuspended(DropZone)
-    const zone = wrapper.get('[role="button"]')
-    // El nombre accesible es el texto visible (Lighthouse: label-content-name-mismatch).
-    expect(wrapper.get(`#${zone.attributes('aria-labelledby')}`).text()).toContain('elige archivos')
-    expect(wrapper.get(`#${zone.attributes('aria-describedby')}`).text()).toContain('Máximo 100 MB')
+    // Un botón real cuyo nombre es solo su texto visible (Lighthouse: label-content-name-mismatch).
+    const button = wrapper.get('button[type="button"]')
+    expect(button.text()).toContain('elige archivos')
+    expect(button.text()).not.toContain('Máximo 100 MB')
+    expect(wrapper.get(`#${button.attributes('aria-describedby')}`).text()).toContain('Máximo 100 MB')
 
     const input = wrapper.get('input[type="file"]')
     expect(input.attributes('accept')).toContain('.mp3')
     const click = vi.spyOn(input.element as HTMLInputElement, 'click')
-    await zone.trigger('keydown', { key: 'Enter' })
-    await zone.trigger('keydown', { key: ' ' })
-    await zone.trigger('click')
-    expect(click).toHaveBeenCalledTimes(3)
+    await button.trigger('click')
+    // Toda la zona (no solo el botón) abre el selector al hacer clic.
+    await wrapper.get('p').trigger('click')
+    expect(click).toHaveBeenCalledTimes(2)
 
     const chosen = new File(['x'], 'foto.jpg', { type: 'image/jpeg' })
     Object.defineProperty(input.element, 'files', { value: [chosen], configurable: true })
