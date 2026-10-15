@@ -1,4 +1,5 @@
 // Única definición de las secciones del dashboard; la barra lateral la filtra por rol.
+// «Mi perfil» (/perfil) no es una sección: se llega desde el menú de cuenta al pie de la barra lateral.
 import type { Role } from '#shared/permissions'
 
 export interface NavItem {
@@ -17,7 +18,6 @@ export const navItems: NavItem[] = [
   { to: '/papelera', label: 'Papelera', icon: 'lucide:trash-2', roles: TEAM },
   { to: '/usuarios', label: 'Usuarios', icon: 'lucide:users', roles: ['admin'] },
   { to: '/actividad', label: 'Actividad', icon: 'lucide:activity', roles: ['admin'] },
-  { to: '/perfil', label: 'Mi perfil', icon: 'lucide:user', roles: TEAM },
 ]
 
 /** `/` solo es activo en el inicio; el resto también en sus subrutas (p. ej. /archivos/:id). */

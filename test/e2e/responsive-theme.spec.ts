@@ -70,19 +70,23 @@ describe('US5 · bugs visuales del shell', () => {
     return box.scrollHeight - box.clientHeight
   })
 
-  it('en escritorio la barra lateral no se desplaza, el avatar llena su botón y los filtros no muestran barras', async () => {
+  it('en escritorio la barra lateral no se desplaza, la fila de cuenta mide ≥ 44 px y los filtros no muestran barras', async () => {
     const page = await createPage(undefined, { viewport: viewports.desktop })
     await signedInAs(page, 'editor', 'shell-bugs-desktop')
 
+    // Expandida: la cuenta es una fila (avatar + nombre/correo) al pie, con alto táctil.
     const m = await metrics(page)
     expect(m.sideOverflow).toBeLessThanOrEqual(0)
     expect(m.asideHeight).toBe(m.viewport)
-    expect(Math.round(m.avatar.width)).toBe(Math.round(m.button.width))
-    expect(Math.round(m.avatar.height)).toBe(Math.round(m.button.height))
+    expect(m.button.height).toBeGreaterThanOrEqual(44)
 
-    // Contraída tampoco (el botón Contraer y el padding sumaban más que la pantalla).
+    // Contraída tampoco se desplaza y el avatar llena su botón (el hover no deja un aro).
     await page.getByRole('button', { name: 'Contraer barra lateral' }).click()
-    expect((await metrics(page)).sideOverflow).toBeLessThanOrEqual(0)
+    const c = await metrics(page)
+    expect(c.sideOverflow).toBeLessThanOrEqual(0)
+    expect(c.asideHeight).toBe(c.viewport)
+    expect(Math.round(c.avatar.width)).toBe(Math.round(c.button.width))
+    expect(Math.round(c.avatar.height)).toBe(Math.round(c.button.height))
 
     await page.goto(`${E2E_URL}/archivos`)
     await waitForHydration(page)
@@ -97,10 +101,11 @@ describe('US5 · bugs visuales del shell', () => {
     await page.getByRole('button', { name: 'Abrir menú' }).click()
     await expect.poll(() => page.getByRole('navigation', { name: 'Secciones' }).isVisible()).toBe(true)
 
+    // El cajón siempre va expandido: la fila de cuenta queda al pie del panel.
     const m = await metrics(page)
     expect(m.sideOverflow).toBeLessThanOrEqual(0)
     expect(m.asideHeight).toBe(m.viewport)
-    expect(Math.round(m.avatar.width)).toBe(Math.round(m.button.width))
+    expect(m.button.height).toBeGreaterThanOrEqual(44)
     await page.keyboard.press('Escape')
 
     await page.goto(`${E2E_URL}/archivos`)

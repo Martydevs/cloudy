@@ -353,7 +353,7 @@ describe('shell', () => {
     wrapper.unmount()
   })
 
-  it('topbar: búsqueda, atajo "/", menú de usuario y cerrar sesión', async () => {
+  it('topbar: búsqueda, atajo "/", menú y Subir; la cuenta y el tema ya no viven aquí', async () => {
     const wrapper = await mountSuspended(AppTopbar, { attachTo: document.body, route: '/archivos?q=coro' })
     const search = wrapper.get('input[aria-label="Buscar archivos"]')
     expect((search.element as HTMLInputElement).value).toBe('coro')
@@ -362,6 +362,7 @@ describe('shell', () => {
     expect(document.activeElement).toBe(search.element)
     // Mientras se escribe en un campo, "/" no roba el foco.
     search.element.dispatchEvent(new KeyboardEvent('keydown', { key: '/', bubbles: true }))
+    expect(wrapper.get('kbd').text()).toBe('/')
 
     await search.setValue('  domingo ')
     await wrapper.get('form[role="search"]').trigger('submit')
@@ -375,16 +376,9 @@ describe('shell', () => {
     expect(wrapper.emitted('toggleMenu')).toHaveLength(1)
     expect(wrapper.emitted('upload')).toHaveLength(1)
 
-    const menuButton = wrapper.get('button[aria-label="Menú de usuario"]')
-    expect(menuButton.text()).toBe('A')
-    await menuButton.trigger('click')
-    expect(wrapper.get('[role="menu"]').text()).toContain('ana@iglesia.org')
-    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
-    await nextTick()
-    expect(wrapper.find('[role="menu"]').exists()).toBe(false)
-    await menuButton.trigger('click')
-    await wrapper.findAll('[role="menuitem"]').find(i => i.text() === 'Cerrar sesión')!.trigger('click')
-    expect(client.logout).toHaveBeenCalled()
+    // El menú de usuario y el tema se movieron al pie de la barra lateral.
+    expect(wrapper.find('button[aria-label="Menú de usuario"]').exists()).toBe(false)
+    expect(wrapper.find('button[aria-label^="Cambiar a tema"]').exists()).toBe(false)
     wrapper.unmount()
   })
 })
