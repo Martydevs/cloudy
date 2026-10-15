@@ -19,7 +19,7 @@
     "db:migrate": "drizzle-kit migrate",
     "db:migrate:test": "APP_ENV=test drizzle-kit migrate",
     "storage:setup": "bun scripts/storage-setup.ts",
-    "check:bundle": "bun scripts/check-bundle.ts",
+    "analyze": "SONDA=1 nuxt build",
     "db:migrate:prod": "APP_ENV=production drizzle-kit migrate",
     "storage:setup:test": "APP_ENV=test bun scripts/storage-setup.ts",
     "storage:setup:prod": "APP_ENV=production bun scripts/storage-setup.ts"
@@ -51,6 +51,7 @@
     "drizzle-kit": "^0.31.11",
     "happy-dom": "^21.0.1",
     "playwright-core": "^1.64.1",
+    "sonda": "^0.14.0",
     "typescript": "~5.9.3",
     "vitest": "^5.0.4",
     "vue-tsc": "^3.3.13"

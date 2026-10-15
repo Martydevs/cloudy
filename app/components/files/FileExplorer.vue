@@ -154,7 +154,8 @@ const TYPE_FILTERS: { value: FileCategory | undefined, label: string }[] = [
     </div>
 
     <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-      <div class="-mx-4 overflow-x-auto px-4 lg:mx-0 lg:px-0">
+      <!-- En móvil se desliza con el dedo sin barra visible; `py-1` deja sitio al anillo de foco. -->
+      <div class="-mx-4 overflow-x-auto overflow-y-hidden px-4 py-1 [scrollbar-width:none] lg:mx-0 lg:overflow-visible lg:px-0">
         <div class="join" role="group" aria-label="Filtrar por tipo">
           <button
             v-for="filter in TYPE_FILTERS"

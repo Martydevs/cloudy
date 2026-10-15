@@ -1,0 +1,1 @@
+ALTER TABLE "guest_submissions" ADD COLUMN "completed_at" timestamp with time zone;

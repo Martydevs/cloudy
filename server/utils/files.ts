@@ -160,14 +160,17 @@ export async function assertNoCycle(folderId: string, newParentId: string | null
   }
 }
 
-/** Envíos de invitados pendientes cuyos archivos ya terminaron de subir. */
-export function readyPendingSubmissionsSql(): SQL {
+/**
+ * Envíos de invitados pendientes que ya cerraron su subida (`completed_at`, T120a): así el aviso
+ * en vivo no depende de cuánto tardó la subida.
+ */
+export function readyPendingSubmissionsSql(since?: Date | null): SQL {
   return sql`
-    SELECT s.id, s.sender_name, s.created_at, count(f.id)::int AS file_count
+    SELECT s.id, s.sender_name, s.created_at, s.completed_at, count(f.id)::int AS file_count
     FROM guest_submissions s
-    JOIN guest_submission_files f ON f.submission_id = s.id
-    WHERE s.status = 'pending'
+    JOIN guest_submission_files f ON f.submission_id = s.id AND f.upload_status = 'ready'
+    WHERE s.status = 'pending' AND s.completed_at IS NOT NULL
+    ${since ? sql`AND s.completed_at > ${since.toISOString()}::timestamptz` : sql``}
     GROUP BY s.id
-    HAVING bool_and(f.upload_status = 'ready')
   `
 }

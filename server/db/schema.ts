@@ -64,7 +64,10 @@ export const profiles = pgTable('profiles', {
   status: userStatus('status').notNull().default('pending'),
   ...timestamps,
   approvedBy: text('approved_by').references((): AnyPgColumn => profiles.userId),
-})
+}, t => [
+  // Lista de usuarios (pendientes primero, recientes primero) y conteo de pendientes del pulso.
+  index('profiles_status_created_idx').on(t.status, t.createdAt),
+])
 
 // ---------------------------------------------------------------- folders
 
@@ -96,6 +99,8 @@ export const guestSubmissions = pgTable('guest_submissions', {
   /** hash SHA-256 de IP + sal */
   senderKey: text('sender_key').notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  /** Momento en que el invitado cerró la subida; el aviso en vivo se basa en esto, no en `created_at`. */
+  completedAt: timestamp('completed_at', { withTimezone: true }),
   reviewedBy: text('reviewed_by').references(() => profiles.userId),
   reviewedAt: timestamp('reviewed_at', { withTimezone: true }),
   targetFolderId: uuid('target_folder_id').references(() => folders.id, { onDelete: 'set null' }),

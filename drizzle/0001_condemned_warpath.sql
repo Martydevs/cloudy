@@ -1,0 +1,1 @@
+CREATE INDEX "profiles_status_created_idx" ON "profiles" USING btree ("status","created_at");

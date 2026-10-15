@@ -37,10 +37,12 @@ Convenciones: ids `uuid` (`defaultRandom()`), tiempos `timestamptz` con `default
 **Reglas**
 - Primer perfil del sistema ⇒ `status='active', role='admin'` (FR-002) — decidido en una sola sentencia `INSERT … SELECT CASE WHEN NOT EXISTS (SELECT 1 FROM profiles) …`.
 - Acceso al área privada solo con `status='active'` y `role IS NOT NULL` (FR-005).
-- Invariante: `COUNT(*) WHERE role='admin' AND status='active' ≥ 1` (FR-022) — toda mutación de rol/estado usa `UPDATE … WHERE NOT (target es el último admin activo)`; si afecta 0 filas ⇒ 409.
+- Invariante: `COUNT(*) WHERE role='admin' AND status='active' ≥ 1` (FR-022) — toda mutación de rol/estado usa `UPDATE … WHERE NOT (target es el último admin activo)`; si afecta 0 filas ⇒ 409. Va precedida de `pg_advisory_xact_lock` en el mismo lote (`server/utils/users.ts`) para que dos admins no se quiten el rol a la vez.
 - `removed`: se anonimiza `name` → "Usuario eliminado", el email se conserva para bloquear re-entrada.
 
 **Transiciones**: `pending → active` (admin, asigna rol) · `active ⇄ disabled` · `pending|active|disabled → removed` (terminal) · `role: admin ⇄ editor` solo si `active`.
+
+**Índices**: `(status, created_at)` (lista de usuarios con pendientes primero y conteo del pulso; migración 0001).
 
 ---
 
@@ -102,6 +104,7 @@ Convenciones: ids `uuid` (`defaultRandom()`), tiempos `timestamptz` con `default
 | `status` | `submission_status` not null default `pending` | |
 | `sender_key` | text not null | hash SHA-256 de IP + sal (rate limit; no se guarda la IP) |
 | `created_at` | timestamptz | |
+| `completed_at` | timestamptz null | cuando el invitado cerró la subida (`complete`); el aviso en vivo y la cola usan esto, no `created_at` (migración 0002) |
 | `reviewed_by` | text null → `profiles.user_id` | |
 | `reviewed_at` | timestamptz null | |
 | `target_folder_id` | uuid null → `folders.id` | al aprobar |

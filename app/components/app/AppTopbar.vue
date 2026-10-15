@@ -71,13 +71,14 @@ const initials = computed(() => (profile.value?.name ?? '?').trim().slice(0, 1).
     <div ref="menuRoot" class="dropdown dropdown-end" :class="{ 'dropdown-open': menuOpen }">
       <button
         type="button"
-        class="btn btn-ghost btn-circle avatar avatar-placeholder"
+        class="btn btn-ghost btn-circle avatar avatar-placeholder border-0 p-0"
         aria-label="Menú de usuario"
         aria-haspopup="menu"
         :aria-expanded="menuOpen"
         @click="menuOpen = !menuOpen"
       >
-        <span class="w-10 rounded-full bg-neutral text-neutral-content">{{ initials }}</span>
+        <!-- El círculo llena el botón entero (45 px con el tema): el hover no deja un aro. -->
+        <span class="inline-flex size-full items-center justify-center rounded-full bg-neutral text-neutral-content">{{ initials }}</span>
       </button>
       <ul v-if="menuOpen" role="menu" class="menu dropdown-content z-40 mt-2 w-60 rounded-box border border-base-300 bg-base-100 p-2 shadow-lg">
         <li v-if="profile" role="none" class="menu-title">

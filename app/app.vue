@@ -5,7 +5,11 @@ const { options, isRevealed, accept, cancel } = useConfirm()
 // El SSR pinta `data-theme` desde la cookie: no hay parpadeo (FR-043).
 useHead({
   htmlAttrs: { 'data-theme': theme },
-  meta: [{ name: 'theme-color', content: computed(() => theme.value === 'cloudy' ? '#0a0a0a' : '#fcfbf9') }],
+  meta: [
+    { name: 'theme-color', content: computed(() => theme.value === 'cloudy' ? '#0a0a0a' : '#fcfbf9') },
+    // Lighthouse SEO: la descripción vale para la página pública /enviar; el resto es privado.
+    { name: 'description', content: 'Cloudy: el disco multimedia del equipo de producción. Sube, organiza y revisa fotos, audio, video y presentaciones.' },
+  ],
 })
 </script>
 

@@ -1,5 +1,6 @@
 <script setup lang="ts">
-const props = defineProps<{ collapsed: boolean, pendingCount: number }>()
+// `badges`: contador por ruta (`item.to`), p. ej. envíos pendientes en /pendientes y cuentas por aprobar en /usuarios.
+const props = defineProps<{ collapsed: boolean, badges?: Partial<Record<string, number>> }>()
 const emit = defineEmits<{ navigate: [], toggleCollapse: [] }>()
 
 const route = useRoute()
@@ -15,15 +16,16 @@ const items = computed(() => {
 </script>
 
 <template>
+  <!-- Alto fijo al viewport y sin scroll propio: solo el `nav` se desplaza si la lista crece. -->
   <aside
-    class="flex min-h-full flex-col gap-2 border-r border-base-300 bg-base-100 py-3 transition-[width]"
+    class="flex h-full min-h-dvh flex-col gap-2 overflow-hidden border-r border-base-300 bg-base-100 py-3 transition-[width]"
     :class="props.collapsed ? 'w-20 px-2' : 'w-64 px-3'"
   >
-    <div class="flex h-12 items-center" :class="props.collapsed ? 'justify-center' : 'px-3'">
+    <div class="flex h-12 shrink-0 items-center" :class="props.collapsed ? 'justify-center' : 'px-3'">
       <AppLogo :compact="props.collapsed" />
     </div>
 
-    <nav aria-label="Secciones" class="flex-1">
+    <nav aria-label="Secciones" class="min-h-0 flex-1 overflow-y-auto">
       <ul class="menu w-full gap-1 p-0">
         <li
           v-for="item in items"
@@ -42,16 +44,16 @@ const items = computed(() => {
             <span class="relative">
               <Icon :name="item.icon" class="size-5" aria-hidden="true" />
               <span
-                v-if="props.collapsed && item.to === '/pendientes' && props.pendingCount > 0"
+                v-if="props.collapsed && (props.badges?.[item.to] ?? 0) > 0"
                 class="badge badge-primary badge-xs absolute -right-2 -top-2"
-              >{{ props.pendingCount }}</span>
+              >{{ props.badges![item.to] }}</span>
             </span>
             <template v-if="!props.collapsed">
               <span class="nav-label flex-1">{{ item.label }}</span>
               <span
-                v-if="item.to === '/pendientes' && props.pendingCount > 0"
+                v-if="(props.badges?.[item.to] ?? 0) > 0"
                 class="badge badge-primary"
-              >{{ props.pendingCount }}</span>
+              >{{ props.badges![item.to] }}</span>
             </template>
           </NuxtLink>
         </li>

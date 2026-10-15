@@ -13,18 +13,7 @@ watch(upload.version, () => refresh())
 const { pendingCount } = usePulse()
 const pending = computed(() => Math.max(pendingCount.value, data.value?.pendingCount ?? 0))
 
-const toast = useToast()
-const { copy, isSupported } = useClipboard()
-async function copyGuestLink() {
-  const link = `${window.location.origin}/enviar`
-  if (isSupported.value) {
-    await copy(link)
-    toast.success('Enlace para invitados copiado')
-  }
-  else {
-    toast.info(`Comparte este enlace: ${link}`)
-  }
-}
+const { copyGuestLink } = useGuestLink()
 
 const firstName = computed(() => profile.value?.name.split(' ')[0] ?? '')
 </script>

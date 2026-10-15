@@ -49,6 +49,68 @@ describe('US5 · dashboard responsivo', () => {
   })
 })
 
+// Regresiones de la prueba humana del MVP (T110a–T110d).
+describe('US5 · bugs visuales del shell', () => {
+  const metrics = (page: Awaited<ReturnType<typeof createPage>>) => page.evaluate(() => {
+    const side = document.querySelector('.drawer-side')!
+    const aside = side.querySelector('aside')!
+    const button = document.querySelector<HTMLElement>('button[aria-label="Menú de usuario"]')!
+    const avatar = button.querySelector('span')!
+    return {
+      sideOverflow: side.scrollHeight - side.clientHeight,
+      asideHeight: Math.round(aside.getBoundingClientRect().height),
+      viewport: window.innerHeight,
+      button: button.getBoundingClientRect(),
+      avatar: avatar.getBoundingClientRect(),
+    }
+  })
+
+  const filtersOverflow = (page: Awaited<ReturnType<typeof createPage>>) => page.evaluate(() => {
+    const box = document.querySelector('[aria-label="Filtrar por tipo"]')!.parentElement!
+    return box.scrollHeight - box.clientHeight
+  })
+
+  it('en escritorio la barra lateral no se desplaza, el avatar llena su botón y los filtros no muestran barras', async () => {
+    const page = await createPage(undefined, { viewport: viewports.desktop })
+    await signedInAs(page, 'editor', 'shell-bugs-desktop')
+
+    const m = await metrics(page)
+    expect(m.sideOverflow).toBeLessThanOrEqual(0)
+    expect(m.asideHeight).toBe(m.viewport)
+    expect(Math.round(m.avatar.width)).toBe(Math.round(m.button.width))
+    expect(Math.round(m.avatar.height)).toBe(Math.round(m.button.height))
+
+    // Contraída tampoco (el botón Contraer y el padding sumaban más que la pantalla).
+    await page.getByRole('button', { name: 'Contraer barra lateral' }).click()
+    expect((await metrics(page)).sideOverflow).toBeLessThanOrEqual(0)
+
+    await page.goto(`${E2E_URL}/archivos`)
+    await waitForHydration(page)
+    await page.getByRole('button', { name: 'Imágenes' }).click()
+    await expect.poll(() => filtersOverflow(page)).toBeLessThanOrEqual(0)
+    await page.close()
+  })
+
+  it('a 360 px el panel abierto no se desplaza y los filtros no muestran barras', async () => {
+    const page = await createPage(undefined, { viewport: viewports.phone })
+    await signedInAs(page, 'editor', 'shell-bugs-phone')
+    await page.getByRole('button', { name: 'Abrir menú' }).click()
+    await expect.poll(() => page.getByRole('navigation', { name: 'Secciones' }).isVisible()).toBe(true)
+
+    const m = await metrics(page)
+    expect(m.sideOverflow).toBeLessThanOrEqual(0)
+    expect(m.asideHeight).toBe(m.viewport)
+    expect(Math.round(m.avatar.width)).toBe(Math.round(m.button.width))
+    await page.keyboard.press('Escape')
+
+    await page.goto(`${E2E_URL}/archivos`)
+    await waitForHydration(page)
+    await page.getByRole('button', { name: 'Imágenes' }).click()
+    await expect.poll(() => filtersOverflow(page)).toBeLessThanOrEqual(0)
+    await page.close()
+  })
+})
+
 describe('US9 · tema', () => {
   it('la primera visita es oscura aunque el sistema prefiera claro', async () => {
     const page = await createPage(undefined, { colorScheme: 'light' })

@@ -21,6 +21,9 @@ const styles: Record<ToastType, { alert: string, icon: string }> = {
     >
       <Icon :name="styles[toast.type].icon" class="size-5 shrink-0" aria-hidden="true" />
       <span class="break-words">{{ toast.message }}</span>
+      <NuxtLink v-if="toast.action" :to="toast.action.to" class="btn btn-ghost" @click="dismiss(toast.id)">
+        {{ toast.action.label }}
+      </NuxtLink>
       <button type="button" class="btn btn-ghost btn-square" aria-label="Cerrar aviso" @click="dismiss(toast.id)">
         <Icon name="lucide:x" class="size-4" aria-hidden="true" />
       </button>

@@ -263,7 +263,7 @@ Regla del proyecto: **antes de escribir una utilidad reactiva, se busca su equiv
   - **Condiciones**: Chromium de `playwright-core` con emulación de un móvil de 360×740 y red 4G vía CDP (`Network.emulateNetworkConditions`: 9 Mbps de bajada, 1.5 Mbps de subida, 170 ms de RTT) y CPU ×4.
   - **Medición**: LCP y CLS con `PerformanceObserver` dentro de `page.evaluate`.
   - **Criterio**: falla si LCP > 2.5 s o CLS > 0.1 en Inicio, Archivos (carpeta con 200 elementos) y `/enviar`.
-- **Presupuesto de JS por ruta**: `nuxi analyze`, incluido en Nuxt, más un script de verificación `scripts/check-bundle.ts` que suma los chunks iniciales de cada ruta desde el manifiesto del build y falla por encima de 200 KB gzip.
+- **Presupuesto de JS por ruta**: Sonda (dependencia de desarrollo, módulo `sonda/nuxt`) con `bun run analyze`: genera reportes interactivos en `.sonda/` con el tamaño gzip de cada chunk tras tree-shaking, a partir de source maps. Solo se activa con `SONDA=1`, así los builds normales y de Vercel no publican source maps ni generan reportes.
 - **INP**: se verifica manualmente con Chrome DevTools (quickstart §4), porque en CI no se puede medir de forma fiable sin interacción real.
 
 Con esto se resuelve el `TODO(PERF_BUDGET_TOOLING)` de la constitución, excepto el INP, que sigue siendo manual.

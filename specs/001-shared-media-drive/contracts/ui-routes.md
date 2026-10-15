@@ -52,7 +52,7 @@ Tras iniciar sesión se navega a `redirect` si es una ruta interna válida (empi
 | Componente | Props | Emite | Notas |
 |------------|-------|-------|-------|
 | `ThemeToggle` | — | — | Cookie `cloudy-theme`; `aria-label="Cambiar a tema claro/oscuro"`, `aria-pressed` |
-| `AppSidebar` | `collapsed: boolean`, `pendingCount: number` | `navigate` | roles desde `useMe()` |
+| `AppSidebar` | `collapsed: boolean`, `badges?: Partial<Record<string, number>>` (contador por ruta: `/pendientes`, `/usuarios`) | `navigate`, `toggleCollapse` | roles desde `useMe()` |
 | `UploadDialog` / `UploadQueue` | `folderId: string \| null`, `mode: 'team' \| 'guest'` | `uploaded(FileItem[])` | `useDropZone` + `useFileDialog`; progreso por archivo; reintento; validación previa (tipo, 100 MB) |
 | `FileGrid` / `FileList` | `items`, `view: 'grid' \| 'list'` | `open`, `rename`, `move`, `trash` | miniaturas lazy; contador de comentarios |
 | `FilePreview` | `file: FileItem` | — | imagen / `<audio>` / `<video>` (`useMediaControls`) / PDF en `<iframe>`; otros ⇒ ícono + descargar |

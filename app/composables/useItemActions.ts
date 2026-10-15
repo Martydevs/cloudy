@@ -1,6 +1,5 @@
 // Acciones sobre archivos y carpetas compartidas por el explorador y el detalle:
 // crear carpeta, renombrar, mover y enviar a la papelera, con confirmación y avisos (Constitución VI).
-import { FetchError } from 'ofetch'
 import type { FileItem, FolderItem } from '#shared/types/api'
 
 export type ItemKind = 'file' | 'folder'
@@ -12,15 +11,6 @@ export type ItemDialog =
   | { type: 'move', kind: ItemKind, item: Item }
 
 export type ItemChange = 'created' | 'renamed' | 'moved' | 'trashed'
-
-function serverMessage(error: unknown, fallback: string): string {
-  if (error instanceof FetchError) {
-    const data = error.data as { message?: string, data?: { errors?: Record<string, string> } } | undefined
-    const fieldError = data?.data?.errors && Object.values(data.data.errors)[0]
-    return fieldError ?? data?.message ?? fallback
-  }
-  return fallback
-}
 
 /** Nombre sin la extensión (el campo de renombrar no deja cambiarla). */
 export function baseName(item: Item, kind: ItemKind): string {

@@ -8,9 +8,18 @@ import { ensureProfile, getAuthUser, requireActive, requireRole, requireSession,
 import { paramId, queryValid, readValid, unwrap } from '../../server/utils/validation'
 import { activityInsert } from '../../server/utils/activity'
 import { hitRateLimit } from '../../server/utils/rate-limit'
-import { proxyConfig, useAuthServer } from '../../server/utils/auth'
+import { fetchSession, proxyConfig } from '../../server/utils/auth'
 import { object, str } from '../../shared/validation/core'
 import { fakeDb } from './helpers/fake-db'
+
+const proxy = vi.hoisted(() => ({ handleAuthProxyRequest: vi.fn() }))
+
+vi.mock('@neondatabase/auth/server', async (importOriginal) => {
+  const original = await importOriginal<typeof import('@neondatabase/auth/server')>()
+  return { ...original, handleAuthProxyRequest: proxy.handleAuthProxyRequest }
+})
+
+const RUNTIME = { neonAuthBaseUrl: 'https://auth.test/neondb/auth', neonAuthCookieSecret: 'x'.repeat(32) }
 
 const created = new Date('2026-10-14T10:00:00.000Z')
 const profile = (changes: Partial<ProfileRow> = {}): ProfileRow => ({
@@ -25,11 +34,11 @@ const profile = (changes: Partial<ProfileRow> = {}): ProfileRow => ({
   ...changes,
 })
 
-function event({ auth, url = '/api/x', body, params }: { auth?: AuthContext | null, url?: string, body?: string, params?: Record<string, string> } = {}): H3Event {
+function event({ auth, url = '/api/x', body, params, headers = {} }: { auth?: AuthContext | null, url?: string, body?: string, params?: Record<string, string>, headers?: Record<string, string> } = {}): H3Event {
   const req = new IncomingMessage(new Socket())
   req.method = body ? 'POST' : 'GET'
   req.url = url
-  req.headers = { host: 'cloudy.test', ...(body ? { 'content-type': 'application/json' } : {}) }
+  req.headers = { host: 'cloudy.test', ...(body ? { 'content-type': 'application/json' } : {}), ...headers }
   // h3 lee `req.body` cuando ya viene resuelto (como en algunos runtimes).
   if (body) Object.assign(req, { body })
   const e = createEvent(req, new ServerResponse(req))
@@ -83,12 +92,39 @@ describe('guards de sesión', () => {
 
 describe('getAuthUser y ensureProfile', () => {
   it('getAuthUser normaliza el usuario o devuelve null', async () => {
-    const getSession = vi.fn()
-      .mockResolvedValueOnce({ data: { user: { id: 'u1', email: 'ANA@Iglesia.org', name: '' } }, error: null })
-      .mockResolvedValueOnce({ data: null, error: { status: 401 } })
-    vi.stubGlobal('useAuthServer', () => ({ getSession }))
-    expect(await getAuthUser(event())).toEqual({ id: 'u1', email: 'ana@iglesia.org', name: 'ANA@Iglesia.org' })
+    vi.stubGlobal('useRuntimeConfig', () => RUNTIME)
+    vi.stubGlobal('fetchSession', fetchSession)
+    const cookie = '__Secure-neon-auth.session_token=abc; otra=1'
+    proxy.handleAuthProxyRequest
+      .mockResolvedValueOnce(Response.json({ user: { id: 'u1', email: 'ANA@Iglesia.org', name: '' }, session: {} }))
+      .mockResolvedValueOnce(new Response('{"message":"Unauthorized"}', { status: 401 }))
+    expect(await getAuthUser(event({ headers: { cookie } }))).toEqual({ id: 'u1', email: 'ana@iglesia.org', name: 'ANA@Iglesia.org' })
+    expect(await getAuthUser(event({ headers: { cookie } }))).toBeNull()
+    // Sin cookie de sesión no se consulta a Neon Auth.
     expect(await getAuthUser(event())).toBeNull()
+    expect(proxy.handleAuthProxyRequest).toHaveBeenCalledTimes(2)
+  })
+
+  it('fetchSession pasa por el proxy de get-session (caché de 5 min) y reenvía los Set-Cookie re-firmados', async () => {
+    vi.stubGlobal('useRuntimeConfig', () => RUNTIME)
+    proxy.handleAuthProxyRequest.mockReset()
+    const headers = new Headers({ 'content-type': 'application/json' })
+    headers.append('set-cookie', '__Secure-neon-auth.local.session_data=jwt; Path=/; Max-Age=300')
+    proxy.handleAuthProxyRequest.mockResolvedValueOnce(new Response('{"user":{"id":"u1","email":"a@x.org"}}', { headers }))
+
+    const e = event({ headers: { cookie: '__Secure-neon-auth.session_token=abc', 'user-agent': 'UA' } })
+    expect(await fetchSession(e)).toEqual({ user: { id: 'u1', email: 'a@x.org' } })
+    const call = proxy.handleAuthProxyRequest.mock.calls[0]![0] as { request: Request, path: string, baseUrl: string }
+    expect(call.path).toBe('get-session')
+    expect(call.baseUrl).toBe(RUNTIME.neonAuthBaseUrl)
+    expect(call.request.url).toBe('http://cloudy.test/api/auth/get-session')
+    expect(call.request.headers.get('cookie')).toBe('__Secure-neon-auth.session_token=abc')
+    expect(call.request.headers.get('user-agent')).toBe('UA')
+    expect(e.node.res.getHeader('set-cookie')).toBe('__Secure-neon-auth.local.session_data=jwt; Path=/; Max-Age=300')
+
+    // Una respuesta que no es JSON cuenta como sin sesión.
+    proxy.handleAuthProxyRequest.mockResolvedValueOnce(new Response('no-json'))
+    expect(await fetchSession(e)).toBeNull()
   })
 
   it('ensureProfile devuelve el perfil existente sin escribir', async () => {
@@ -159,11 +195,10 @@ describe('actividad y límite de intentos', () => {
 })
 
 describe('configuración de Neon Auth', () => {
-  it('proxyConfig y useAuthServer leen runtimeConfig y validan el secreto', () => {
-    vi.stubGlobal('useRuntimeConfig', () => ({ neonAuthBaseUrl: 'https://auth.test/neondb/auth', neonAuthCookieSecret: 'x'.repeat(32) }))
-    expect(proxyConfig()).toMatchObject({ baseUrl: 'https://auth.test/neondb/auth', sameSite: 'lax' })
-    const server = useAuthServer()
-    expect(typeof server.getSession).toBe('function')
-    expect(useAuthServer()).toBe(server)
+  it('proxyConfig lee runtimeConfig y valida el secreto', () => {
+    vi.stubGlobal('useRuntimeConfig', () => RUNTIME)
+    expect(proxyConfig()).toMatchObject({ baseUrl: 'https://auth.test/neondb/auth', cookieSecret: 'x'.repeat(32), sameSite: 'lax' })
+    vi.stubGlobal('useRuntimeConfig', () => ({ ...RUNTIME, neonAuthCookieSecret: 'corto' }))
+    expect(() => proxyConfig()).toThrow()
   })
 })
