@@ -55,5 +55,8 @@
     "typescript": "~5.9.3",
     "vitest": "^5.0.4",
     "vue-tsc": "^3.3.13"
-  }
+  },
+  "trustedDependencies": [
+    "core-js"
+  ]
 }
