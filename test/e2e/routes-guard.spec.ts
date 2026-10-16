@@ -5,8 +5,7 @@ import { E2E_URL, ensureAccount, email, login, setProfile, signedInAs } from './
 
 await setup({ host: E2E_URL, browser: true })
 
-// /papelera se agrega con su historia (US7).
-const PRIVATE_ROUTES = ['/', '/archivos', '/archivos/ver/00000000-0000-0000-0000-000000000000', '/perfil', '/usuarios', '/actividad', '/pendientes']
+const PRIVATE_ROUTES = ['/', '/archivos', '/archivos/ver/00000000-0000-0000-0000-000000000000', '/perfil', '/usuarios', '/actividad', '/pendientes', '/papelera']
 
 describe('US6 · protección de rutas', () => {
   it.each(PRIVATE_ROUTES)('sin sesión, %s lleva a login con redirect', async (path) => {
