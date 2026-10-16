@@ -60,7 +60,7 @@ El navegador hace `PUT uploadUrl` con el `Content-Type` firmado; el progreso se 
 | Método | Ruta | Acceso | Respuesta |
 |--------|------|--------|-----------|
 | `GET` | `/api/trash` | editor | `TrashItem[]` = `{ id, kind: file\|folder, name, originalPath, deletedBy, deletedAt, daysLeft, itemCount, bytes }` (FR-034, FR-036) |
-| `POST` | `/api/trash/:kind/:id/restore` | editor | `{ restoredTo: { folderId \| null, path }, movedToRoot: boolean }` (FR-035) |
+| `POST` | `/api/trash/:kind/:id/restore` | editor | `{ name, restoredTo: { folderId \| null, path }, movedToRoot: boolean }`. `name` es el nombre final, con sufijo si chocaba (FR-035) |
 | `DELETE` | `/api/trash/:kind/:id` | editor | `204` purga definitiva |
 | `DELETE` | `/api/trash` | **admin** | `{ purged: number }` vaciar papelera |
 

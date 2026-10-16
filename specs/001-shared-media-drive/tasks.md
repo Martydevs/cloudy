@@ -626,11 +626,11 @@ description: "Task list for Cloudy — Disco multimedia compartido (feature 001)
 
 ### Tests for User Story 7 ⚠️
 
-- [ ] T135 [P] [US7] Crear `test/unit/retention.spec.ts` para `daysLeft(deletedAt, now, 30)` en `shared/retention.ts`: el mismo día da 30, a los 29 días da 1, a los 30 da 0 y nunca es negativo. También `expiresAt(createdAt, 7)`.
-- [ ] T136 [P] [US7] Crear `test/e2e/trash.spec.ts`:
+- [X] T135 [P] [US7] Crear `test/unit/retention.spec.ts` para `daysLeft(trashPurgeAt(deletedAt), now)` en `shared/retention.ts`: el mismo día da 30, a los 29 días da 1, a los 30 da 0 y nunca es negativo. También `submissionExpiresAt(createdAt)` (7 días) y `addDays`.
+- [X] T136 [P] [US7] Crear `test/e2e/trash.spec.ts`:
   - Eliminar un archivo lo muestra en `/papelera` con "30 días" y "Ubicación original".
   - Restaurarlo lo devuelve a su carpeta.
-  - Eliminar una carpeta con 2 archivos y una subcarpeta deja en la papelera solo la carpeta raíz, con "4 elementos"; al restaurarla vuelve todo.
+  - Eliminar una carpeta con 2 archivos y una subcarpeta (que contiene 1 archivo) deja en la papelera solo la carpeta raíz, con "4 elementos" (su contenido a cualquier profundidad, sin contarse a sí misma, igual que la confirmación de borrado); al restaurarla vuelve todo.
   - Con la carpeta original ya en papelera, restaurar un archivo lo deja en la raíz con un aviso.
   - Purgar uno, tras confirmar, lo borra definitivamente.
   - "Vaciar papelera" solo es visible para el admin.
@@ -638,14 +638,14 @@ description: "Task list for Cloudy — Disco multimedia compartido (feature 001)
 
 ### Implementation for User Story 7
 
-- [ ] T137 [P] [US7] Crear `shared/retention.ts` con `daysLeft()` y `expiresAt()`, usando `TRASH_RETENTION_DAYS` y `SUBMISSION_TTL_DAYS`.
-- [ ] T138 [US7] Crear `server/utils/trash.ts` con:
+- [X] T137 [P] [US7] Crear `shared/retention.ts` con `addDays()`, `trashPurgeAt()`, `submissionExpiresAt()` y `daysLeft(until, now?)`, usando `TRASH_RETENTION_DAYS` y `SUBMISSION_TTL_DAYS`.
+- [X] T138 [US7] Crear `server/utils/trash.ts` con:
   - `listTrash()`: solo las raíces, `trash_root_id = id`, uniendo carpetas y archivos, con `originalPath`, `deletedBy`, `itemCount`, `bytes` y `daysLeft`.
-  - `restore(kind, id)`: limpia `deleted_*` y `trash_root_id` de todas las filas con ese `trash_root_id`. Si el padre ya no existe o está en papelera, mueve la raíz a `null` y devuelve `movedToRoot: true`. Aplica `withSuffix` si el nombre choca.
-  - `purge(rootIds[])`: reúne `storage_key` y `thumb_key`, hace `deleteMany` y luego borra las filas (los comentarios caen en cascada).
-- [ ] T139 [US7] Crear `server/api/trash/index.get.ts` (editor), `server/api/trash/[kind]/[id]/restore.post.ts` (editor; registra `file.restore`/`folder.restore`), `server/api/trash/[kind]/[id].delete.ts` (editor; registra `file.purge`/`folder.purge`) y `server/api/trash/index.delete.ts` (con `requireRole('admin')`, purga todo y registra `trash.empty`) (FR-034, FR-035).
-- [ ] T140 [US7] Extender `server/api/cron/cleanup.get.ts` para que purgue las raíces de papelera con `deleted_at < now() − interval '30 days'` mediante `purge()` y agregue `purgedTrash` a la respuesta (FR-036).
-- [ ] T141 [US7] Crear `app/pages/papelera.vue`:
+  - `restore(kind, id, actor)`: limpia `deleted_*` y `trash_root_id` de todas las filas con ese `trash_root_id`. Si el padre ya no existe o está en papelera, mueve la raíz a `null` y devuelve `movedToRoot: true`. Aplica `withSuffix` si el nombre choca (solo a la raíz).
+  - `purge(rootIds[])`: en una sola sentencia borra las filas (raíces y todos los archivos del subárbol de cada carpeta) y devuelve `storage_key`/`thumb_key`; luego `deleteMany` (los comentarios caen en cascada). `purgeAll(before?)` purga en lotes de 500.
+- [X] T139 [US7] Crear `server/api/trash/index.get.ts` (editor), `server/api/trash/[kind]/[id]/restore.post.ts` (editor; registra `file.restore`/`folder.restore`), `server/api/trash/[kind]/[id].delete.ts` (editor; registra `file.purge`/`folder.purge`) y `server/api/trash/index.delete.ts` (con `requireRole('admin')`, purga todo y registra `trash.empty`) (FR-034, FR-035).
+- [X] T140 [US7] Extender `server/api/cron/cleanup.get.ts` para que purgue las raíces de papelera con `deleted_at < now() − interval '30 days'` mediante `purgeAll()` y agregue `purgedTrash` a la respuesta (FR-036).
+- [X] T141 [US7] Crear `app/pages/papelera.vue`:
   - Lista de `TrashItem` con ícono, nombre, "Ubicación original: /a/b", eliminado por, fecha y un `badge` con los días restantes (`badge-warning` si quedan 7 o menos, con contraste AA).
   - Acciones "Restaurar" (toast con la ubicación final, avisando si quedó en la raíz) y "Eliminar definitivamente" (con `useConfirm` `danger`).
   - Botón "Vaciar papelera" visible solo si `can(role,'trash.empty')`.
