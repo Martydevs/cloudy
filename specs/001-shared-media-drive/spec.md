@@ -23,6 +23,10 @@
 - Q: ¿Cuál es la identidad del proyecto? → A: La aplicación se llama **Cloudy**. Su color representativo es el naranja, usando la paleta ya definida por el equipo (naranja principal, cian y verde lima de apoyo, fondos neutros oscuros y esquinas redondeadas). El tema por defecto es oscuro, con una tipografía sans serif amigable, moderna y redondeada.
 - Q: ¿Qué tipografía y opciones de apariencia? → A: Tipografía DM Sans. Existe un tema claro derivado del oscuro y un control para cambiar entre ambos, con buena accesibilidad y claridad en los dos temas. No habrá temas de alto contraste.
 
+### Session 2026-10-15
+
+- Q: ¿La barra superior necesita un botón de subida rápida? → A: No. Casi todas las páginas del área privada ya son la sección de subida: Inicio tiene el acceso rápido "Subir archivo" y el explorador de Archivos tiene su botón "Subir" en la carpeta actual. Un segundo botón en la barra superior es redundante. La barra superior queda con el botón de menú (móvil) y la búsqueda global; el control de tema y el menú de cuenta (Mi perfil, Cerrar sesión) viven al pie de la barra lateral.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Subir, organizar y encontrar archivos del equipo (Priority: P1)
@@ -100,7 +104,9 @@ Un administrador ve la lista de usuarios con su estado y rol, activa o desactiva
 El área privada se presenta como una aplicación tipo dashboard:
 
 - **Barra lateral** con las secciones: Inicio (dashboard), Archivos, Pendientes (con contador en vivo), Papelera, Usuarios (solo administrador), Actividad (solo administrador) y Mi perfil.
-- **Barra superior** con búsqueda global, botón de subida rápida, control de tema (oscuro/claro) y menú de usuario (perfil, cerrar sesión).
+- **Barra superior** con búsqueda global (y el botón de menú en tableta y teléfono).
+- **Pie de la barra lateral** con el menú de cuenta: Mi perfil, control de tema (oscuro/claro) y cerrar sesión.
+- **Subida** desde el acceso rápido de Inicio y desde el botón "Subir" del explorador de Archivos (en la carpeta abierta); no hay un botón de subida en la barra superior.
 - **Página Inicio** con archivos recientes, número de envíos pendientes, totales por tipo de archivo, espacio utilizado y accesos rápidos.
 - En **escritorio** la barra lateral está fija y puede contraerse a solo iconos; en **tableta y teléfono** se convierte en un panel deslizable que se abre con un botón de menú y se cierra al elegir una sección.
 - Las secciones a las que el rol del usuario no tiene acceso no se muestran.
@@ -261,7 +267,7 @@ Todos los flujos funcionan en teléfono (desde 360 px de ancho), tableta y escri
 
 **Estructura de la aplicación y navegación**
 
-- **FR-024**: El área privada MUST presentarse como un dashboard con barra lateral (Inicio, Archivos, Pendientes con contador, Papelera, Usuarios, Actividad, Mi perfil) y barra superior (búsqueda global, subida rápida, cambio de tema, menú de usuario); la barra lateral solo muestra las secciones permitidas para el rol.
+- **FR-024**: El área privada MUST presentarse como un dashboard con barra lateral (Inicio, Archivos, Pendientes con contador, Papelera, Usuarios, Actividad, Mi perfil) con un menú de cuenta al pie (Mi perfil, cambio de tema, cerrar sesión), y barra superior con búsqueda global; la barra lateral solo muestra las secciones permitidas para el rol. La subida se inicia desde Inicio y desde el explorador de Archivos, no desde la barra superior.
 - **FR-025**: La barra lateral MUST ser fija y contraíble en escritorio (recordando su estado en el dispositivo) y convertirse en un panel deslizable en tableta y teléfono.
 - **FR-026**: La página Inicio MUST mostrar archivos recientes, número de envíos pendientes, totales por tipo de archivo, espacio utilizado y accesos rápidos.
 - **FR-027**: El sistema MUST ofrecer páginas de Iniciar sesión, Registro, Recuperar contraseña, Restablecer contraseña y Cuenta pendiente, con un diseño propio separado del dashboard y validación de campos en línea.
@@ -295,7 +301,7 @@ Todos los flujos funcionan en teléfono (desde 360 px de ancho), tableta y escri
 - **FR-043**: El **tema oscuro** MUST ser el predeterminado para todos los usuarios; el tema claro está disponible como alternativa y conserva la misma identidad naranja.
 - **FR-044**: La interfaz MUST usar la tipografía **DM Sans** (sans serif amigable y moderna), legible en todos los tamaños, y componentes con esquinas redondeadas coherentes con ese estilo.
 - **FR-045**: Todo texto y control MUST mantener un contraste suficiente sobre su fondo en ambos temas (al menos 4.5:1 en texto normal y 3:1 en texto grande y elementos de interfaz), con un indicador de foco visible para la navegación con teclado.
-- **FR-046**: La aplicación MUST incluir un **control de tema** (tonalidad), accesible desde la barra superior del dashboard y desde las páginas de autenticación y de invitados, que permita cambiar entre tema oscuro y claro. La elección se aplica al instante, sin parpadeo al recargar, y se recuerda en el dispositivo.
+- **FR-046**: La aplicación MUST incluir un **control de tema** (tonalidad), accesible desde el menú de cuenta al pie de la barra lateral del dashboard y desde las páginas de autenticación y de invitados, que permita cambiar entre tema oscuro y claro. La elección se aplica al instante, sin parpadeo al recargar, y se recuerda en el dispositivo.
 - **FR-047**: La aplicación MUST reducir animaciones cuando el dispositivo del usuario lo solicite.
 
 ### Key Entities *(include if feature involves data)*
