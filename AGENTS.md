@@ -154,6 +154,18 @@ Never print or commit their values.
 
 - Spec Kit: `/speckit-specify` → `/speckit-clarify` → `/speckit-plan` → `/speckit-tasks` →
   `/speckit-implement`. Plans must pass the Constitution Check (principles I–VI).
+- **Definition of done for every task and every phase** (phases are the `## Phase N` sections of
+  `specs/001-shared-media-drive/tasks.md`). When a task or phase is implemented, run these in order and
+  do not mark it complete or start the next one until all pass:
+  1. `bun run typecheck`, then the tests that cover the change: `bun run test:unit`, `bun run test:nuxt`
+     and, when the change touches a user story or protected route, `bun run test:e2e`. At the end of a
+     phase run the full set plus `bun run test:coverage`. Fix failures; never skip or weaken a test.
+  2. **Browser verification, always last**, after tests are green: start `bun run dev` and exercise the
+     phase's **Independent Test** scenarios in a real browser (use the `agent-browser` skill) at 360 px
+     and ≥ 1280 px, in dark and light themes, checking loading/empty/error/content states, keyboard
+     focus and console errors. Use `.env.development` data only; never run destructive steps.
+  3. Report what ran and the outcome (tests and browser findings) before ticking the task in `tasks.md`.
+  Skipped steps must be stated explicitly, with the reason.
 - One branch per feature (`NNN-short-name`), merged into `main` via PR.
 - Conventional Commits (`feat:`, `fix:`, `docs:`, `test:`, `refactor:`, `chore:`).
 - Merge gates: typecheck + build, `test:unit`/`test:nuxt`/`test:e2e` green with coverage, manual check
