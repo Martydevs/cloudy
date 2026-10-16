@@ -1,4 +1,4 @@
-import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { mockNuxtImport, mountSuspended } from '@nuxt/test-utils/runtime'
 import type { Me } from '#shared/types/api'
 import AppSidebar from '~/components/app/AppSidebar.vue'
@@ -17,21 +17,15 @@ const labels = (wrapper: { findAll: (selector: string) => { attributes: (name: s
   wrapper.findAll('nav a').map(a => a.attributes('aria-label') ?? a.text().trim())
 
 describe('AppSidebar', () => {
-  beforeAll(() => {
-    // Rutas de historias posteriores (US3, US7): la barra solo muestra secciones con página.
-    const router = useRouter()
-    for (const path of ['/pendientes', '/papelera']) {
-      if (router.resolve(path).matched.length === 0) router.addRoute({ name: `stub${path}`, path, component: { render: () => null } })
-    }
-  })
-
   it('oculta las secciones que todavía no tienen página', async () => {
     setRole('admin')
+    // Todas las secciones ya tienen página: se quita una temporalmente para simular una historia sin hacer.
     const router = useRouter()
-    router.removeRoute('stub/papelera')
+    const page = router.getRoutes().find(r => r.path === '/papelera')!
+    router.removeRoute(page.name!)
     const wrapper = await mountSuspended(AppSidebar, { props: { collapsed: false } })
     expect(labels(wrapper)).not.toContain('Papelera')
-    router.addRoute({ name: 'stub/papelera', path: '/papelera', component: { render: () => null } })
+    router.addRoute({ name: page.name, path: page.path, meta: page.meta, component: page.components!.default! })
   })
 
   it('un editor no ve Usuarios ni Actividad', async () => {
