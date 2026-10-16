@@ -90,6 +90,14 @@ export interface TrashItem {
   bytes: number
 }
 
+export interface TrashRestoreResult {
+  /** Nombre final (con sufijo si el original ya estaba en uso). */
+  name: string
+  restoredTo: { folderId: string | null, path: string[] }
+  /** La carpeta original sigue en la papelera: el elemento quedó en "Archivos". */
+  movedToRoot: boolean
+}
+
 export interface SubmissionFile {
   id: string
   name: string

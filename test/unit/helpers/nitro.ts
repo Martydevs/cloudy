@@ -18,6 +18,7 @@ import * as pagination from '../../../server/utils/pagination'
 import * as rateLimit from '../../../server/utils/rate-limit'
 import * as session from '../../../server/utils/session'
 import * as submissions from '../../../server/utils/submissions'
+import * as trash from '../../../server/utils/trash'
 import * as uploads from '../../../server/utils/uploads'
 import * as users from '../../../server/utils/users'
 import * as validation from '../../../server/utils/validation'
@@ -49,6 +50,7 @@ export function installNitro(results: unknown[] = [], overrides: Record<string, 
     ...rateLimit,
     ...session,
     ...submissions,
+    ...trash,
     ...uploads,
     ...users,
     ...validation,

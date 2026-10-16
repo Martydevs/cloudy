@@ -14,4 +14,13 @@ describe('retention', () => {
     expect(daysLeft('2026-10-05T13:00:00.000Z', now)).toBe(1)
     expect(daysLeft('2026-10-01T00:00:00.000Z', now)).toBe(0)
   })
+
+  it('en la papelera: el mismo día quedan 30, a los 29 días 1 y a los 30 días 0', () => {
+    const deletedAt = new Date('2026-10-01T10:00:00.000Z')
+    const purgeAt = trashPurgeAt(deletedAt)
+    expect(daysLeft(purgeAt, deletedAt)).toBe(30)
+    expect(daysLeft(purgeAt, addDays(deletedAt, 29))).toBe(1)
+    expect(daysLeft(purgeAt, addDays(deletedAt, 30))).toBe(0)
+    expect(daysLeft(purgeAt, addDays(deletedAt, 45))).toBe(0)
+  })
 })

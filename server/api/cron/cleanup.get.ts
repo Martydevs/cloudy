@@ -1,12 +1,13 @@
-// Limpieza diaria (Vercel Cron, FR-020, R8): envíos caducados, subidas huérfanas y ventanas de rate limit.
+// Limpieza diaria (Vercel Cron, FR-020, FR-036, R8): papelera vencida, envíos caducados, subidas huérfanas y ventanas de rate limit.
 import { and, eq, inArray, lt, sql } from 'drizzle-orm'
-import { SUBMISSION_TTL_DAYS, UPLOAD_ORPHAN_HOURS } from '#shared/constants/files'
+import { SUBMISSION_TTL_DAYS, TRASH_RETENTION_DAYS, UPLOAD_ORPHAN_HOURS } from '#shared/constants/files'
 import { files, guestSubmissionFiles, guestSubmissions, rateLimits } from '../../db/schema'
 import { deleteMany } from '../../utils/storage'
 
 const BATCH = 500
 
 export interface CleanupReport {
+  purgedTrash: number
   expiredSubmissions: number
   orphanUploads: number
   rateLimitRows: number
@@ -16,7 +17,10 @@ export default defineEventHandler(async (event): Promise<CleanupReport> => {
   requireCron(event)
   const db = useDb()
   const now = Date.now()
-  const report: CleanupReport = { expiredSubmissions: 0, orphanUploads: 0, rateLimitRows: 0 }
+  const report: CleanupReport = { purgedTrash: 0, expiredSubmissions: 0, orphanUploads: 0, rateLimitRows: 0 }
+
+  // 0. Raíces con más de 30 días en la papelera: filas y objetos, en lotes de 500.
+  report.purgedTrash = await purgeAll(new Date(now - TRASH_RETENTION_DAYS * 86_400_000))
 
   // 1. Envíos pendientes de más de 7 días: se marcan `expired` y se borran sus objetos y archivos.
   const expiryLimit = new Date(now - SUBMISSION_TTL_DAYS * 86_400_000)
