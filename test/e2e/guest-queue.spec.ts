@@ -2,7 +2,7 @@
 import { createPage, setup } from '@nuxt/test-utils/e2e'
 import type { Page } from 'playwright-core'
 import { describe, expect, it } from 'vitest'
-import { E2E_URL, fixture, runId, signedInAs, viewports, waitForHydration } from './setup/fixtures'
+import { E2E_URL, fixture, runId, signedInAs, testSql, viewports, waitForHydration } from './setup/fixtures'
 
 await setup({ host: E2E_URL, browser: true })
 
@@ -88,10 +88,13 @@ describe('US3 · envíos de invitados', () => {
     await editor.getByRole('tab', { name: 'Rechazados' }).click()
     await expect.poll(() => editor.getByRole('article', { name: `Envío de ${name}` }).isVisible()).toBe(true)
 
-    await editor.goto(`${E2E_URL}/archivos?q=notas`)
-    await waitForHydration(editor)
-    await expect.poll(() => editor.getByText(/No encontramos|Sin resultados|No hay/).first().isVisible()).toBe(true)
-    expect(await editor.getByRole('link', { name: /Abrir notas/ }).count()).toBe(0)
+    // Otras suites suben su propio `notas.txt` a Archivos: buscar por nombre no prueba nada aquí.
+    // Se comprueba que el envío rechazado no dejó ningún archivo del equipo.
+    const sql = testSql()
+    expect(await sql`
+      SELECT f.id FROM files f JOIN guest_submissions s ON s.id = f.submission_id WHERE s.sender_name = ${name}
+    `).toEqual([])
+    expect(await sql`SELECT status FROM guest_submissions WHERE sender_name = ${name}`).toEqual([{ status: 'rejected' }])
     await editor.close()
   })
 
