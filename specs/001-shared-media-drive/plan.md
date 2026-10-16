@@ -17,7 +17,7 @@ Cloudy es un disco multimedia centralizado para el equipo de multimedia y audio 
 - **Datos**: PostgreSQL de Neon vía **Drizzle** (driver HTTP).
 - **Identidad**: **Neon Auth** con un adaptador h3 propio (`@neondatabase/auth/server`). Los roles y la aprobación viven en la tabla `profiles`.
 - **Archivos**: **Neon Object Storage** con **PUT prefirmado directo desde el navegador**, más la validación de la firma binaria en el servidor.
-- **Tiempo real**: sondeo de 3 s con VueUse.
+- **Tiempo real**: sondeo de 5 s con VueUse.
 - **Limpiezas**: **Vercel Cron**.
 - **UI**: daisyUI 5 (`cloudy` / `cloudy-light`), `lucide`, DM Sans y VueUse como primera opción para utilidades reactivas.
 
@@ -176,7 +176,7 @@ test/
 | El reset de contraseña de Neon "no está totalmente soportado" (R15) | El spike lo valida; plan B por `forget-password` |
 | Neon Object Storage es beta (CORS, presign) | `storage.ts` como única frontera; `storage:setup`; e2e de subida real |
 | e2e comparte Neon Auth y bucket con desarrollo (Constitución V) | Identidades y prefijo `e2e/<runId>/` únicos más teardown. Si se agregan `NUXT_TEST_NEON_AUTH_BASE_URL` y `NUXT_TEST_S3_BUCKET` de una rama de pruebas, el aislamiento pasa a ser total sin cambiar código |
-| El sondeo de 3 s con muchas pestañas | Pausa con `useDocumentVisibility` y `useOnline`; consulta indexada |
+| El sondeo de 5 s con muchas pestañas | Pausa con `useDocumentVisibility` y `useOnline`; consulta indexada |
 | Las Web Vitals emuladas en CI varían entre corridas | Mediana de 3 cargas por página; el umbral aplica a la mediana |
 | Formatos ZIP (PPTX/DOCX/ODP) difíciles de distinguir con 4 KB | Tabla de firmas con fixtures reales; si el tipo exacto no se distingue, se acepta el ZIP solo si la extensión es de Office/ODF |
 

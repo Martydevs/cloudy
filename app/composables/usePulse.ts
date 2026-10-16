@@ -1,4 +1,4 @@
-// "Tiempo real" por sondeo cada 3 s (research R7): se pausa con la pestaña oculta o sin conexión.
+// "Tiempo real" por sondeo cada 5 s (research R7): se pausa con la pestaña oculta o sin conexión.
 import type { Pulse } from '#shared/types/api'
 import { POLL_INTERVAL_MS } from '#shared/constants/files'
 
@@ -13,7 +13,7 @@ export function usePulse() {
 // Solo en el cliente: el sondeo vive en el layout y las páginas piden un pulso extra tras una acción.
 let pollNow: (() => Promise<void>) | null = null
 
-/** Pulso inmediato (p. ej. tras aprobar a un usuario) para no esperar hasta 3 s. */
+/** Pulso inmediato (p. ej. tras aprobar a un usuario) para no esperar hasta 5 s. */
 export function refreshPulse() {
   return pollNow?.() ?? Promise.resolve()
 }

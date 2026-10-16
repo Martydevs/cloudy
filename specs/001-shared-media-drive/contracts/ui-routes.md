@@ -44,7 +44,7 @@ Tras iniciar sesión se navega a `redirect` si es una ruta interna válida (empi
 - **Barra lateral** (`AppSidebar`): logo; ítems con ícono `lucide` y `NuxtLink` (`aria-current="page"` en el activo): Inicio `lucide:house`, Archivos `lucide:folder`, Pendientes `lucide:inbox` + `badge badge-primary` con contador en vivo, Papelera `lucide:trash-2`, Usuarios `lucide:users` (admin), Actividad `lucide:activity` (admin), Mi perfil `lucide:user`. Filtrado por rol desde una única definición `navItems` con `roles[]`.
 - **Escritorio (≥ `lg`)**: fija; botón contraer → solo íconos con `tooltip`; estado en `useLocalStorage('cloudy-sidebar-collapsed')`.
 - **Tableta/teléfono (< `lg`)**: panel deslizable; botón menú en la barra superior; se cierra al elegir sección (watch de `route.path`), al tocar fuera (`onClickOutside` / overlay del drawer) y con `Esc` (`onKeyStroke`); bloquea scroll (`useScrollLock`). Al pasar a ≥ `lg` (`useBreakpoints`) se cierra el estado móvil para no quedar atascado (edge case).
-- **Barra superior** (`AppTopbar`): botón menú (< lg), búsqueda global (`/` la enfoca; navega a `/archivos?q=`), botón "Subir" (abre `UploadDialog` en la carpeta actual), `ThemeToggle`, menú de usuario (`dropdown`: Mi perfil, Cerrar sesión).
+- **Barra superior** (`AppTopbar`): botón menú (< lg) y búsqueda global (`/` la enfoca; navega a `/archivos?q=`). Subir, tema y cuenta viven en el explorador, inicio o pie de la barra lateral.
 - **Contenido**: `main` con `id="contenido"` + enlace "Saltar al contenido" visible al enfocar.
 
 ## Componentes clave (contrato de props/eventos)
@@ -56,7 +56,7 @@ Tras iniciar sesión se navega a `redirect` si es una ruta interna válida (empi
 | `UploadDialog` / `UploadQueue` | `folderId: string \| null`, `mode: 'team' \| 'guest'` | `uploaded(FileItem[])` | `useDropZone` + `useFileDialog`; progreso por archivo; reintento; validación previa (tipo, 100 MB) |
 | `FileGrid` / `FileList` | `items`, `view: 'grid' \| 'list'` | `open`, `rename`, `move`, `trash` | miniaturas lazy; contador de comentarios |
 | `FilePreview` | `file: FileItem` | — | imagen / `<audio>` / `<video>` (`useMediaControls`) / PDF en `<iframe>`; otros ⇒ ícono + descargar |
-| `CommentThread` | `fileId` | — | sondeo cada 3 s mientras está montado y visible |
+| `CommentThread` | `fileId` | — | sondeo cada 5 s mientras está montado y visible |
 | `ConfirmDialog` | `title`, `message`, `confirmLabel`, `danger?` | `confirm`, `cancel` | `useConfirmDialog`; `<dialog>` nativo (`modal` daisyUI) con foco inicial en "Cancelar" |
 | `FolderPicker` | `excludeId?` | `select(folderId \| null)` | usa `/api/folders/tree` |
 | `EmptyState` | `icon`, `title`, `description`, acción opcional | — | FR-032 |

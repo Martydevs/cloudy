@@ -66,7 +66,7 @@ description: "Task list for Cloudy — Disco multimedia compartido (feature 001)
     - video: `mp4`, `mov`
     - presentation: `pptx`, `ppt`, `key`, `odp`, `pdf`
     - document: `txt`, `md`, `docx`
-  - `MAX_FILE_SIZE = 104_857_600` (100 MB), `MAX_GUEST_FILES = 20`, `TRASH_RETENTION_DAYS = 30`, `SUBMISSION_TTL_DAYS = 7`, `UPLOAD_ORPHAN_HOURS = 24` y `POLL_INTERVAL_MS = 3000`.
+  - `MAX_FILE_SIZE = 104_857_600` (100 MB), `MAX_GUEST_FILES = 20`, `TRASH_RETENTION_DAYS = 30`, `SUBMISSION_TTL_DAYS = 7`, `UPLOAD_ORPHAN_HOURS = 24` y `POLL_INTERVAL_MS = 5000`.
   - Los helpers `getExtension(name)`, `categoryOf(ext)` e `isAllowed(ext, mime)`.
 - [X] T008 Instalar el navegador de e2e con `bunx playwright-core install chromium` y verificar que `bun run typecheck` corre (aunque reporte errores). Anotar el resultado en `specs/001-shared-media-drive/quickstart.md` §3 si difiere.
 
@@ -358,9 +358,6 @@ description: "Task list for Cloudy — Disco multimedia compartido (feature 001)
 - [X] T075 [US5] Crear `app/components/app/AppTopbar.vue`:
   - Botón "Abrir menú" (`lucide:menu`, `lg:hidden`).
   - Búsqueda global con `input` y `aria-label="Buscar archivos"`: `onKeyStroke('/')` la enfoca, y `Enter` navega a `/archivos?q=`.
-  - Botón "Subir" (`lucide:upload`), que emite `upload`.
-  - `ThemeToggle`.
-  - Menú de usuario (`dropdown dropdown-end`) con "Mi perfil" y "Cerrar sesión" → `logout()`.
 - [X] T076 [US5] Crear `app/layouts/dashboard.vue`:
   - `drawer lg:drawer-open` con un `drawer-toggle` controlado por `ref`.
   - Estado contraído con `useLocalStorage('cloudy-sidebar-collapsed', false)`.
@@ -498,7 +495,7 @@ description: "Task list for Cloudy — Disco multimedia compartido (feature 001)
   - Diálogos para renombrar (validación en línea), mover (`FolderPicker`) y eliminar (`useConfirm`, con el conteo de `/count` para carpetas).
   - Toasts.
 - [X] T109 [US1] Crear `app/pages/archivos/ver/[fileId].vue`: `FilePreview` más los metadatos (subido por, fecha, tamaño, origen), las acciones (Descargar, Renombrar, Mover, Eliminar) y un slot reservado para los comentarios (US8). En escritorio el contenido va en dos columnas (`lg:grid-cols-[1fr_22rem]`).
-- [X] T110 [US1] Conectar el botón "Subir" de `app/components/app/AppTopbar.vue` y el acceso rápido de `app/pages/index.vue` para que abran `UploadDialog` con la carpeta actual (`route.params.folderId ?? null`) y refresquen la vista al emitirse `uploaded`.
+- [X] T110 [US1] Conectar el acceso rápido de `app/pages/index.vue` y el botón "Subir" del explorador (`FileExplorer`) para que abran `UploadDialog` con la carpeta actual (`route.params.folderId ?? null`) y refresquen la vista al emitirse `uploaded`.
 
 **Checkpoint**: el **MVP** (US2 + US6 + US5 + US1) es funcional y desplegable, y todos los tests de las fases 2 a 6 pasan.
 
@@ -550,7 +547,7 @@ description: "Task list for Cloudy — Disco multimedia compartido (feature 001)
   Devuelve `{ files }` (FR-019).
 - [X] T119 [US3] Crear `server/api/submissions/[id]/reject.post.ts`: un `UPDATE … WHERE status='pending' RETURNING` condicional (409 si ya fue revisado), seguido de `deleteMany` de los objetos, el borrado de `guest_submission_files` y `activityInsert('submission.reject')`. Responde 204.
 - [X] T120 [US3] Extender `server/api/realtime/pulse.get.ts` para que `newSubmissions` incluya los envíos `pending` cuyos archivos estén todos `ready`, creados después de `since`, con `{ id, senderName, fileCount, createdAt }` (FR-018).
-- [X] T120a [US3] Migración `0002`: `guest_submissions.completed_at timestamptz` (nullable). `readyPendingSubmissionsSql()` exige `completed_at IS NOT NULL` y `pulse.get.ts` filtra `newSubmissions` por `completed_at > since` en SQL (si la subida tarda más de 3 s, `created_at` queda antes del cursor y el aviso nunca saldría).
+- [X] T120a [US3] Migración `0002`: `guest_submissions.completed_at timestamptz` (nullable). `readyPendingSubmissionsSql()` exige `completed_at IS NOT NULL` y `pulse.get.ts` filtra `newSubmissions` por `completed_at > since` en SQL (si la subida tarda más de 5 s, `created_at` queda antes del cursor y el aviso nunca saldría).
 - [X] T121 [US3] Extender `app/composables/usePulse.ts`: cuando `newSubmissions.length > 0`, mostrar un toast "Nuevo envío de {senderName} ({n} archivos)" con un enlace a `/pendientes`.
 - [X] T121a [US3] `useToast` admite `action?: { label, to }` y `AppToast.vue` lo muestra como `NuxtLink`; ese toast dura 8 s.
 - [X] T122 [US3] Crear `app/pages/enviar.vue`, con `layout: 'public'` y `access: 'public'`:
@@ -758,7 +755,7 @@ description: "Task list for Cloudy — Disco multimedia compartido (feature 001)
 - **US2 (Phase 3)** depende de la Fase 2.
 - **US6 (Phase 4)** depende de US2, porque usa las páginas de login y registro para sus e2e.
 - **US5 (Phase 5)** depende de US6, porque usa `useApi`, las rutas protegidas y "Acceso denegado".
-- **US1 (Phase 6)** depende de US5, porque monta el explorador en el layout `dashboard` y usa el botón "Subir" de la barra superior.
+- **US1 (Phase 6)** depende de US5, porque monta el explorador en el layout `dashboard`.
 - **Las historias P2 y P3** dependen solo del MVP (Fases 3–6) y entre sí son independientes, salvo lo indicado:
   - **US3 (Phase 7)**: reutiliza `useUploader`, `DropZone` y `FolderPicker` de US1.
   - **US4 (Phase 8)**: independiente.

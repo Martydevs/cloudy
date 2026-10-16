@@ -40,7 +40,7 @@ watch(() => mobileOpen.value && !isDesktop.value, (locked) => {
         href="#contenido"
         class="btn btn-primary absolute left-2 top-2 z-50 -translate-y-20 focus:translate-y-0"
       >Saltar al contenido</a>
-      <AppTopbar @toggle-menu="mobileOpen = !mobileOpen" @upload="upload.open()" />
+      <AppTopbar @toggle-menu="mobileOpen = !mobileOpen" />
       <main id="contenido" tabindex="-1" class="mx-auto w-full max-w-7xl flex-1 p-4 outline-none lg:p-6">
         <slot />
       </main>

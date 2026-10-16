@@ -41,7 +41,7 @@ export const MAX_GUEST_FILES = 20
 export const TRASH_RETENTION_DAYS = 30
 export const SUBMISSION_TTL_DAYS = 7
 export const UPLOAD_ORPHAN_HOURS = 24
-export const POLL_INTERVAL_MS = 3000
+export const POLL_INTERVAL_MS = 5000
 
 /** Extensiones admitidas con punto, para el atributo `accept` de los selectores. */
 export const ACCEPT_ATTRIBUTE = Object.keys(ALLOWED_TYPES).map(ext => `.${ext}`).join(',')

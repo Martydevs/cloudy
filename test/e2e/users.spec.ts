@@ -21,7 +21,7 @@ describe('US4 · gestión de usuarios', () => {
   })
 
   it('el pendiente aparece destacado, con el contador en el menú, y se activa como editor', async () => {
-    // El contador llega por el pulso (≤ 3 s).
+    // El contador llega por el pulso (≤ 5 s).
     await expect.poll(() => adminPage.getByRole('link', { name: /Usuarios/ }).innerText(), { timeout: 10_000 }).toMatch(/\d/)
 
     await adminPage.goto(`${E2E_URL}/usuarios`)

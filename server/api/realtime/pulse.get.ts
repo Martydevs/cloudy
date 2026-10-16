@@ -1,4 +1,4 @@
-// Pulso barato para el contador de pendientes en vivo (research R7), sondeado cada 3 s.
+// Pulso barato para el contador de pendientes en vivo (research R7), sondeado cada 5 s.
 import { sql } from 'drizzle-orm'
 import type { Pulse } from '#shared/types/api'
 import { object, optional, str } from '#shared/validation/core'

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-const emit = defineEmits<{ toggleMenu: [], upload: [] }>()
+const emit = defineEmits<{ toggleMenu: [] }>()
 
 const route = useRoute()
 
@@ -44,10 +44,5 @@ function submitSearch() {
         <kbd class="kbd kbd-sm hidden lg:inline-flex" aria-hidden="true">/</kbd>
       </label>
     </form>
-
-    <button type="button" class="btn btn-primary btn-square sm:w-auto sm:px-4" aria-label="Subir archivos" @click="emit('upload')">
-      <Icon name="lucide:upload" class="size-5" aria-hidden="true" />
-      <span class="hidden sm:inline">Subir</span>
-    </button>
   </header>
 </template>

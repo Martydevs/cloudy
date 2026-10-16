@@ -331,7 +331,7 @@ describe('shell', () => {
     expect(pub.get('main#contenido').text()).toBe('público')
   })
 
-  it('dashboard: barra lateral, salto al contenido, contraer y diálogo de subida', async () => {
+  it('dashboard: barra lateral, salto al contenido y contraer', async () => {
     const wrapper = await mountSuspended(DashboardLayout, { slots: { default: () => 'página' } })
     expect(wrapper.get('main#contenido').text()).toBe('página')
     expect(wrapper.get('a[href="#contenido"]').text()).toBe('Saltar al contenido')
@@ -346,14 +346,10 @@ describe('shell', () => {
     await nextTick()
     expect(toggle.checked).toBe(false)
 
-    await wrapper.get('button[aria-label="Subir archivos"]').trigger('click')
-    await flush()
-    await vi.waitFor(() => expect(wrapper.find('dialog[aria-labelledby]').text()).toContain('Subir archivos'))
-    useUploadDialog().close()
     wrapper.unmount()
   })
 
-  it('topbar: búsqueda, atajo "/", menú y Subir; la cuenta y el tema ya no viven aquí', async () => {
+  it('topbar: búsqueda, atajo "/" y menú; la cuenta y el tema ya no viven aquí', async () => {
     const wrapper = await mountSuspended(AppTopbar, { attachTo: document.body, route: '/archivos?q=coro' })
     const search = wrapper.get('input[aria-label="Buscar archivos"]')
     expect((search.element as HTMLInputElement).value).toBe('coro')
@@ -372,9 +368,7 @@ describe('shell', () => {
     expect(navigateToMock).toHaveBeenLastCalledWith({ path: '/archivos', query: {} })
 
     await wrapper.get('button[aria-label="Abrir menú"]').trigger('click')
-    await wrapper.get('button[aria-label="Subir archivos"]').trigger('click')
     expect(wrapper.emitted('toggleMenu')).toHaveLength(1)
-    expect(wrapper.emitted('upload')).toHaveLength(1)
 
     // El menú de usuario y el tema se movieron al pie de la barra lateral.
     expect(wrapper.find('button[aria-label="Menú de usuario"]').exists()).toBe(false)

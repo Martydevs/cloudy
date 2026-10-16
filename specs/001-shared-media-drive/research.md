@@ -113,7 +113,7 @@ Se cubre con tests unitarios exhaustivos usando fixtures de bytes.
 
 **Decisión**: **Polling ligero y adaptativo** desde el cliente con VueUse:
 
-- **Pulso**: `useIntervalFn` cada **3 s** contra `GET /api/realtime/pulse?since=<cursor>`. La respuesta trae `{ pendingCount, newSubmissions[], cursor }` y es una consulta indexada barata.
+- **Pulso**: `useIntervalFn` cada **5 s** contra `GET /api/realtime/pulse?since=<cursor>`. La respuesta trae `{ pendingCount, newSubmissions[], cursor }` y es una consulta indexada barata.
 - **Ahorro**: el sondeo se pausa con `useDocumentVisibility` cuando la pestaña está oculta y con `useOnline` cuando no hay conexión. Al volver se dispara un pulso inmediato.
 - **Comentarios**: mientras el panel de un archivo está abierto, sus comentarios se sondean con la misma técnica (`?since=`).
 - **Avisos**: cuando llega un envío nuevo se muestra un toast y se actualiza el contador de la barra lateral (FR-018, SC-003 < 5 s).
@@ -121,7 +121,7 @@ Se cubre con tests unitarios exhaustivos usando fixtures de bytes.
 **Justificación**: Cumple < 5 s con certeza en serverless, sin infraestructura extra y con poca complejidad. La carga es despreciable para ~50 usuarios internos.
 
 **Alternativas**:
-- SSE con un bucle de polling en el servidor: reconecta cada ~5 min por el `maxDuration` y no aporta latencia real frente al polling de 3 s.
+- SSE con un bucle de polling en el servidor: reconecta cada ~5 min por el `maxDuration` y no aporta latencia real frente al polling de 5 s.
 - Pusher, Ably o Supabase Realtime: un servicio externo nuevo, fuera del stack.
 
 ## R8. Tareas programadas (papelera 30 días, invitados 7 días, subidas huérfanas)

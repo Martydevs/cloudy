@@ -27,7 +27,7 @@ Tipos compartidos en `shared/types/api.ts` (`FileItem`, `FolderItem`, `Profile`,
 | Método | Ruta | Acceso | Respuesta |
 |--------|------|--------|-----------|
 | `GET` | `/api/dashboard` | editor | `{ recentFiles: FileItem[8], pendingCount, totalsByCategory: Record<category,{count,bytes}>, storage: { activeBytes, trashBytes } }` (FR-026, FR-037) |
-| `GET` | `/api/realtime/pulse?since=<cursor>` | editor | `{ cursor, pendingCount, pendingUsers, newSubmissions: { id, senderName, fileCount, createdAt }[] }` — consulta indexada, sondeada cada 3 s (research R7). `newSubmissions` filtra por `completed_at > since`; `pendingUsers` solo trae el valor real para admin (0 para editor). |
+| `GET` | `/api/realtime/pulse?since=<cursor>` | editor | `{ cursor, pendingCount, pendingUsers, newSubmissions: { id, senderName, fileCount, createdAt }[] }` — consulta indexada, sondeada cada 5 s (research R7). `newSubmissions` filtra por `completed_at > since`; `pendingUsers` solo trae el valor real para admin (0 para editor). |
 
 ## Carpetas y archivos
 

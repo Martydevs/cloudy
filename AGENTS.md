@@ -121,7 +121,7 @@ branch (`test/e2e/setup/global-setup.ts`) as part of `bun run test:e2e`.
 ## Platform & security constraints
 
 - Vercel functions are stateless: no shared in-memory state (rate limits live in Postgres, "realtime"
-  is client polling every 3 s, scheduled work uses Vercel Cron → `/api/cron/cleanup`).
+  is client polling every 5 s, scheduled work uses Vercel Cron → `/api/cron/cleanup`).
 - Secrets only in env vars mapped through `runtimeConfig` (`NUXT_*`); never in code or the client.
 - Schema changes only via Drizzle migrations; never edit the production database by hand.
 - Guests: store only name + note; IPs only as salted hashes.
