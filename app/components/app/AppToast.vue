@@ -8,6 +8,11 @@ const styles: Record<ToastType, { alert: string, icon: string }> = {
   error: { alert: 'alert-error', icon: 'lucide:circle-alert' },
   info: { alert: 'alert-info', icon: 'lucide:info' },
 }
+
+// Botones del aviso: toman el color del texto del aviso (`text-current`) también para el anillo de foco y
+// el fondo de hover/foco. El fantasma de daisyUI usa base-content y el anillo global usa primary: sobre el
+// verde oscuro del tema claro se veían casi negros y la «x» blanca se lavaba.
+const control = 'btn btn-ghost -my-1.5 text-current hover:bg-current/15 focus-visible:bg-current/15 focus-visible:outline-current'
 </script>
 
 <template>
@@ -30,11 +35,10 @@ const styles: Record<ToastType, { alert: string, icon: string }> = {
       >
         <Icon :name="styles[toast.type].icon" class="size-5 shrink-0" aria-hidden="true" />
         <span class="break-words">{{ toast.message }}</span>
-        <!-- `text-current`: el botón fantasma hereda el color del texto del aviso (si no, usa base-content, ilegible en claro). -->
-        <NuxtLink v-if="toast.action" :to="toast.action.to" class="btn btn-ghost -my-1.5 text-current" @click="dismiss(toast.id)">
+        <NuxtLink v-if="toast.action" :to="toast.action.to" :class="control" @click="dismiss(toast.id)">
           {{ toast.action.label }}
         </NuxtLink>
-        <button type="button" class="btn btn-ghost btn-square -my-1.5 text-current" aria-label="Cerrar aviso" @click="dismiss(toast.id)">
+        <button type="button" class="btn-square" :class="control" aria-label="Cerrar aviso" @click="dismiss(toast.id)">
           <Icon name="lucide:x" class="size-4" aria-hidden="true" />
         </button>
       </div>

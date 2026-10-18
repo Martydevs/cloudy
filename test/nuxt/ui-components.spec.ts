@@ -95,9 +95,10 @@ describe('AppToast', () => {
     useToast().success('Guardado')
     await nextTick()
     expect(wrapper.get('.alert').classes()).toContain('min-h-12')
-    // El botón de cerrar conserva su área táctil y toma el color del texto del aviso (contraste en ambos temas).
+    // El botón de cerrar conserva su área táctil y toma el color del texto del aviso, también en el
+    // anillo de foco y el fondo de hover/foco (contraste en ambos temas y en todos los tipos).
     const close = wrapper.get('button[aria-label="Cerrar aviso"]')
-    expect(close.classes()).toEqual(expect.arrayContaining(['btn', 'btn-square', 'text-current']))
+    expect(close.classes()).toEqual(expect.arrayContaining(['btn', 'btn-square', 'text-current', 'focus-visible:outline-current', 'hover:bg-current/15']))
     useToast().toasts.value = []
   })
 
