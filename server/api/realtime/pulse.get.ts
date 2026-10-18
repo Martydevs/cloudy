@@ -1,11 +1,9 @@
 // Pulso barato para el contador de pendientes en vivo (research R7), sondeado cada 5 s.
 import { sql } from 'drizzle-orm'
 import type { Pulse } from '#shared/types/api'
-import { object, optional, str } from '#shared/validation/core'
+import { isoSince, object } from '#shared/validation/core'
 
-const pulseQuery = object({
-  since: optional(str({ max: 40, pattern: /^\d{4}-\d{2}-\d{2}T[\d:.]+Z$/, message: 'Fecha no válida' })),
-})
+const pulseQuery = object({ since: isoSince() })
 
 type ReadyRow = { id: string, sender_name: string, created_at: string, completed_at: string, file_count: number }
 

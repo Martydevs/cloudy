@@ -81,6 +81,17 @@ export function optional<T>(field: Field<T>): Field<T | undefined> {
   return input => (input === undefined || input === null || input === '') ? pass(undefined) : field(input)
 }
 
+const ISO_UTC_RE = /^\d{4}-\d{2}-\d{2}T[\d:.]+Z$/
+
+/** Cursor `since` opcional de los sondeos: fecha ISO 8601 en UTC (`toISOString()`). */
+export function isoSince(): Field<string | undefined> {
+  const field = str({ max: 40, pattern: ISO_UTC_RE, message: 'Fecha no válida' })
+  return optional((input) => {
+    const res = field(input)
+    return res.ok && Number.isNaN(Date.parse(res.value)) ? fail('Fecha no válida') : res
+  })
+}
+
 /** `null` o `undefined` pasan como `null` (p. ej. la carpeta raíz). */
 export function nullable<T>(field: Field<T>): Field<T | null> {
   return input => (input === undefined || input === null) ? pass(null) : field(input)
