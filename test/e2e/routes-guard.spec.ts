@@ -89,5 +89,22 @@ describe('US6 · protección de rutas', () => {
     const res = await fetch(`${E2E_URL}/api/dashboard`, { headers: { cookie } })
     expect(res.status).toBe(403)
     expect((await res.json()).data.reason).toBe('pending')
+
+    // Comentarios (US8): sin sesión 401 y con cuenta pendiente 403, antes de validar nada.
+    const id = '00000000-0000-0000-0000-000000000000'
+    const commentRoutes = [
+      ['GET', `/api/files/${id}/comments`],
+      ['POST', `/api/files/${id}/comments`],
+      ['PATCH', `/api/comments/${id}`],
+      ['DELETE', `/api/comments/${id}`],
+    ] as const
+    for (const [method, path] of commentRoutes) {
+      const init: { method: string, headers: Record<string, string>, body?: string } = method === 'GET' || method === 'DELETE'
+        ? { method, headers: {} }
+        : { method, headers: { 'content-type': 'application/json' }, body: JSON.stringify({ body: 'Hola' }) }
+      expect((await fetch(`${E2E_URL}${path}`, init)).status, `${method} ${path} sin sesión`).toBe(401)
+      const pending = await fetch(`${E2E_URL}${path}`, { ...init, headers: { ...init.headers, cookie } })
+      expect(pending.status, `${method} ${path} pendiente`).toBe(403)
+    }
   })
 })

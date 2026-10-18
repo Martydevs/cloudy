@@ -33,6 +33,7 @@ beforeEach(() => {
   navigateToMock.mockReset()
   useToast().toasts.value = []
   mockApi('GET', '/api/folders/root/children', children())
+  mockApi('GET', `/api/files/${F1}/comments`, [])
 })
 
 describe('FileExplorer · los cuatro estados', () => {
@@ -248,6 +249,9 @@ describe('detalle de archivo', () => {
     expect(wrapper.text()).toContain('Domingo')
     expect(wrapper.get('a[download]').attributes('href')).toBe(`/api/files/${F1}/content?download=1`)
     expect(wrapper.get(`a[href="/archivos/${D1}"]`).text()).toContain('Domingo')
+    // El hilo de comentarios (US8) se monta junto a los metadatos.
+    expect(wrapper.get('section[aria-labelledby] h2').text()).toContain('Comentarios')
+    expect(wrapper.text()).toContain('Sé el primero en comentar')
 
     await wrapper.get('button[aria-label="Más acciones de foto.jpg"]').trigger('click')
     await wrapper.findAll('[role="menuitem"]').find(o => o.text() === 'Renombrar')!.trigger('click')

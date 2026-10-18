@@ -9,6 +9,7 @@ import { PgDialect } from 'drizzle-orm/pg-core'
 import { vi } from 'vitest'
 import * as activity from '../../../server/utils/activity'
 import * as auth from '../../../server/utils/auth'
+import * as comments from '../../../server/utils/comments'
 import * as cron from '../../../server/utils/cron'
 import * as fileAccess from '../../../server/utils/file-access'
 import * as fileSignature from '../../../server/utils/file-signature'
@@ -41,6 +42,7 @@ export function installNitro(results: unknown[] = [], overrides: Record<string, 
     ...h3,
     ...activity,
     ...auth,
+    ...comments,
     ...cron,
     ...fileAccess,
     ...fileSignature,

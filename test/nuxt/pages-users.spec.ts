@@ -216,6 +216,8 @@ describe('Actividad', () => {
     expect(activityIcon('x')).toBe('lucide:activity')
     expect(activityDetail('file.rename', { from: 'a.jpg' })).toBe('antes «a.jpg»')
     expect(activityDetail('submission.reject', { reason: 'borrosa' })).toBe('motivo: borrosa')
+    expect(activityDetail('comment.admin_delete', { author: 'Ana' })).toBe('escrito por Ana')
+    expect(activityDetail('comment.admin_delete', { author: null })).toBe('')
     expect(activityDetail('user.role_change', { from: null, to: 'editor' })).toBe('Sin rol → Editor')
     expect(activityDetail('file.upload', null)).toBe('')
     expect(activityDetail('file.upload', { x: 1 })).toBe('')
