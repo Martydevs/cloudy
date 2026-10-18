@@ -11,11 +11,12 @@ const failed = ref(false)
 
 <template>
   <div class="flex min-h-48 items-center justify-center overflow-hidden rounded-box border border-base-300 bg-base-200">
+    <!-- Caja de proporción fija (CLS): la altura no depende de la imagen, que se ajusta dentro. -->
     <img
       v-if="file.category === 'image' && file.extension !== 'heic' && !failed"
       :src="src"
       :alt="file.name"
-      class="max-h-[70dvh] w-auto max-w-full object-contain"
+      class="aspect-[4/3] max-h-[70dvh] w-full object-contain"
       decoding="async"
       @error="failed = true"
     >
@@ -34,7 +35,7 @@ const failed = ref(false)
       controls
       preload="metadata"
       playsinline
-      class="max-h-[70dvh] w-full"
+      class="aspect-video max-h-[70dvh] w-full"
       :aria-label="`Reproducir ${file.name}`"
     />
     <iframe

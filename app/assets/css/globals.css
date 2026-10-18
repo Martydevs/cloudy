@@ -96,6 +96,17 @@
     scrollbar-color: color-mix(in oklch, var(--color-base-content) 30%, transparent) var(--color-base-100);
   }
 
+  /*
+    La caja de cada icono existe desde el primer pintado. @nuxt/icon trae `display: inline-block`
+    en la regla de cada icono, y los que se montan en el cliente la piden por red: hasta entonces el
+    span era `inline` y vacío (0×0) aunque tuviera `size-8`, y al llegar empujaba el contenido (CLS).
+  */
+  .iconify {
+    display: inline-block;
+    width: 1em;
+    height: 1em;
+  }
+
   /* Foco visible y consistente para navegación con teclado en ambos temas. */
   :focus-visible {
     outline: 2px solid var(--color-primary);

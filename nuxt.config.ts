@@ -54,7 +54,21 @@ export default defineNuxtConfig({
   },
   fonts: {
     families: [
-      { name: 'DM Sans', provider: 'google', weights: [400, 500, 600, 700], subsets: ['latin', 'latin-ext'], global: true },
+      {
+        name: 'DM Sans',
+        provider: 'google',
+        weights: [400, 500, 600, 700],
+        subsets: ['latin', 'latin-ext'],
+        global: true,
+        // CLS (Constitución I): con `swap`, en 4G el texto se reflujo al llegar la fuente (0,15 en el
+        // Inicio). `optional` nunca la cambia tras el primer pintado: se usa si llegó en el bloqueo
+        // inicial (~100 ms) o está en caché (desde la segunda página); si no, queda el respaldo con
+        // métricas ajustadas. `preload` la pide junto con el CSS para que normalmente llegue a tiempo.
+        display: 'optional',
+        preload: true,
+        // Respaldos con métricas de fontaine: Roboto cubre Android, donde no existe ninguno de los demás.
+        fallbacks: ['Roboto', 'Segoe UI', 'Helvetica Neue', 'Arial', 'Noto Sans'],
+      },
     ],
   },
   nitro: {

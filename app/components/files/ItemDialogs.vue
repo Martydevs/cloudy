@@ -36,7 +36,7 @@ const dialog = computed(() => props.actions.dialog.value)
     @submit="actions.submitName"
     @close="actions.close"
   />
-  <FolderPicker
+  <LazyFolderPicker
     v-else-if="dialog?.type === 'move'"
     :title="`Mover «${dialog.item.name}» a…`"
     :exclude-id="dialog.kind === 'folder' ? dialog.item.id : null"

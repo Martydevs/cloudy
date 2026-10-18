@@ -32,7 +32,8 @@ describe('GET /api/folders/:id/children', () => {
   })
 
   it('una carpeta incluye la carpeta y sus migas', async () => {
-    installNitro([[folder()], [fileRow()], [], { rows: [{ id: UUID, name: 'Domingo', depth: 0 }] }])
+    // Archivos, subcarpetas y migas van en paralelo; el doble consume el `execute` de las migas al construirlo.
+    installNitro([[folder()], { rows: [{ id: UUID, name: 'Domingo', depth: 0 }] }, [fileRow()], []])
     const handler = await loadHandler('api/folders/[id]/children.get.ts')
     const result = await handler(makeEvent({ params: { id: UUID }, url: '/api/x?sort=date&dir=desc' })) as { folder: { name: string }, breadcrumbs: unknown[] }
     expect(result.folder.name).toBe('Domingo')

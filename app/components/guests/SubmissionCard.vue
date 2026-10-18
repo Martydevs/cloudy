@@ -58,7 +58,7 @@ function confirmReject() {
       <ul class="grid grid-cols-3 gap-2 sm:grid-cols-4 lg:grid-cols-6" aria-label="Archivos del envío">
         <li v-for="file in submission.files" :key="file.id" class="flex flex-col gap-1">
           <a :href="file.previewUrl" target="_blank" rel="noopener" class="flex aspect-square items-center justify-center overflow-hidden rounded-field bg-base-200" :aria-label="`Abrir ${file.name}`">
-            <img v-if="file.category === 'image'" :src="file.previewUrl" :alt="file.name" loading="lazy" decoding="async" class="size-full object-cover">
+            <img v-if="file.category === 'image'" :src="file.previewUrl" :alt="file.name" loading="lazy" decoding="async" width="160" height="160" class="size-full object-cover">
             <Icon v-else :name="fileIcon(file.category)" class="size-8 text-base-content/60" aria-hidden="true" />
           </a>
           <span class="truncate text-xs" :title="file.name">{{ file.name }}</span>

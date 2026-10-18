@@ -18,7 +18,7 @@ export default defineEventHandler(async (event): Promise<FolderChildren> => {
   const folder = folderId ? await getVisibleFolder(folderId) : null
 
   const keyset = filesKeyset(sort, dir, cursor)
-  const fileRows = await db
+  const filesQuery = db
     .select({ ...fileColumns, commentCount: commentCountSql() })
     .from(files)
     .leftJoin(profiles, eq(files.uploadedBy, profiles.userId))
@@ -32,23 +32,29 @@ export default defineEventHandler(async (event): Promise<FolderChildren> => {
     .limit(PAGE_SIZE)
 
   // Las subcarpetas van completas en la primera página y se ocultan al filtrar por tipo.
-  const folderRows = cursor || type
-    ? []
-    : await db
-        .select({
-          folder: folders,
-          itemCount: sql<number>`(
-            (SELECT count(*) FROM folders c WHERE c.parent_id = ${folders.id} AND c.deleted_at IS NULL)
-            + (SELECT count(*) FROM files f WHERE f.folder_id = ${folders.id} AND f.deleted_at IS NULL AND f.upload_status = 'ready')
-          )::int`,
-        })
-        .from(folders)
-        .where(and(sameFolder(folders.parentId, folderId), isNull(folders.deletedAt)))
-        .orderBy(sort === 'date' && dir === 'desc' ? sql`${folders.createdAt} desc` : asc(sql`lower(${folders.name})`))
+  const listSubfolders = () => db
+    .select({
+      folder: folders,
+      itemCount: sql<number>`(
+        (SELECT count(*) FROM folders c WHERE c.parent_id = ${folders.id} AND c.deleted_at IS NULL)
+        + (SELECT count(*) FROM files f WHERE f.folder_id = ${folders.id} AND f.deleted_at IS NULL AND f.upload_status = 'ready')
+      )::int`,
+    })
+    .from(folders)
+    .where(and(sameFolder(folders.parentId, folderId), isNull(folders.deletedAt)))
+    .orderBy(sort === 'date' && dir === 'desc' ? sql`${folders.createdAt} desc` : asc(sql`lower(${folders.name})`))
+
+  // En paralelo (Constitución I): con el driver HTTP cada consulta es un viaje a Neon y el TTFB de la
+  // página SSR era la suma de los cuatro; ahora es el máximo de estos tres más el de la carpeta.
+  const [fileRows, folderRows, breadcrumbs] = await Promise.all([
+    filesQuery,
+    cursor || type ? [] : listSubfolders(),
+    cursor ? [] : buildBreadcrumbs(folderId),
+  ])
 
   return {
     folder: folder ? toFolderItem(folder) : null,
-    breadcrumbs: cursor ? [] : await buildBreadcrumbs(folderId),
+    breadcrumbs,
     folders: folderRows.map(row => toFolderItem(row.folder, row.itemCount)),
     files: fileRows.map(row => toFileItem(row, { commentCount: row.commentCount })),
     nextCursor: keyset.nextCursor(fileRows),

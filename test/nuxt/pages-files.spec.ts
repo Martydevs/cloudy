@@ -188,7 +188,8 @@ describe('FileExplorer · acciones', () => {
     await buttons(wrapper, 'Cancelar')[0]!.trigger('click')
 
     await choose('Mover')
-    expect(wrapper.get('dialog h2').text()).toBe('Mover «foto.jpg» a…')
+    // FolderPicker es `Lazy*` (T157): su código llega en un chunk aparte, de forma asíncrona.
+    await vi.waitFor(() => expect(wrapper.get('dialog h2').text()).toBe('Mover «foto.jpg» a…'))
 
     const confirm = useConfirm()
     await choose('Eliminar')

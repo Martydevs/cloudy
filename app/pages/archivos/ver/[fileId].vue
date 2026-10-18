@@ -53,7 +53,7 @@ const ORIGIN_LABELS = { team: 'Equipo', guest: 'Invitado' } as const
     <ErrorState v-else-if="error" :message="messages.load.file" @retry="refresh()" />
     <div v-else-if="file" class="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_22rem]">
       <section aria-label="Vista previa" class="min-w-0">
-        <FilePreview :file="file" />
+        <LazyFilePreview :file="file" />
       </section>
 
       <aside class="flex flex-col gap-4">
