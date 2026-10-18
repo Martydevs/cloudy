@@ -712,22 +712,48 @@ description: "Task list for Cloudy — Disco multimedia compartido (feature 001)
 
 ### Tests for User Story 9 ⚠️
 
-- [ ] T150 [P] [US9] Crear `test/nuxt/four-states.spec.ts`. Para `pages/index.vue`, `archivos/index.vue`, `pendientes.vue`, `papelera.vue`, `usuarios.vue` y `actividad.vue`, con `registerEndpoint` de `@nuxt/test-utils`, verificar que se renderizan el skeleton (respuesta pendiente), el `EmptyState` (lista vacía) y el `ErrorState` con "Reintentar" (500), y que al reintentar se vuelve a pedir.
-- [ ] T151 [P] [US9] Extender `test/e2e/responsive-theme.spec.ts` para que recorra **todas** las páginas privadas y públicas a 360 px y 1280 px en `cloudy` y `cloudy-light`. Debe verificar que no hay scroll horizontal, que no hay botones táctiles de menos de 44 px de alto en el viewport `phone` (`boundingBox().height >= 44` en `button, a.btn, input`) y que el foco es visible al tabular.
+- [x] T150 [P] [US9] Crear `test/nuxt/four-states.spec.ts`. Para `pages/index.vue`, `archivos/index.vue`, `pendientes.vue`, `papelera.vue`, `usuarios.vue` y `actividad.vue`, con `registerEndpoint` de `@nuxt/test-utils`, verificar que se renderizan el skeleton (respuesta pendiente), el `EmptyState` (lista vacía) y el `ErrorState` con "Reintentar" (500), y que al reintentar se vuelve a pedir.
+- [x] T151 [P] [US9] Extender `test/e2e/responsive-theme.spec.ts` para que recorra **todas** las páginas privadas y públicas a 360 px y 1280 px en `cloudy` y `cloudy-light`. Debe verificar que no hay scroll horizontal, que no hay botones táctiles de menos de 44 px de alto en el viewport `phone` (`boundingBox().height >= 44` en `button, a.btn, input`) y que el foco es visible al tabular.
 
 ### Implementation for User Story 9
 
-- [ ] T152 [US9] Auditar todas las páginas de `app/pages/**` y los componentes de `app/components/**`:
+- [x] T152 [US9] Auditar todas las páginas de `app/pages/**` y los componentes de `app/components/**`:
   - Reemplazar cualquier color fijo por clases semánticas.
   - Quitar `btn-sm`/`btn-xs` usados como base.
   - Asegurar `aria-label` en los botones que solo tienen ícono.
   - Comprobar que ninguna acción depende de `hover` y que todas las fechas usan `useTimeAgoIntl('es')`.
 
   Corregir lo que se encuentre.
-- [ ] T153 [US9] Revisar que toda acción completada (crear, renombrar, mover, eliminar, restaurar, aprobar, rechazar, comentar, guardar perfil, cambiar rol) muestre un toast con `useToast()` y que todos los errores de la API muestren un mensaje en español que explique qué hacer. Centralizar los mensajes en `app/utils/messages.ts`.
-- [ ] T154 [P] [US9] Agregar `public/og-cloudy.png` y la meta `og:image`/`description` en `app/app.vue`. Agregar `public/favicon.svg` (la nube en el color primario) y reemplazar `public/favicon.ico` (FR-041).
+- [x] T153 [US9] Revisar que toda acción completada (crear, renombrar, mover, eliminar, restaurar, aprobar, rechazar, comentar, guardar perfil, cambiar rol) muestre un toast con `useToast()` y que todos los errores de la API muestren un mensaje en español que explique qué hacer. Centralizar los mensajes en `app/utils/messages.ts`.
+- [x] T154 [P] [US9] Agregar `public/og-cloudy.png` y la meta `og:image`/`description` en `app/app.vue`. Agregar `public/favicon.svg` (la nube en el color primario) y reemplazar `public/favicon.ico` (FR-041).
 
 **Checkpoint**: las 9 historias funcionan y los tests de US9 pasan.
+
+> **Hecho (2026-10-18, rama `001-us9-experiencia`)**. Notas de implementación:
+> - **Fechas** (desviación de la redacción de T152): un solo `app/utils/dates.ts` con `timeAgo(iso, now?)` y `formatDateTime(iso)` (locale `es`, un único `Intl.DateTimeFormat`). El refresco en vivo queda solo en los comentarios, con `useNow` (cada 30 s) + el `timeAgo` compartido, no con `useTimeAgoIntl`: así el texto es idéntico en toda la app. Por debajo de un minuto siempre se muestra «hace un momento»: las fechas por segundos cambiaban entre el render del servidor y la hidratación y Vue marcaba un desajuste (detectado por el recorrido e2e en `/usuarios`). Las horas exactas visibles (`/actividad`, visor de archivo) van en `LocalTime`, que renderiza la relativa en SSR y la absoluta al montar, en la zona horaria de quien mira (el servidor está en UTC).
+> - **T151, objetivos táctiles (adaptación documentada)**: en teléfono se miden `button`, `a.btn` e `input`; un `input` dentro de un `<label>` (campo daisyUI, checkbox, radio) se mide por la etiqueta, que es lo que recibe el toque (un checkbox de daisyUI mide 24 px adrede), y `input[type=file]` queda fuera porque el de `DropZone` es `sr-only` y se opera con su botón. La lista de rutas sale de `contracts/ui-routes.md` (`route-access.ts` solo define los tipos de acceso) y una prueba de seguridad la compara con `app/pages/**`.
+> - **Avisos (T153)**: posición final **arriba y centrada sobre la columna de contenido**, bajo la barra superior (`h-16` + 1rem; `AppToast` se monta en cada layout como envoltorio `sticky` sin alto, así se centra con la barra lateral expandida o contraída), compactos (48 px en una línea, botones con área táctil intacta y color del texto del aviso). Abajo a la derecha tapaban «Comentar»; arriba a la derecha, los botones de la cabecera. Queda aceptado el solape breve con los botones de cabecera por debajo de 1280 px y en teléfono.
+> - **Mensajes (T153)**: `app/utils/messages.ts` reúne toasts, respaldos y textos del `ErrorState`; `pluralize()`. `serverMessage(error, fallback, byStatus?)`: campo inválido primero; 429 → texto común de `shared/constants/messages.ts` (el mismo que envía el servidor en `hitRateLimit`); 4xx → `data.message` solo cuando es una explicación real (no la frase del estado que h3 copia a `message`); 5xx y red → respaldo. La fuga de textos en inglés en 5xx («Server Error») era real y llegaba a `/enviar`.
+> - **Corrección hallada por las pruebas**: en `/actividad`, si fallaba la página siguiente el cursor seguía puesto y «Cargar más» tapaba el aviso de error; ahora el error y «Reintentar» van primero.
+> - `useGuestLink` atrapa un fallo de `copy()` y avisa con el enlace para copiarlo a mano; es defensivo, porque VueUse ya cae a `execCommand('copy')` si el portapapeles falla.
+> - **T154**: `favicon.svg` (nube lucide, naranja primario sobre base-100 oscuro), `favicon.ico` (16 + 32 px, PNG en ICO) y `og-cloudy.png` (1200×630, 29 KB) renderizados con el Chromium de `playwright-core` desde una plantilla de un solo uso que no se versiona; `useSeoMeta` con `og:*`, `twitter:card` y la imagen absoluta a partir de `siteUrl` (se omite si está vacía).
+> - **Cobertura**: umbral subido de 90 a 92 en las cuatro métricas (la constitución pide 80). Antes 96.84 / 91.18 / 92.05 / 97.54 → después 98.15 / 93.33 / 94.69 / 98.72 (stmts / branches / funcs / lines), con pruebas de comportamiento en `dashboard.vue`, `AppSidebar`, `usuarios`, `actividad`, `DropZone`, `ThemeToggle`, `useGuestSubmission`, `usePulse`, `useUploader` y otros. Sin cubrir a propósito: las relaciones de `server/db/schema.ts` y las ramas solo-SSR (`LocalTime`, `useGuestLink.link`).
+> - **Hallazgos de la verificación final en navegador, corregidos**: (1) desajuste de hidratación al cruzar un límite de minuto («hace 36 minutos» en el servidor, «hace 37» al hidratar): `useRelativeTime()` guarda la hora del render del servidor en `useState('rendered-at')` (viaja en el payload) y la usa como referencia mientras `nuxtApp.isHydrating`; después manda el reloj real. `timeAgo(iso, now)` sigue puro en `dates.ts`; los componentes renderizados en SSR (`FileCard`, `FileList`, `SubmissionCard`, `usuarios`, `papelera`, `LocalTime`) toman `timeAgo` del composable. (2) Los enlaces de la barra lateral no mostraban el foco (daisyUI quita el anillo en `.menu`): anillo de 2 px por dentro en el color del texto (`outline-current`), también en el menú de cuenta; lo cubre el recorrido e2e en ambos temas, ítem activo e inactivo, barra expandida y contraída. (3) Al contraer o expandir con el teclado el foco caía en `<body>` porque el botón se sustituye por el otro: ahora pasa al botón nuevo. Sin corregir, a propósito: los enlaces de texto en línea de `/login` miden menos de 44 px (excepción de WCAG 2.5.8 para enlaces en línea; la regla de AGENTS.md es para `btn`/`input`) y una pérdida de sesión de desarrollo tras ~25 min que no se explicó. Mover el foco al cajón móvil al abrirlo se dejó fuera (necesita exponer el primer enlace y guardar el origen; más que unas líneas).
+> - **Intermitente, no reproducido**: en un recorrido en navegador las subidas desde Chromium sin cabeza contra el bucket de desarrollo fallaron en el `PUT` con un error de red; en la verificación final ambas subidas pasaron (POST 201 → PUT 200 → complete 200) y las e2e contra el bucket de pruebas pasan siempre. Queda anotado por si vuelve a verse.
+> - **Verificación final (2026-10-18)**:
+>   - Pruebas: `typecheck` limpio; unit 335/335; nuxt 242/242; e2e 70/70 (8 archivos, 350 s).
+>   - Cobertura: `test:coverage` 577 pruebas, 98.15 / 93.33 / 94.69 / 98.72, sin errores de umbral.
+>   - `build` correcto.
+>   - Navegador (Playwright headless shell, datos de `.env.development`):
+>     - Recorrido de las 15 rutas a 360 px y 1280 px, con la barra lateral expandida y contraída, en `cloudy` y `cloudy-light`: sin scroll horizontal y sin errores de consola.
+>     - Los cuatro estados se verificaron, incluido el error con «Reintentar» cortando la red en `/papelera` y `/actividad`.
+>     - Flujos: subir, buscar, crear y renombrar una carpeta, comentar, copiar el enlace para invitados y aprobar una cuenta, con el aviso sin tapar acciones a 1280 px.
+>     - Contraste del aviso de `/usuarios`: 9,15:1 en claro y 6,62:1 en oscuro.
+>     - Foco visible al tabular, `prefers-reduced-motion` respetado, favicon, metas Open Graph y `theme-color` por tema.
+>     - Las tres correcciones finales se re-verificaron: sin desajustes de hidratación en cargas cruzando un límite de minuto, el anillo de la barra lateral entre 9,76:1 y 17,78:1, y el foco se queda en el botón de la barra.
+> - **Pendiente fuera de esta fase**:
+>   - Con el menú de cuenta abierto, Tab no entra en sus opciones (solo se enfocaron directamente); falta revisar el orden del popover.
+>   - En desarrollo, la sesión se perdió dos veces (tras ~10 y ~25 min de recargas rápidas) sin causa en el log.
 
 ---
 

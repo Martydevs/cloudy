@@ -95,13 +95,16 @@ authorization. Neon Auth and storage are accessed **only** through `server/utils
 **V. Testing** — Unit tests for pure logic and business rules; component tests for stateful/role-
 dependent components; e2e for every user story and every protected route (no session + wrong role).
 Every bug fix ships a regression test. Select elements with `getByRole`/`getByLabel`. Coverage ≥ 80 %
-lines in `server/utils/**` and `shared/**`. E2E never touches dev/prod data: everything comes
+lines in `server/utils/**` and `shared/**` (constitution); the project gate in `vitest.config.ts` is 92 % on
+statements, branches, functions and lines for unit + nuxt together. E2E never touches dev/prod data: everything comes
 from `.env.test` (test branch DB, bucket, Neon Auth); identities and storage keys are unique per run (`e2e/<runId>/`).
 
 **VI. UX consistency** — Colors only via daisyUI semantic classes/theme tokens (no hard-coded colors);
 lucide icons; DM Sans. Every data view renders four states: loading (`SkeletonList`), empty
 (`EmptyState`), error with retry (`ErrorState`), content. Destructive actions confirm
 (`ConfirmDialog`); completed actions show a toast. UI copy in **Spanish**, friendly and actionable.
+Toast texts, API-error fallbacks and `ErrorState` copy live in `app/utils/messages.ts`; API errors reach the
+user only through `serverMessage()` (never raw `data.message`/`statusMessage`).
 WCAG 2.2 AA in both themes, visible focus, keyboard navigable, labeled controls, reduced motion
 respected. Do not use `text-warning` on `base-100` in the light theme (1.85:1 contrast).
 

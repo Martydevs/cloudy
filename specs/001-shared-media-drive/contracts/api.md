@@ -8,7 +8,9 @@ Rutas de servidor Nitro bajo `server/api/**` (Nuxt). JSON en ambos sentidos salv
 
 **Acceso** — `public`: sin sesión · `session`: sesión válida (cualquier estado) · `editor`: perfil `active` con rol `editor` o `admin` · `admin`: perfil `active` rol `admin` · `cron`: `Authorization: Bearer $CRON_SECRET`. Fallo de sesión ⇒ **401**; rol/estado insuficiente ⇒ **403** (FR-008, SC-009).
 
-Códigos comunes: 400 entrada mal formada · 401 · 403 · 404 · 409 conflicto (concurrencia / último admin / ya revisado / en papelera) · 413 archivo > 100 MB · 415 tipo no permitido · 422 validación o firma binaria inválida · 429 rate limit (`Retry-After`).
+Códigos comunes: 400 entrada mal formada · 401 · 403 · 404 · 409 conflicto (concurrencia / último admin / ya revisado / en papelera) · 413 archivo > 100 MB · 415 tipo no permitido · 422 validación o firma binaria inválida · 429 rate limit (`Retry-After`, `message` en español desde `shared/constants/messages.ts` y `data.retryAfter`).
+
+Los mensajes para la persona van en `message` y en español; el cliente (`serverMessage`) solo muestra `message` en 4xx cuando difiere de `statusMessage` (h3 copia la frase del estado si no hay mensaje), traduce todo 429 al texto común y usa su propio respaldo en 5xx y errores de red.
 
 Tipos compartidos en `shared/types/api.ts` (`FileItem`, `FolderItem`, `Profile`, `Submission`, `Comment`, `ActivityEntry`, `TrashItem`, `Pulse`).
 

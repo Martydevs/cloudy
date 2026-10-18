@@ -57,14 +57,14 @@ Tras iniciar sesión se navega a `redirect` si es una ruta interna válida (empi
 | `FileGrid` / `FileList` | `items`, `view: 'grid' \| 'list'` | `open`, `rename`, `move`, `trash` | miniaturas lazy; contador de comentarios |
 | `FilePreview` | `file: FileItem` | — | imagen / `<audio>` / `<video>` (`useMediaControls`) / PDF en `<iframe>`; otros ⇒ ícono + descargar |
 | `CommentThread` | `fileId` | — | `useCommentThread`: carga inicial + sondeo cada 5 s con `?since=<último createdAt>`, fusión por `id`; pausado con la pestaña oculta, sin conexión o con el hilo fuera de la vista (`useElementVisibility`), y sondeo inmediato al volver. 409 al publicar ⇒ aviso para restaurar desde la Papelera. Se monta con `Lazy` en `archivos/ver/[fileId]` |
-| `CommentItem` | `comment: Comment` | `updated(Comment)`, `deleted(id)` | autor, fecha relativa (`useTimeAgoIntl`, se refresca cada 30 s), "(editado)"; edición en línea (`textarea` con contador `n/2000`, Ctrl/⌘+Enter guarda, Esc cancela); Editar/Eliminar según `canEdit`/`canDelete`, borrar con `useConfirm`; 404 ⇒ se quita del hilo |
+| `CommentItem` | `comment: Comment` | `updated(Comment)`, `deleted(id)` | autor, fecha relativa (`timeAgo` de `app/utils/dates.ts` con `useNow`, se refresca cada 30 s), "(editado)"; edición en línea (`textarea` con contador `n/2000`, Ctrl/⌘+Enter guarda, Esc cancela); Editar/Eliminar según `canEdit`/`canDelete`, borrar con `useConfirm`; 404 ⇒ se quita del hilo |
 | `CommentCount` | `count?` | — | ícono `message-circle` + número con `aria-label="N comentarios"` en `FileCard` (insignia sobre la miniatura, para no recortar los metadatos) y `FileList`; oculto en 0 |
 | `ConfirmDialog` | `title`, `message`, `confirmLabel`, `danger?` | `confirm`, `cancel` | `useConfirmDialog`; `<dialog>` nativo (`modal` daisyUI) con foco inicial en "Cancelar" |
 | `FolderPicker` | `excludeId?` | `select(folderId \| null)` | usa `/api/folders/tree` |
 | `EmptyState` | `icon`, `title`, `description`, acción opcional | — | FR-032 |
 | `ErrorState` | `message`, `onRetry` | — | Estado de error con "Reintentar" (Constitución VI) |
 | `SkeletonList` | `rows`, `variant` (`grid` o `list`) | — | Estado de carga |
-| `AppToast` (composable `useToast()`) | — | — | `toast toast-end` daisyUI, `role="status"`, auto-ocultar `useTimeoutFn` |
+| `AppToast` (composable `useToast()`) | — | — | `toast toast-top toast-center` daisyUI dentro de un envoltorio `sticky` que cada layout monta en su columna de contenido (centrado sobre el contenido, bajo la barra superior de `h-16`), `role="status"`, auto-ocultar `useTimeoutFn`; textos en `app/utils/messages.ts` |
 
 ## Reglas transversales (Constitución III y VI)
 

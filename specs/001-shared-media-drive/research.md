@@ -189,7 +189,7 @@ Regla del proyecto: **antes de escribir una utilidad reactiva, se busca su equiv
 | Pulso en vivo | `useIntervalFn` + `useDocumentVisibility` + `useOnline` |
 | Listas largas (archivos, actividad) | `useInfiniteScroll` |
 | Paginación de tablas (usuarios) | `useOffsetPagination` |
-| Fechas relativas en español | `useTimeAgoIntl` (locale `es`) |
+| Fechas relativas en español | `formatTimeAgoIntl` (locale `es`) envuelto en `app/utils/dates.ts` (`timeAgo`, «hace un momento» bajo un minuto para no desajustar la hidratación); en comentarios se refresca con `useNow` |
 | Confirmaciones (eliminar, vaciar papelera) | `useConfirmDialog` |
 | Copiar el enlace público de invitados | `useClipboard` (+ `useShare` en móvil) |
 | Reproductor de audio y video | `useMediaControls` |
