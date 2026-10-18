@@ -142,6 +142,17 @@ describe('tarjetas y listas de archivos', () => {
     expect(wrapper.emitted('action')![0]).toEqual(['rename', expect.objectContaining({ id: 'f1' })])
   })
 
+  it('FileCard muestra la fecha en su propio elemento, fuera de la línea recortable del tamaño', async () => {
+    // Regresión de la fase 10: «2 KB · hace 3 días» en una sola línea `truncate` dejaba «antea…».
+    const createdAt = new Date(Date.now() - 3 * 86_400_000).toISOString()
+    const wrapper = await mountSuspended(FileCard, { props: { file: file({ createdAt }) } })
+    const date = timeAgo(createdAt)
+    const dateEl = wrapper.findAll('*').find(el => el.text().trim() === date)
+    expect(dateEl, `un elemento cuyo texto es solo «${date}»`).toBeDefined()
+    expect(dateEl!.classes()).not.toContain('truncate')
+    expect(wrapper.findAll('*').some(el => el.text().trim() === '2 KB')).toBe(true)
+  })
+
   it('FileCard compacto sin miniatura muestra el ícono y no tiene menú', async () => {
     const wrapper = await mountSuspended(FileCard, { props: { file: file({ hasThumbnail: false, category: 'audio', name: 'a.mp3' }), compact: true } })
     expect(wrapper.find('img').exists()).toBe(false)
