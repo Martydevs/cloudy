@@ -153,55 +153,59 @@ const TYPE_FILTERS: { value: FileCategory | undefined, label: string }[] = [
       </div>
     </div>
 
-    <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-      <!-- En móvil se desliza con el dedo sin barra visible; `py-1` deja sitio al anillo de foco. -->
-      <div class="-mx-4 overflow-x-auto overflow-y-hidden px-4 py-1 [scrollbar-width:none] lg:mx-0 lg:overflow-visible lg:px-0">
-        <div class="join" role="group" aria-label="Filtrar por tipo">
-          <button
-            v-for="filter in TYPE_FILTERS"
-            :key="filter.label"
-            type="button"
-            class="btn join-item whitespace-nowrap"
-            :class="{ 'btn-active btn-primary': type === filter.value }"
-            :aria-pressed="type === filter.value"
-            @click="setQuery({ type: filter.value })"
-          >
-            {{ filter.label }}
-          </button>
+    <!-- Consulta de contenedor: la barra pasa a una fila cuando el ancho del contenido (no el del
+         viewport) lo permite, así funciona igual con la barra lateral expandida o contraída. -->
+    <div class="@container">
+      <div class="flex flex-col gap-3 @5xl:flex-row @5xl:items-center @5xl:justify-between">
+        <!-- Los filtros se deslizan sin barra visible si no caben; `py-1` deja sitio al anillo de foco. -->
+        <div class="-mx-4 min-w-0 overflow-x-auto overflow-y-hidden px-4 py-1 [scrollbar-width:none] @5xl:mx-0 @5xl:px-0">
+          <div class="join" role="group" aria-label="Filtrar por tipo">
+            <button
+              v-for="filter in TYPE_FILTERS"
+              :key="filter.label"
+              type="button"
+              class="btn join-item whitespace-nowrap"
+              :class="{ 'btn-active btn-primary': type === filter.value }"
+              :aria-pressed="type === filter.value"
+              @click="setQuery({ type: filter.value })"
+            >
+              {{ filter.label }}
+            </button>
+          </div>
         </div>
-      </div>
-      <div class="flex items-center gap-2">
-        <label class="flex min-w-0 flex-1 items-center gap-2 lg:flex-none">
-          <span class="shrink-0 text-sm">Ordenar por</span>
-          <select
-            class="select min-w-0 flex-1 lg:w-56"
-            :value="sortOption"
-            @change="setSort(($event.target as HTMLSelectElement).value as SortOption)"
-          >
-            <option v-for="(option, key) in SORTS" :key="key" :value="key">{{ option.label }}</option>
-          </select>
-        </label>
-        <div class="join" role="group" aria-label="Vista">
-          <button
-            type="button"
-            class="btn btn-square join-item"
-            :class="{ 'btn-active': view === 'grid' }"
-            :aria-pressed="view === 'grid'"
-            aria-label="Ver en cuadrícula"
-            @click="view = 'grid'"
-          >
-            <Icon name="lucide:layout-grid" class="size-4" aria-hidden="true" />
-          </button>
-          <button
-            type="button"
-            class="btn btn-square join-item"
-            :class="{ 'btn-active': view === 'list' }"
-            :aria-pressed="view === 'list'"
-            aria-label="Ver en lista"
-            @click="view = 'list'"
-          >
-            <Icon name="lucide:list" class="size-4" aria-hidden="true" />
-          </button>
+        <div class="flex items-center gap-2">
+          <label class="flex min-w-0 flex-1 items-center gap-2 @5xl:flex-none">
+            <span class="shrink-0 text-sm">Ordenar por</span>
+            <select
+              class="select min-w-0 flex-1 @5xl:w-56"
+              :value="sortOption"
+              @change="setSort(($event.target as HTMLSelectElement).value as SortOption)"
+            >
+              <option v-for="(option, key) in SORTS" :key="key" :value="key">{{ option.label }}</option>
+            </select>
+          </label>
+          <div class="join" role="group" aria-label="Vista">
+            <button
+              type="button"
+              class="btn btn-square join-item"
+              :class="{ 'btn-active': view === 'grid' }"
+              :aria-pressed="view === 'grid'"
+              aria-label="Ver en cuadrícula"
+              @click="view = 'grid'"
+            >
+              <Icon name="lucide:layout-grid" class="size-4" aria-hidden="true" />
+            </button>
+            <button
+              type="button"
+              class="btn btn-square join-item"
+              :class="{ 'btn-active': view === 'list' }"
+              :aria-pressed="view === 'list'"
+              aria-label="Ver en lista"
+              @click="view = 'list'"
+            >
+              <Icon name="lucide:list" class="size-4" aria-hidden="true" />
+            </button>
+          </div>
         </div>
       </div>
     </div>

@@ -11,6 +11,12 @@ const filters = computed(() => ({
   ...(action.value ? { action: action.value } : {}),
   ...(actor.value ? { actor: actor.value } : {}),
 }))
+const hasFilters = computed(() => !!(action.value || actor.value))
+
+function clearFilters() {
+  action.value = ''
+  actor.value = ''
+}
 
 // La primera página llega con el SSR (LCP sin esperar a la hidratación); al cambiar un filtro se vuelve a pedir.
 const { data: firstPage, error, pending, refresh } = await useApiFetch<Paginated<ActivityEntry>>('/api/activity', {
@@ -55,10 +61,10 @@ watch(sentinelVisible, (visible) => {
   if (visible) loadMore()
 })
 
-// Filtro por persona: la lista de cuentas (sin las eliminadas) es corta.
-const { data: users } = await useApiFetch<UsersPage>('/api/users', { lazy: true, query: { pageSize: 50 } })
-
-const dateFormat = new Intl.DateTimeFormat('es-MX', { dateStyle: 'medium', timeStyle: 'short' })
+// Filtro por persona: la lista de cuentas (sin las eliminadas) es corta. Si no llega, el filtro se
+// desactiva con una explicación; la actividad se sigue mostrando.
+const { data: users, error: usersError } = await useApiFetch<UsersPage>('/api/users', { lazy: true, query: { pageSize: 50 } })
+const usersHintId = useId()
 </script>
 
 <template>
@@ -78,15 +84,31 @@ const dateFormat = new Intl.DateTimeFormat('es-MX', { dateStyle: 'medium', timeS
       </label>
       <label class="flex min-w-0 flex-1 items-center gap-2">
         <span class="shrink-0 text-sm">Persona</span>
-        <select v-model="actor" class="select min-w-0 flex-1">
+        <select
+          v-model="actor"
+          class="select min-w-0 flex-1"
+          :disabled="!!usersError"
+          :aria-describedby="usersError ? usersHintId : undefined"
+        >
           <option value="">Todas</option>
           <option v-for="user in users?.items ?? []" :key="user.userId" :value="user.userId">{{ user.name }}</option>
         </select>
       </label>
     </div>
+    <p v-if="usersError" :id="usersHintId" class="text-sm text-base-content/70">
+      No pudimos cargar la lista de personas, así que ese filtro no está disponible. Recarga la página para intentarlo de nuevo.
+    </p>
 
     <SkeletonList v-if="!firstPage && pending" :rows="8" />
     <ErrorState v-else-if="error" message="No pudimos cargar la actividad. Revisa tu conexión." @retry="refresh()" />
+    <EmptyState
+      v-else-if="items.length === 0 && hasFilters"
+      icon="lucide:filter-x"
+      title="No hay actividad con estos filtros"
+      description="Prueba con otra acción u otra persona, o quita los filtros para ver todo."
+    >
+      <button type="button" class="btn" @click="clearFilters">Quitar filtros</button>
+    </EmptyState>
     <EmptyState
       v-else-if="items.length === 0"
       icon="lucide:activity"
@@ -104,9 +126,8 @@ const dateFormat = new Intl.DateTimeFormat('es-MX', { dateStyle: 'medium', timeS
               <span class="font-medium">{{ entry.targetLabel }}</span>
               <span v-if="activityDetail(entry.action, entry.meta)" class="text-base-content/70"> · {{ activityDetail(entry.action, entry.meta) }}</span>
             </span>
-            <time :datetime="entry.createdAt" class="text-xs text-base-content/70" :title="dateFormat.format(new Date(entry.createdAt))">
-              {{ timeAgo(entry.createdAt) }}
-            </time>
+            <!-- Un registro de auditoría necesita la hora exacta, visible. -->
+            <LocalTime :iso="entry.createdAt" class="text-xs text-base-content/70" />
           </div>
         </li>
       </ul>

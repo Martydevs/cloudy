@@ -46,7 +46,8 @@ const summary = computed(() => {
       description="Cuando alguien se registre aparecerá aquí para que lo apruebes."
     />
     <template v-else>
-      <p v-if="summary" role="status" class="alert alert-warning alert-soft">
+      <!-- Sin `alert-soft`: en el tema claro pondría texto amarillo sobre base-100 (1.85:1). -->
+      <p v-if="summary" role="status" class="alert alert-warning">
         <Icon name="lucide:bell" class="size-5" aria-hidden="true" />
         <span>{{ summary }}</span>
       </p>

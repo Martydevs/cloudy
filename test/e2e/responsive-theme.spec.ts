@@ -338,6 +338,22 @@ describe('US9 · recorrido de rutas (T151)', () => {
       }
     })
 
+    // La barra de herramientas del explorador depende del ancho del contenido, que cambia al contraer la barra lateral.
+    it('/archivos con la barra lateral contraída (escritorio)', async () => {
+      const { page, errors } = await pool.get('desktop')
+      await page.goto(`${E2E_URL}/archivos`)
+      await waitForHydration(page)
+      await page.getByRole('button', { name: 'Contraer barra lateral' }).click()
+      await expect.poll(() => page.getByRole('button', { name: 'Expandir barra lateral' }).isVisible()).toBe(true)
+      try {
+        for (const theme of THEMES) await audit(page, errors, '/archivos', theme, 'desktop')
+      }
+      finally {
+        // El estado vive en localStorage del contexto: se deja expandida para las demás pruebas.
+        await page.getByRole('button', { name: 'Expandir barra lateral' }).click()
+      }
+    })
+
     it('el aviso «Comentario publicado» no tapa el botón «Comentar»', async () => {
       for (const viewport of VIEWPORTS) {
         const { page } = await pool.get(viewport)

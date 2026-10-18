@@ -1,5 +1,4 @@
 // Opciones del menú `⋯` de archivos y carpetas (mismo orden en cuadrícula, lista y detalle).
-import { formatTimeAgoIntl } from '@vueuse/core'
 import type { ActionMenuItem } from '~/components/ui/ActionMenu.vue'
 
 export type ItemAction = 'open' | 'rename' | 'move' | 'trash'
@@ -20,7 +19,3 @@ export const folderMenuItems: ActionMenuItem[] = [
   { key: 'move', label: 'Mover', icon: 'lucide:folder-input' },
   { key: 'trash', label: 'Eliminar', icon: 'lucide:trash-2', danger: true },
 ]
-
-export function timeAgo(iso: string): string {
-  return formatTimeAgoIntl(new Date(iso), { locale: 'es' })
-}

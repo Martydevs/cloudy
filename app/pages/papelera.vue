@@ -14,7 +14,6 @@ const { data, error, pending, refresh } = await useApiFetch<TrashItem[]>('/api/t
 
 const canEmpty = computed(() => can(profile.value?.role, 'trash.empty'))
 const busyId = ref<string | null>(null)
-const dateFormat = new Intl.DateTimeFormat('es-MX', { dateStyle: 'medium', timeStyle: 'short' })
 
 function itemIcon(item: TrashItem): string {
   if (item.kind === 'folder') return 'lucide:folder'
@@ -124,7 +123,7 @@ async function emptyTrash() {
           <span class="text-sm break-words text-base-content/70">Ubicación original: {{ location(item.originalPath) }}</span>
           <span class="text-xs text-base-content/70">
             {{ item.deletedBy ? `Eliminado por ${item.deletedBy}` : 'Eliminado' }}
-            <time :datetime="item.deletedAt" :title="dateFormat.format(new Date(item.deletedAt))">{{ timeAgo(item.deletedAt) }}</time>
+            <time :datetime="item.deletedAt" :title="formatDateTime(item.deletedAt)">{{ timeAgo(item.deletedAt) }}</time>
             <template v-if="item.kind === 'folder'"> · {{ elements(item.itemCount) }}</template>
             · {{ formatBytes(item.bytes) }}
           </span>

@@ -72,7 +72,7 @@ const ORIGIN_LABELS = { team: 'Equipo', guest: 'Invitado' } as const
               <dd>{{ file.uploadedBy?.name ?? file.guestName ?? 'Invitado' }}</dd>
               <dt class="text-base-content/70">Fecha</dt>
               <dd>
-                <time :datetime="file.createdAt">{{ new Date(file.createdAt).toLocaleString('es') }}</time>
+                <LocalTime :iso="file.createdAt" />
               </dd>
               <dt class="text-base-content/70">Tamaño</dt>
               <dd>{{ formatBytes(file.sizeBytes) }}</dd>

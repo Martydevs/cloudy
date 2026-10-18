@@ -49,7 +49,8 @@ function another() {
         <Icon name="lucide:circle-check" class="size-12 text-success" aria-hidden="true" />
         <h2 class="text-xl font-semibold">¡Gracias! Recibimos tu envío</h2>
         <p class="text-base-content/70">El equipo lo revisará pronto. Te avisamos por fuera de Cloudy si hace falta algo más.</p>
-        <p v-if="submission.result.value?.rejected" role="status" class="alert alert-warning alert-soft">
+        <!-- Sin `alert-soft`: en el tema claro pondría texto amarillo sobre base-100 (1.85:1). -->
+        <p v-if="submission.result.value?.rejected" role="status" class="alert alert-warning">
           <Icon name="lucide:circle-alert" class="size-5" aria-hidden="true" />
           <span>{{ submission.result.value.rejected === 1 ? 'Un archivo no pasó la verificación y no se incluyó.' : `${submission.result.value.rejected} archivos no pasaron la verificación y no se incluyeron.` }}</span>
         </p>

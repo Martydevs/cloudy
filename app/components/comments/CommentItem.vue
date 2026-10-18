@@ -23,8 +23,10 @@ const errorId = useId()
 const result = computed(() => commentInput({ body: draft.value }))
 const error = computed(() => serverError.value || (touched.value && !result.value.ok ? result.value.errors.body : ''))
 const url = computed(() => `/api/comments/${props.comment.id}`)
-// Se refresca sola cada 30 s: el hilo puede quedar abierto mucho tiempo.
-const ago = useTimeAgoIntl(() => props.comment.createdAt, { locale: 'es', scheduler: cb => useIntervalFn(cb, 30_000) })
+// Mismo texto que el resto de la app (`timeAgo`), con una hora de referencia que se refresca cada
+// 30 s: el hilo puede quedar abierto mucho tiempo.
+const now = useNow({ scheduler: cb => useIntervalFn(cb, 30_000) })
+const ago = computed(() => timeAgo(props.comment.createdAt, now.value))
 
 function startEdit() {
   draft.value = props.comment.body
@@ -96,7 +98,7 @@ async function destroy() {
   <li class="flex flex-col gap-2 rounded-box bg-base-200 p-3">
     <p class="flex flex-wrap items-baseline gap-x-2 text-sm">
       <span class="font-medium">{{ comment.author.name }}</span>
-      <time :datetime="comment.createdAt" :title="new Date(comment.createdAt).toLocaleString('es')" class="text-base-content/70">
+      <time :datetime="comment.createdAt" :title="formatDateTime(comment.createdAt)" class="text-base-content/70">
         {{ ago }}
       </time>
       <span v-if="comment.editedAt" class="text-base-content/70">(editado)</span>

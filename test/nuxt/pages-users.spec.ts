@@ -2,6 +2,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { mockNuxtImport, mountSuspended } from '@nuxt/test-utils/runtime'
 import { setResponseStatus } from 'h3'
+import type { H3Event } from 'h3'
 import { nextTick } from 'vue'
 import type { ActivityEntry, Me, Profile } from '#shared/types/api'
 import ActividadPage from '~/pages/actividad.vue'
@@ -159,26 +160,30 @@ describe('Usuarios', () => {
 })
 
 describe('Actividad', () => {
+  const CREATED_AT = '2026-10-14T10:00:00.000Z'
   const entry = (changes: Partial<ActivityEntry> = {}): ActivityEntry => ({
     id: 1, actorId: 'u1', actorLabel: 'Ana', action: 'user.activate', targetType: 'user', targetId: 'u2', targetLabel: 'Luis',
-    meta: { role: 'editor' }, createdAt: new Date().toISOString(), ...changes,
+    meta: { role: 'editor' }, createdAt: CREATED_AT, ...changes,
   })
+  const params = (event: H3Event) => new URL(event.path, 'http://x').searchParams
 
   beforeEach(() => {
     mockApi('GET', '/api/users', { items: [me.profile], total: 1 })
   })
 
-  it('lista la actividad traducida con filtros y carga más por cursor', async () => {
+  it('lista la actividad traducida, con la hora exacta, filtros y carga más por cursor', async () => {
     mockApi('GET', '/api/activity', (event) => {
-      const params = new URL(event.path, 'http://x').searchParams
-      if (params.get('cursor') === '2') return { items: [entry({ id: 1, action: 'file.upload', targetType: 'file', targetLabel: 'foto.jpg', meta: null })], nextCursor: null }
-      if (params.get('action') === 'user.role_change') return { items: [entry({ id: 3, action: 'user.role_change', meta: { from: 'editor', to: 'admin' } })], nextCursor: null }
+      if (params(event).get('cursor') === '2') return { items: [entry({ id: 1, action: 'file.upload', targetType: 'file', targetLabel: 'foto.jpg', meta: null })], nextCursor: null }
+      if (params(event).get('action') === 'user.role_change') return { items: [entry({ id: 3, action: 'user.role_change', meta: { from: 'editor', to: 'admin' } })], nextCursor: null }
       return { items: [entry({ id: 2 })], nextCursor: '2' }
     })
     const wrapper = await mountSuspended(ActividadPage)
     await flush()
     expect(wrapper.text()).toContain('Ana activó la cuenta de Luis')
     expect(wrapper.text()).toContain('como Editor')
+    // Un registro de auditoría muestra la hora exacta como texto visible, no solo la relativa.
+    expect(wrapper.get('time').attributes('datetime')).toBe(CREATED_AT)
+    expect(wrapper.get('time').text()).toBe(formatDateTime(CREATED_AT))
 
     await button(wrapper, 'Cargar más').trigger('click')
     await flush()
@@ -208,6 +213,35 @@ describe('Actividad', () => {
     await button(wrapper, 'Reintentar').trigger('click')
     await flush()
     expect(wrapper.text()).toContain('Sin actividad todavía')
+  })
+
+  it('vacío por filtros: lo dice y ofrece quitarlos', async () => {
+    mockApi('GET', '/api/activity', event => params(event).get('action')
+      ? { items: [], nextCursor: null }
+      : { items: [entry()], nextCursor: null })
+    const wrapper = await mountSuspended(ActividadPage)
+    await flush()
+    const actionSelect = () => wrapper.findAll('select')[0]!.element as HTMLSelectElement
+    await wrapper.findAll('select')[0]!.setValue('user.role_change')
+    await flush()
+    expect(wrapper.text()).toContain('No hay actividad con estos filtros')
+    expect(wrapper.text()).not.toContain('Sin actividad todavía')
+
+    await button(wrapper, 'Quitar filtros').trigger('click')
+    await flush()
+    expect(actionSelect().value).toBe('')
+    expect(wrapper.text()).toContain('Ana activó la cuenta de Luis')
+  })
+
+  it('si falla la lista de personas, ese filtro se desactiva y lo explica sin ocultar la actividad', async () => {
+    mockApi('GET', '/api/users', failWith(500))
+    mockApi('GET', '/api/activity', { items: [entry()], nextCursor: null })
+    const wrapper = await mountSuspended(ActividadPage)
+    await flush()
+    const people = wrapper.findAll('select')[1]!
+    expect((people.element as HTMLSelectElement).disabled).toBe(true)
+    expect(wrapper.text()).toContain('No pudimos cargar la lista de personas')
+    expect(wrapper.text()).toContain('Ana activó la cuenta de Luis')
   })
 
   it('etiquetas: todas las acciones tienen texto, ícono por tipo y detalle según meta', () => {
