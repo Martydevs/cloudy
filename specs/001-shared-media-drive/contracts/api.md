@@ -68,10 +68,15 @@ El navegador hace `PUT uploadUrl` con el `Content-Type` firmado; el progreso se 
 
 | Método | Ruta | Acceso | Cuerpo | Respuesta |
 |--------|------|--------|--------|-----------|
-| `GET` | `/api/files/:id/comments` | editor | `?since=<ISO>` | `Comment[]` = `{ id, body, author: {id,name}, createdAt, editedAt, canEdit, canDelete }` |
-| `POST` | `/api/files/:id/comments` | editor | `{ body }` (1–2000) | `201 Comment` — 409 si el archivo está en papelera |
-| `PATCH` | `/api/comments/:id` | editor (autor) | `{ body }` | `Comment` — 403 si no es el autor |
-| `DELETE` | `/api/comments/:id` | editor (autor) o admin | — | `204` |
+| `GET` | `/api/files/:id/comments` | editor | `?since=<ISO>` | `Comment[]` = `{ id, body, author: {id,name}, createdAt, editedAt, canEdit, canDelete }` en orden cronológico — 404 si el archivo no existe o está en papelera |
+| `POST` | `/api/files/:id/comments` | editor | `{ body }` (1–2000) | `201 Comment` — 409 "El archivo está en la papelera" |
+| `PATCH` | `/api/comments/:id` | editor (autor) | `{ body }` | `Comment` con `editedAt` — 403 si no es el autor (tampoco el admin), 409 si el archivo está en papelera |
+| `DELETE` | `/api/comments/:id` | editor (autor) o admin | — | `204`; si borra un admin que no es el autor registra `comment.admin_delete` (target = archivo, `meta.author`) |
+
+- `canEdit` = el autor; `canDelete` = el autor o `comments.moderate` (admin). Comentario inexistente → 404 "El comentario ya no existe".
+- `since` (mismo validador `isoSince` que `/api/realtime/pulse`) devuelve los creados después del cursor. Postgres guarda microsegundos y el cliente envía milisegundos, así que se compara `date_trunc('milliseconds', created_at) > since` para no repetir el último comentario en cada sondeo.
+- `GET` lee archivo y comentarios en un solo `db.batch` (un viaje por sondeo de 5 s).
+- El sondeo solo trae comentarios **nuevos** (lo que exige SC-011). Las ediciones y los borrados de otras personas se ven al recargar el visor; si alguien intenta editar o borrar un comentario que ya no existe, recibe 404 y la UI lo quita del hilo.
 
 ## Envíos de invitados
 

@@ -663,8 +663,8 @@ description: "Task list for Cloudy — Disco multimedia compartido (feature 001)
 
 ### Tests for User Story 8 ⚠️
 
-- [ ] T142 [P] [US8] Crear `test/unit/validation-comments.spec.ts`: `commentInput` rechaza el texto vacío o solo con espacios y el de 2 001 caracteres, y acepta el de 2 000.
-- [ ] T143 [P] [US8] Crear `test/e2e/comments.spec.ts`:
+- [X] T142 [P] [US8] Crear `test/unit/validation-comments.spec.ts`: `commentInput` rechaza el texto vacío o solo con espacios y el de 2 001 caracteres, y acepta el de 2 000.
+- [X] T143 [P] [US8] Crear `test/e2e/comments.spec.ts`:
   - A publica y B (otro contexto con el archivo abierto) lo ve en ≤ 5 s.
   - A edita su comentario y aparece "editado".
   - B no tiene opciones de editar ni borrar en el comentario de A, y `PATCH` directo responde 403.
@@ -674,15 +674,15 @@ description: "Task list for Cloudy — Disco multimedia compartido (feature 001)
 
 ### Implementation for User Story 8
 
-- [ ] T144 [P] [US8] Crear `shared/validation/comments.ts`: `commentInput` = `{ body }` con "1–2 000 car. tras `trim`".
-- [ ] T145 [US8] Crear `server/api/files/[id]/comments.get.ts` (editor). Acepta `since` opcional y devuelve `Comment[]` en orden cronológico, con `canEdit = author === me` y `canDelete = author === me || admin`. Crear también `server/api/files/[id]/comments.post.ts` (editor): responde 409 "El archivo está en la papelera" si `deleted_at` no es null; si no, inserta y responde `201 Comment`.
-- [ ] T146 [US8] Crear `server/api/comments/[id].patch.ts` (solo el autor, 403 si no; fija `edited_at = now()`) y `server/api/comments/[id].delete.ts` (el autor o un admin; si lo borra un admin sin ser autor, registra `comment.admin_delete`) (FR-039).
-- [ ] T147 [US8] Agregar `commentCount` como subconsulta agregada `(SELECT count(*) FROM comments c WHERE c.file_id = files.id)` en `server/api/folders/[id]/children.get.ts`, `server/api/files/search.get.ts` y `server/api/files/[id].get.ts`, y mostrar el contador (`lucide:message-circle` + número) en `app/components/files/FileCard.vue` (FR-040).
-- [ ] T148 [P] [US8] Crear `app/components/comments/CommentItem.vue`:
+- [X] T144 [P] [US8] Crear `shared/validation/comments.ts`: `commentInput` = `{ body }` con "1–2 000 car. tras `trim`".
+- [X] T145 [US8] Crear `server/api/files/[id]/comments.get.ts` (editor). Acepta `since` opcional y devuelve `Comment[]` en orden cronológico, con `canEdit = author === me` y `canDelete = author === me || admin`. Crear también `server/api/files/[id]/comments.post.ts` (editor): responde 409 "El archivo está en la papelera" si `deleted_at` no es null; si no, inserta y responde `201 Comment`.
+- [X] T146 [US8] Crear `server/api/comments/[id].patch.ts` (solo el autor, 403 si no; fija `edited_at = now()`) y `server/api/comments/[id].delete.ts` (el autor o un admin; si lo borra un admin sin ser autor, registra `comment.admin_delete`) (FR-039).
+- [X] T147 [US8] Agregar `commentCount` como subconsulta agregada `(SELECT count(*) FROM comments c WHERE c.file_id = files.id)` en `server/api/folders/[id]/children.get.ts`, `server/api/files/search.get.ts` y `server/api/files/[id].get.ts`, y mostrar el contador (`lucide:message-circle` + número) en `app/components/files/FileCard.vue` (FR-040).
+- [X] T148 [P] [US8] Crear `app/components/comments/CommentItem.vue`:
   - Autor, fecha relativa y "(editado)".
   - Edición en línea con `textarea` y el contador de 2 000.
   - Acciones según `canEdit`/`canDelete`, con `useConfirm` al borrar.
-- [ ] T149 [US8] Crear `app/components/comments/CommentThread.vue`:
+- [X] T149 [US8] Crear `app/components/comments/CommentThread.vue`:
   - Prop `fileId`. Carga inicial y sondeo con `useIntervalFn(POLL_INTERVAL_MS)` pidiendo solo `?since=<último createdAt>`, pausado si la pestaña está oculta o si `useElementVisibility` del hilo es falso.
   - Formulario para publicar con validación en línea.
   - Los cuatro estados; el `EmptyState` dice "Sé el primero en comentar".
@@ -690,6 +690,17 @@ description: "Task list for Cloudy — Disco multimedia compartido (feature 001)
   Integrarlo en el slot de `app/pages/archivos/ver/[fileId].vue` (FR-038, SC-011).
 
 **Checkpoint**: US8 funciona y `comments.spec.ts` pasa.
+
+> **Hecho (2026-10-17, rama `001-us8-comentarios`)**. Notas de implementación:
+> - La subconsulta `commentCount` de T147 ya existía (`commentCountSql()` en `server/utils/pagination.ts`). En esta fase solo se agregó la UI: `CommentCount` como insignia sobre la miniatura en `FileCard` y junto al nombre en `FileList`.
+> - Helper `server/utils/comments.ts` (`toComment`, `commentFileQuery`/`findFileForComments`, `listComments`, `getComment`) y composable `useCommentThread`.
+> - `isoSince()` en `shared/validation/core.ts` es la regla de `since` de `/api/realtime/pulse` y de los comentarios.
+> - Decisiones:
+>   - El `GET` del hilo de un archivo en papelera responde 404.
+>   - Editar un comentario de un archivo en papelera responde 409.
+>   - `since` se compara truncado a milisegundos.
+>   - El sondeo solo trae comentarios nuevos (SC-011). Ediciones y borrados ajenos se ven al recargar.
+> - Verificación: typecheck; unit 318, nuxt 176 y e2e 49 en verde; cobertura 96.58 / 91.1 / 91.35 / 97.29 (stmts / branches / funcs / lines). En el navegador se recorrieron los escenarios A–H a 360 y 1280 px en ambos temas; B ve el comentario de A en ≤ 5.3 s.
 
 ---
 

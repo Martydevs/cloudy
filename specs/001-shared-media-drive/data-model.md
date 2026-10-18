@@ -142,7 +142,7 @@ Límite: máx. 20 archivos por envío.
 | `edited_at` | timestamptz null | no null ⇒ "editado" (FR-039) |
 
 **Índices**: `(file_id, created_at)`.
-**Reglas**: editar/borrar solo el autor; borrar también admin (registra `comment.admin_delete`). No se puede comentar un archivo en papelera (edge case → 409). Se conservan al enviar a papelera y restaurar (FR-040). `comment_count` se calcula con subconsulta agregada en el listado.
+**Reglas**: editar/borrar solo el autor; borrar también admin (registra `comment.admin_delete` con `target_type = 'file'` y `meta.author`). No se puede comentar ni editar comentarios de un archivo en papelera (edge case → 409); su hilo tampoco se lee (404). Se conservan al enviar a papelera y restaurar (FR-040). `comment_count` se calcula con subconsulta agregada en el listado.
 
 ---
 
