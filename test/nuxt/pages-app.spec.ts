@@ -21,7 +21,7 @@ import { AuthRequestError } from '~/composables/useAuthClient'
 import type { Queryable, QueryableWithGet } from './helpers/api'
 import { buttonsWithText, calls, failWith, flush, mockApi, resetCalls } from './helpers/api'
 
-const { navigateToMock, clearErrorMock, client } = vi.hoisted(() => ({
+const { navigateToMock, clearErrorMock, client, loggingOut } = await vi.hoisted(async () => ({
   navigateToMock: vi.fn(),
   clearErrorMock: vi.fn(),
   client: {
@@ -34,10 +34,11 @@ const { navigateToMock, clearErrorMock, client } = vi.hoisted(() => ({
     changePassword: vi.fn(),
     updateUser: vi.fn(),
   },
+  loggingOut: (await import('vue')).ref(false),
 }))
 mockNuxtImport('navigateTo', () => navigateToMock)
 mockNuxtImport('clearError', () => clearErrorMock)
-mockNuxtImport('useAuthClient', () => () => client)
+mockNuxtImport('useAuthClient', () => () => ({ ...client, loggingOut }))
 
 const profile = (changes: Partial<Me['profile']> = {}): Me['profile'] => ({
   userId: 'u1', email: 'ana@iglesia.org', name: 'Ana Pérez', role: 'editor', status: 'active', createdAt: '', ...changes,
@@ -70,6 +71,7 @@ beforeEach(() => {
   navigateToMock.mockReset()
   clearErrorMock.mockReset()
   for (const fn of Object.values(client)) fn.mockReset()
+  loggingOut.value = false
   useToast().toasts.value = []
   setMe()
   mockApi('GET', '/api/me', () => useMe().me.value)
@@ -289,6 +291,25 @@ describe('cuenta pendiente, acceso denegado y errores', () => {
     expect(wrapper.get('h1').text()).toBe(title)
     await button(wrapper, 'Cerrar sesión').trigger('click')
     expect(client.logout).toHaveBeenCalled()
+  })
+
+  it('pendiente: mientras se cierra la sesión el botón muestra el progreso y no admite más clics', async () => {
+    setMe({ status: 'pending', role: null })
+    loggingOut.value = true
+    const wrapper = await mountSuspended(PendientePage)
+    const logout = wrapper.get('button')
+    expect(logout.text()).toBe('Cerrando sesión…')
+    // Sin `disabled` (se vería gris e ilegible): los clics repetidos los ignora `logout()` (composables.spec).
+    expect(logout.attributes('disabled')).toBeUndefined()
+    expect(logout.attributes('aria-disabled')).toBe('true')
+    expect(logout.attributes('aria-busy')).toBe('true')
+    expect(logout.find('.loading').exists()).toBe(true)
+
+    loggingOut.value = false
+    await nextTick()
+    expect(logout.text()).toBe('Cerrar sesión')
+    expect(logout.attributes('aria-disabled')).toBeUndefined()
+    expect(logout.attributes('aria-busy')).toBe('false')
   })
 
   it('acceso denegado usa el dashboard con sesión activa y la tarjeta sin ella', async () => {

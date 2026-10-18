@@ -3,7 +3,7 @@ definePageMeta({ layout: 'auth', access: 'pending' })
 useHead({ title: 'Cuenta pendiente · Cloudy' })
 
 const { profile } = useMe()
-const { logout } = useAuthClient()
+const { logout, loggingOut } = useAuthClient()
 
 const content = computed(() => {
   switch (profile.value?.status) {
@@ -35,9 +35,21 @@ const content = computed(() => {
     <h1 class="text-xl font-semibold">{{ content.title }}</h1>
     <p class="text-base-content/70">{{ content.text }}</p>
     <p v-if="profile" class="text-sm text-base-content/70">{{ profile.email }}</p>
-    <button type="button" class="btn w-full" @click="logout">
-      <Icon name="lucide:log-out" class="size-4" aria-hidden="true" />
-      Cerrar sesión
+    <!--
+      El primer cierre de sesión carga el cliente de Neon Auth y tarda: se muestra el progreso.
+      `logout()` ya ignora los clics repetidos, así que no se usa `disabled` (el botón gris hacía
+      ilegible el progreso) sino `aria-disabled`, que además conserva el foco.
+    -->
+    <button
+      type="button"
+      class="btn w-full"
+      :aria-disabled="loggingOut || undefined"
+      :aria-busy="loggingOut"
+      @click="logout()"
+    >
+      <span v-if="loggingOut" class="loading loading-spinner loading-sm" aria-hidden="true" />
+      <Icon v-else name="lucide:log-out" class="size-4" aria-hidden="true" />
+      {{ loggingOut ? 'Cerrando sesión…' : 'Cerrar sesión' }}
     </button>
   </div>
 </template>

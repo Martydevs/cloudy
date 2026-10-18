@@ -248,6 +248,27 @@ describe('useAuthClient', () => {
     await useAuthClient().logout()
     expect(useMe().me.value).toBeNull()
   })
+
+  it('logout ignora los clics repetidos mientras cierra la sesión', async () => {
+    let finish!: (value: { data: object, error: null }) => void
+    auth.client.signOut.mockImplementationOnce(() => new Promise((resolve) => {
+      finish = resolve
+    }))
+    navigateToMock.mockClear()
+    const { logout, loggingOut } = useAuthClient()
+    const first = logout()
+    await flush()
+    expect(loggingOut.value).toBe(true)
+    await logout()
+    await logout()
+    expect(auth.client.signOut).toHaveBeenCalledTimes(1)
+
+    finish({ data: {}, error: null })
+    await first
+    expect(loggingOut.value).toBe(false)
+    expect(navigateToMock).toHaveBeenCalledTimes(1)
+    expect(navigateToMock).toHaveBeenCalledWith('/login')
+  })
 })
 
 describe('usePulsePolling', () => {

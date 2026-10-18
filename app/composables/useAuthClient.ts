@@ -36,6 +36,7 @@ function unwrap<T>(result: BetterAuthResult<T>): T {
 
 export function useAuthClient() {
   const { refreshMe, clearMe } = useMe()
+  const loggingOut = useState('auth-logging-out', () => false)
 
   async function signUp(input: { name: string, email: string, password: string }) {
     const client = await getClient()
@@ -55,16 +56,23 @@ export function useAuthClient() {
     clearMe()
   }
 
-  /** Cierra la sesión, limpia el perfil y vuelve a /login aunque Neon Auth falle. */
+  /**
+   * Cierra la sesión, limpia el perfil y vuelve a /login aunque Neon Auth falle. `loggingOut` se
+   * comparte entre botones: mientras dura, los clics repetidos no lanzan otro cierre de sesión.
+   */
   async function logout() {
+    if (loggingOut.value) return
+    loggingOut.value = true
     try {
-      await signOut()
+      await signOut().catch(() => {
+        // La cookie caduca sola; lo importante es salir de la UI privada.
+      })
+      clearMe()
+      await navigateTo('/login')
     }
-    catch {
-      // La cookie caduca sola; lo importante es salir de la UI privada.
+    finally {
+      loggingOut.value = false
     }
-    clearMe()
-    await navigateTo('/login')
   }
 
   async function requestPasswordReset(input: { email: string, redirectTo: string }) {
@@ -87,5 +95,5 @@ export function useAuthClient() {
     unwrap(await client.updateUser(input))
   }
 
-  return { signUp, signIn, signOut, logout, requestPasswordReset, resetPassword, changePassword, updateUser }
+  return { signUp, signIn, signOut, logout, loggingOut, requestPasswordReset, resetPassword, changePassword, updateUser }
 }
