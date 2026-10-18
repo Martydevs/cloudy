@@ -351,6 +351,54 @@ describe('shell', () => {
     expect(wrapper.find('dialog h2').text()).toBe('¿Seguro?')
     useConfirm().cancel()
     expect(await pending).toBe(false)
+    // Si queda montada, sus metas (`useSeoMeta`) siguen en `document.head` para las pruebas siguientes.
+    wrapper.unmount()
+  })
+
+  it('app.vue publica las metas Open Graph con la imagen absoluta, y la omite sin URL pública', async () => {
+    const config = useRuntimeConfig()
+    const meta = (selector: string) => document.head.querySelector(selector)?.getAttribute('content') ?? null
+    expect(config.public.siteUrl).toMatch(/^https?:\/\//)
+
+    const wrapper = await mountSuspended(App)
+    await flush()
+    expect(meta('meta[property="og:title"]')).toBe('Cloudy')
+    expect(meta('meta[property="og:type"]')).toBe('website')
+    expect(meta('meta[property="og:description"]')).toContain('disco multimedia')
+    expect(meta('meta[name="description"]')).toContain('disco multimedia')
+    expect(meta('meta[name="twitter:card"]')).toBe('summary_large_image')
+    expect(meta('meta[property="og:image"]')).toBe(`${config.public.siteUrl}/og-cloudy.png`)
+    wrapper.unmount()
+    await flush()
+
+    // Los rastreadores exigen una URL absoluta: sin `siteUrl` no se publica una imagen relativa.
+    const siteUrl = config.public.siteUrl
+    config.public.siteUrl = ''
+    try {
+      expect(config.public.siteUrl).toBe('')
+      const bare = await mountSuspended(App)
+      await flush()
+      expect(meta('meta[property="og:image"]')).toBeNull()
+      expect(meta('meta[property="og:title"]')).toBe('Cloudy')
+      bare.unmount()
+    }
+    finally {
+      config.public.siteUrl = siteUrl
+    }
+  })
+
+  it('app.vue cambia el theme-color con el tema', async () => {
+    const wrapper = await mountSuspended(App)
+    await flush()
+    const themeColor = () => document.head.querySelector('meta[name="theme-color"]')?.getAttribute('content')
+    expect(themeColor()).toBe('#0a0a0a')
+    useTheme().set('cloudy-light')
+    await flush()
+    expect(themeColor()).toBe('#fcfbf9')
+    useTheme().set('cloudy')
+    await flush()
+    expect(themeColor()).toBe('#0a0a0a')
+    wrapper.unmount()
   })
 
   it('layouts de autenticación y público', async () => {

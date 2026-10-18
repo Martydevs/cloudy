@@ -42,6 +42,11 @@ export default defineNuxtConfig({
     head: {
       title: 'Cloudy',
       htmlAttrs: { lang: 'es' },
+      // SVG para los navegadores actuales (se lee en barras claras y oscuras); el .ico queda de respaldo (FR-041).
+      link: [
+        { rel: 'icon', href: '/favicon.ico', sizes: 'any' },
+        { rel: 'icon', type: 'image/svg+xml', href: '/favicon.svg' },
+      ],
     },
   },
   icon: {
