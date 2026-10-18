@@ -8,6 +8,10 @@ Rutas de servidor Nitro bajo `server/api/**` (Nuxt). JSON en ambos sentidos salv
 
 **Acceso** — `public`: sin sesión · `session`: sesión válida (cualquier estado) · `editor`: perfil `active` con rol `editor` o `admin` · `admin`: perfil `active` rol `admin` · `cron`: `Authorization: Bearer $CRON_SECRET`. Fallo de sesión ⇒ **401**; rol/estado insuficiente ⇒ **403** (FR-008, SC-009).
 
+**Guard obligatorio (T158)** — Todo handler de `server/api/**` llama a `requireRole(` o `requireActive(` salvo tres excepciones: `public/*` (sin sesión; fase 1 con límite por IP de 5/h, fase 2 con el id del envío como capacidad y límite de 10/h por IP), `cron/*` (`requireCron`, comparación en tiempo constante con `CRON_SECRET`) y `me.get` (`requireSession`, cualquier estado). `test/unit/endpoint-guards.spec.ts` recorre los archivos reales y falla si aparece un endpoint sin guard o una ruta pública nueva no registrada en la prueba.
+
+**Cabeceras de seguridad** — `server/middleware/security-headers.ts` añade a toda respuesta de Nitro (páginas, `/api/**`, redirecciones y errores): `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin`, `X-Frame-Options: DENY` y `Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=(), usb=(), display-capture=()`. Los binarios nunca salen de Nitro (302 a URL firmada), así que no afectan a la vista previa ni a las descargas; el visor de PDF incrusta `/api/files/:id/content`, y el navegador evalúa `X-Frame-Options` en la respuesta final del bucket, no en el 302. Se eligió middleware y no `routeRules` para que sea una unidad probada (`test/unit/api-core.spec.ts`) independiente del preset; en Vercel los estáticos servidos por la CDN no pasan por él.
+
 Códigos comunes: 400 entrada mal formada · 401 · 403 · 404 · 409 conflicto (concurrencia / último admin / ya revisado / en papelera) · 413 archivo > 100 MB · 415 tipo no permitido · 422 validación o firma binaria inválida · 429 rate limit (`Retry-After`, `message` en español desde `shared/constants/messages.ts` y `data.retryAfter`).
 
 Los mensajes para la persona van en `message` y en español; el cliente (`serverMessage`) solo muestra `message` en 4xx cuando difiere de `statusMessage` (h3 copia la frase del estado si no hay mensaje), traduce todo 429 al texto común y usa su propio respaldo en 5xx y errores de red.
@@ -85,7 +89,7 @@ El navegador hace `PUT uploadUrl` con el `Content-Type` firmado; el progreso se 
 | Método | Ruta | Acceso | Cuerpo | Respuesta |
 |--------|------|--------|--------|-----------|
 | `POST` | `/api/public/submissions` | **public** | `{ senderName, note?, files: { name, size, mimeType }[] (1–20) }` | `201 { submissionId, uploads: { fileId, uploadUrl, headers }[] }` — 429 rate limit (5/h por IP), 413/415/422 |
-| `POST` | `/api/public/submissions/:id/complete` | **public** | — | `{ status: "pending" }` — valida firmas; solo entonces el envío es visible para el equipo |
+| `POST` | `/api/public/submissions/:id/complete` | **public** | — | `{ status: "pending", accepted, rejected }` — valida firmas; solo entonces el envío es visible para el equipo. 429 al superar 10 cierres/h por IP (`guest-complete:<hash>`) |
 | `GET` | `/api/submissions` | editor | `?status=pending\|approved\|rejected\|expired` | `Submission[]` = `{ id, senderName, note, status, createdAt, expiresAt, files: { id, name, category, size, previewUrl }[] }` |
 | `GET` | `/api/submissions/:id/files/:fileId/content` | editor | — | **302** URL firmada (previsualizar antes de aprobar) |
 | `POST` | `/api/submissions/:id/approve` | editor | `{ folderId \| null }` | `{ files: FileItem[] }` — 409 si ya fue revisado (FR-019) |

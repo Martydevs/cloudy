@@ -110,18 +110,32 @@ describe('POST /api/public/submissions/:id/complete', () => {
   it('verifica cada archivo, descarta los inválidos y cierra el envío con completed_at', async () => {
     s3.head.mockResolvedValueOnce({ size: 8386 }).mockResolvedValueOnce({ size: 8386 })
     s3.readRange.mockResolvedValueOnce(JPEG).mockResolvedValueOnce(FAKE)
-    const fake = installNitro([[submission({ completedAt: null })], [uploading(), uploading({ id: F2, storageKey: 'pre/guest/s/y' })], [], [], []])
+    // La primera consulta es el contador por IP (T158); la clave va con hash y en su propio cubo.
+    const fake = installNitro([[{ count: 1 }], [submission({ completedAt: null })], [uploading(), uploading({ id: F2, storageKey: 'pre/guest/s/y' })], [], [], []])
     const handler = await loadHandler('api/public/submissions/[id]/complete.post.ts')
-    expect(await handler(makeEvent({ auth: undefined, method: 'POST', params: { id: SUB } }))).toEqual({ status: 'pending', accepted: 1, rejected: 1 })
+    const event = makeEvent({ auth: undefined, method: 'POST', params: { id: SUB }, headers: { 'x-forwarded-for': '203.0.113.7' } })
+    expect(await handler(event)).toEqual({ status: 'pending', accepted: 1, rejected: 1 })
+    const rate = fake.calls.find(c => c.method === 'values')?.args[0] as { key: string }
+    expect(rate.key).toMatch(/^guest-complete:[0-9a-f]{64}$/)
+    expect(rate.key).not.toContain('203.0.113.7')
     expect(s3.deleteMany).toHaveBeenCalledWith(['pre/guest/s/y'])
     const sets = fake.calls.filter(c => c.method === 'set').map(c => c.args[0])
     expect(sets[0]).toEqual({ uploadStatus: 'ready' })
     expect(sets[1]).toMatchObject({ completedAt: expect.any(Date) })
   })
 
+  it('responde 429 al superar 10 cierres por hora y no toca el envío', async () => {
+    const fake = installNitro([[{ count: 11 }]])
+    const handler = await loadHandler('api/public/submissions/[id]/complete.post.ts')
+    const error = await expectStatus(Promise.resolve().then(() => handler(makeEvent({ auth: undefined, method: 'POST', params: { id: SUB } }))), 429)
+    expect(error.message).toBe(RATE_LIMITED_MESSAGE)
+    expect(fake.calls.filter(c => c.method === 'select')).toHaveLength(0)
+    expect(s3.head).not.toHaveBeenCalled()
+  })
+
   it('si ningún archivo es válido borra el envío y responde 422', async () => {
     s3.head.mockResolvedValueOnce(null)
-    const fake = installNitro([[submission({ completedAt: null })], [uploading()], [], []])
+    const fake = installNitro([[{ count: 1 }], [submission({ completedAt: null })], [uploading()], [], []])
     const handler = await loadHandler('api/public/submissions/[id]/complete.post.ts')
     const error = await expectStatus(Promise.resolve().then(() => handler(makeEvent({ auth: undefined, method: 'POST', params: { id: SUB } }))), 422)
     expect(error.message).toContain('Ningún archivo')
@@ -130,7 +144,8 @@ describe('POST /api/public/submissions/:id/complete', () => {
   })
 
   it('404 si no existe y 409 si ya fue cerrado o revisado', async () => {
-    installNitro([[], [submission()], [submission({ status: 'rejected', completedAt: null })]])
+    // Cada llamada consume primero su contador por IP, también la del id inválido.
+    installNitro([[{ count: 1 }], [], [{ count: 1 }], [submission()], [{ count: 1 }], [submission({ status: 'rejected', completedAt: null })], [{ count: 1 }]])
     const handler = await loadHandler('api/public/submissions/[id]/complete.post.ts')
     const call = () => Promise.resolve().then(() => handler(makeEvent({ auth: undefined, method: 'POST', params: { id: SUB } })))
     await expectStatus(call(), 404)

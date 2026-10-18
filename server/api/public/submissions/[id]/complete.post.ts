@@ -1,11 +1,16 @@
 // Fase 2 del envío de un invitado: verifica cada archivo (tamaño real y firma), descarta los
 // inválidos y cierra el envío con `completed_at`, que dispara el aviso en vivo (T120a).
 import { and, eq, inArray, isNull } from 'drizzle-orm'
-import { createError } from 'h3'
+import { createError, getRequestIP } from 'h3'
 import { guestSubmissionFiles, guestSubmissions } from '../../../../db/schema'
 import { deleteMany, head, readRange } from '../../../../utils/storage'
 
 export default defineEventHandler(async (event): Promise<{ status: 'pending', accepted: number, rejected: number }> => {
+  // El id del envío es la capacidad (no hay sesión); el límite por IP, holgado para un invitado
+  // legítimo (un cierre por envío, 5 envíos/h), frena a quien lo use para leer el bucket a ciegas.
+  const ip = getRequestIP(event, { xForwardedFor: true }) ?? 'unknown'
+  await hitRateLimit(event, `guest-complete:${hashSender(ip)}`, { limit: 10, windowSec: 3600 })
+
   const id = paramId(event)
   const db = useDb()
 

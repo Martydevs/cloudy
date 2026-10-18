@@ -148,6 +148,24 @@ describe('middleware de sesión', () => {
   })
 })
 
+describe('middleware de cabeceras de seguridad (T158)', () => {
+  it('fija nosniff, referrer, frame y permisos en páginas y en /api/**', async () => {
+    installNitro()
+    const middleware = await loadHandler('middleware/security-headers.ts')
+    for (const url of ['/archivos', '/api/dashboard', '/api/files/x/content', '/api/auth/get-session', '/enviar']) {
+      const event = makeEvent({ auth: undefined, url })
+      await middleware(event)
+      const headers = event.node.res.getHeaders()
+      expect(headers['x-content-type-options'], url).toBe('nosniff')
+      expect(headers['referrer-policy'], url).toBe('strict-origin-when-cross-origin')
+      expect(headers['x-frame-options'], url).toBe('DENY')
+      expect(headers['permissions-policy'], url).toMatch(/camera=\(\)/)
+      expect(headers['permissions-policy'], url).toMatch(/microphone=\(\)/)
+      expect(headers['permissions-policy'], url).toMatch(/geolocation=\(\)/)
+    }
+  })
+})
+
 describe('proxy /api/auth/**', () => {
   beforeEach(() => {
     proxy.handleAuthProxyRequest.mockReset()
