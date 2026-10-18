@@ -113,6 +113,46 @@ describe('AppSidebar', () => {
     await wrapper.findAll('nav a')[1]!.trigger('click')
     expect(wrapper.emitted('navigate')).toBeTruthy()
   })
+
+  it('el aviso de la barra contraída también sale con el foco del teclado y se va al desplazar o expandir', async () => {
+    setRole('editor')
+    const tip = () => document.body.querySelector('[aria-hidden="true"].fixed')
+    const wrapper = await mountSuspended(AppSidebar, { attachTo: document.body, props: { collapsed: true } })
+    const item = wrapper.findAll('nav li').find(li => li.find('a').attributes('aria-label') === 'Pendientes')!
+
+    // Tabular hasta el enlace lo muestra; mover el foco dentro del mismo ítem no lo quita.
+    await item.trigger('focusin')
+    await nextTick()
+    expect(tip()?.textContent).toBe('Pendientes')
+    item.element.dispatchEvent(new FocusEvent('focusout', { relatedTarget: item.find('a').element, bubbles: true }))
+    await nextTick()
+    expect(tip()?.textContent).toBe('Pendientes')
+    // Salir del ítem sí lo quita.
+    item.element.dispatchEvent(new FocusEvent('focusout', { relatedTarget: document.body, bubbles: true }))
+    await nextTick()
+    expect(tip()).toBeNull()
+
+    // Al desplazar la lista el aviso quedaría desalineado: desaparece.
+    await item.trigger('mouseenter')
+    await nextTick()
+    expect(tip()).not.toBeNull()
+    await wrapper.get('nav').trigger('scroll')
+    await nextTick()
+    expect(tip()).toBeNull()
+
+    // Al expandir la barra ya no hace falta.
+    await item.trigger('mouseenter')
+    await nextTick()
+    expect(tip()).not.toBeNull()
+    await wrapper.setProps({ collapsed: false })
+    await nextTick()
+    expect(tip()).toBeNull()
+    // Expandida, pasar el cursor no muestra nada: el texto ya está a la vista.
+    await item.trigger('mouseenter')
+    await nextTick()
+    expect(tip()).toBeNull()
+    wrapper.unmount()
+  })
 })
 
 describe('AppSidebar · menú de cuenta', () => {
@@ -175,6 +215,31 @@ describe('AppSidebar · menú de cuenta', () => {
     document.body.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     await nextTick()
     expect(menu()).toBeNull()
+    wrapper.unmount()
+  })
+
+  it('el menú se cierra al cambiar el tamaño de la ventana y al navegar; Esc sin menú no hace nada', async () => {
+    setRole('editor')
+    const wrapper = await mountSuspended(AppSidebar, { attachTo: document.body, props: { collapsed: false } })
+    const trigger = wrapper.get('button[aria-label="Menú de usuario"]')
+
+    // La posición se calcula al abrir: si la ventana cambia, se cierra en vez de quedar flotando mal.
+    await trigger.trigger('click')
+    expect(menu()).not.toBeNull()
+    window.dispatchEvent(new Event('resize'))
+    await nextTick()
+    expect(menu()).toBeNull()
+
+    await trigger.trigger('click')
+    expect(menu()).not.toBeNull()
+    await useRouter().push('/perfil')
+    await nextTick()
+    expect(menu()).toBeNull()
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    await nextTick()
+    expect(menu()).toBeNull()
+    expect(trigger.attributes('aria-expanded')).toBe('false')
     wrapper.unmount()
   })
 

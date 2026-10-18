@@ -31,4 +31,12 @@ describe('messages', () => {
   it('el mensaje común del 429 dice qué hacer', () => {
     expect(messages.common.rateLimited).toMatch(/inténtalo de nuevo/i)
   })
+
+  it('los avisos con cantidad concuerdan en singular y plural', () => {
+    expect(messages.trash.emptied(1)).toBe('Se eliminó 1 elemento definitivamente')
+    expect(messages.trash.emptied(3)).toBe('Se eliminaron 3 elementos definitivamente')
+    expect(messages.files.uploadFailedCount(1)).toBe('Un archivo no se pudo subir')
+    expect(messages.files.uploadFailedCount(2)).toBe('2 archivos no se pudieron subir')
+    expect(messages.submissions.received('Eva', 1)).toBe('Nuevo envío de Eva (1 archivo)')
+  })
 })

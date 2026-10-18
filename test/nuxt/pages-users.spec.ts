@@ -156,6 +156,54 @@ describe('Usuarios', () => {
     await flush()
     expect(wrapper.text()).toContain('Persona 2')
     expect(wrapper.text()).toContain('Página 2 de 3')
+    await wrapper.find('button[aria-label="Página anterior"]').trigger('click')
+    await flush()
+    expect(wrapper.text()).toContain('Persona 1')
+    expect(wrapper.text()).toContain('Página 1 de 3')
+  })
+
+  it('la tabla de escritorio ofrece las mismas acciones que las tarjetas y resume los pendientes en plural', async () => {
+    const pending = [user(), user({ userId: 'u3', email: 'eva@iglesia.org', name: 'Eva' })]
+    const active = user({ userId: 'u4', email: 'leo@iglesia.org', name: 'Leo', status: 'active', role: 'editor' })
+    mockApi('GET', '/api/users', { items: [...pending, active], total: 3 })
+    mockApi('PATCH', '/api/users/u2', user({ status: 'active', role: 'editor' }))
+    mockApi('PATCH', '/api/users/u4', active)
+    mockApi('DELETE', '/api/users/u4', null)
+    const wrapper = await mountSuspended(UsuariosPage)
+    await flush()
+    expect(wrapper.text()).toContain('2 cuentas esperan aprobación')
+
+    // Los controles de la tabla (las tarjetas móviles repiten los mismos).
+    const table = wrapper.get('table')
+    const inTable = (selector: string) => table.get(selector)
+    const tableButton = (text: string) => buttonsWithText(table, text)[0]!
+
+    await inTable('select[aria-label="Rol para Luis"]').setValue('admin')
+    await tableButton('Activar').trigger('click')
+    await flush()
+    expect(calls.filter(c => c.method === 'PATCH').at(-1)).toMatchObject({ url: '/api/users/u2', body: { status: 'active', role: 'admin' } })
+
+    await inTable('select[aria-label="Rol de Leo"]').setValue('admin')
+    await flush()
+    expect(calls.filter(c => c.method === 'PATCH').at(-1)).toMatchObject({ url: '/api/users/u4', body: { role: 'admin' } })
+
+    await tableButton('Desactivar').trigger('click')
+    await flush()
+    expect(calls.filter(c => c.method === 'PATCH').at(-1)).toMatchObject({ url: '/api/users/u4', body: { status: 'disabled' } })
+
+    await inTable('button[aria-label="Eliminar a Leo"]').trigger('click')
+    await nextTick()
+    useConfirm().accept()
+    await flush()
+    expect(calls.some(c => c.method === 'DELETE' && c.url === '/api/users/u4')).toBe(true)
+
+    mockApi('GET', '/api/users', { items: [user({ userId: 'u4', name: 'Leo', status: 'disabled', role: 'editor' })], total: 1 })
+    clearNuxtData()
+    const disabled = await mountSuspended(UsuariosPage)
+    await flush()
+    await buttonsWithText(disabled.get('table'), 'Reactivar')[0]!.trigger('click')
+    await flush()
+    expect(calls.filter(c => c.method === 'PATCH').at(-1)?.body).toEqual({ status: 'active' })
   })
 })
 
@@ -230,6 +278,44 @@ describe('Actividad', () => {
     await button(wrapper, 'Quitar filtros').trigger('click')
     await flush()
     expect(actionSelect().value).toBe('')
+    expect(wrapper.text()).toContain('Ana activó la cuenta de Luis')
+  })
+
+  it('si falla la página siguiente avisa en línea y deja reintentar sin perder lo cargado', async () => {
+    let failNext = true
+    mockApi('GET', '/api/activity', (event) => {
+      if (params(event).get('cursor') !== '2') return { items: [entry({ id: 2 })], nextCursor: '2' }
+      if (failNext) return failWith(500)(event)
+      return { items: [entry({ id: 1, action: 'file.upload', targetType: 'file', targetLabel: 'foto.jpg', meta: null })], nextCursor: null }
+    })
+    const wrapper = await mountSuspended(ActividadPage)
+    await flush()
+    await button(wrapper, 'Cargar más').trigger('click')
+    await flush()
+    expect(wrapper.get('[role="alert"]').text()).toContain('No pudimos cargar más.')
+    expect(wrapper.text()).toContain('Ana activó la cuenta de Luis')
+
+    failNext = false
+    await button(wrapper, 'Reintentar').trigger('click')
+    await flush()
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+    expect(wrapper.text()).toContain('Ana subió el archivo foto.jpg')
+  })
+
+  it('filtra por persona y «Quitar filtros» también limpia ese filtro', async () => {
+    mockApi('GET', '/api/activity', event => params(event).get('actor') === 'u1'
+      ? { items: [], nextCursor: null }
+      : { items: [entry()], nextCursor: null })
+    const wrapper = await mountSuspended(ActividadPage)
+    await flush()
+    await wrapper.findAll('select')[1]!.setValue('u1')
+    await flush()
+    expect(calls.at(-1)?.url).toBe('/api/activity')
+    expect(wrapper.text()).toContain('No hay actividad con estos filtros')
+
+    await button(wrapper, 'Quitar filtros').trigger('click')
+    await flush()
+    expect((wrapper.findAll('select')[1]!.element as HTMLSelectElement).value).toBe('')
     expect(wrapper.text()).toContain('Ana activó la cuenta de Luis')
   })
 

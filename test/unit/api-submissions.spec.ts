@@ -82,6 +82,19 @@ describe('POST /api/public/submissions', () => {
     expect(fake.db.batch).not.toHaveBeenCalled()
   })
 
+  it('entradas malformadas en `files` cuentan como archivos vacíos (415) y la nota es opcional', async () => {
+    const fake = installNitro([[{ count: 1 }], [{ count: 1 }], [], []])
+    const handler = await loadHandler('api/public/submissions/index.post.ts')
+    const call = (b: unknown) => Promise.resolve().then(() => handler(makeEvent({ auth: undefined, body: b })))
+    // Ni objetos, ni nombre de texto, ni tamaño numérico: no revienta la validación, se rechaza como formato no admitido.
+    await expectStatus(call({ ...body, files: [null, 'foto.jpg', { name: 42, size: 'grande', mimeType: 7 }] }), 415)
+
+    const res = await call({ senderName: 'Eva', files: [body.files[0]] }) as { uploads: unknown[] }
+    expect(res.uploads).toHaveLength(1)
+    const inserts = fake.calls.filter(c => c.method === 'values').map(c => c.args[0])
+    expect(inserts.at(-2)).toMatchObject({ senderName: 'Eva', note: null })
+  })
+
   it('responde 429 al superar 5 envíos por hora, con el mensaje en español', async () => {
     installNitro([[{ count: 6 }]])
     const handler = await loadHandler('api/public/submissions/index.post.ts')

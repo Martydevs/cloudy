@@ -163,6 +163,24 @@ describe('DropZone', () => {
     await input.trigger('change')
     expect(wrapper.emitted('files')).toHaveLength(1)
   })
+
+  it('resalta la zona al arrastrar encima y emite los archivos soltados', async () => {
+    const wrapper = await mountSuspended(DropZone)
+    const zone = wrapper.get('div')
+    const dropped = new File(['x'], 'suelto.jpg', { type: 'image/jpeg' })
+    const dragEvent = (type: string) => {
+      const event = new Event(type, { bubbles: true, cancelable: true })
+      Object.defineProperty(event, 'dataTransfer', { value: { files: [dropped], items: [{ kind: 'file', type: 'image/jpeg' }], types: ['Files'] } })
+      return event
+    }
+    zone.element.dispatchEvent(dragEvent('dragenter'))
+    await nextTick()
+    expect(zone.classes()).toContain('border-primary')
+    zone.element.dispatchEvent(dragEvent('drop'))
+    await nextTick()
+    expect(wrapper.emitted('files')).toEqual([[[dropped]]])
+    expect(zone.classes()).not.toContain('border-primary')
+  })
 })
 
 describe('UploadDialog', () => {

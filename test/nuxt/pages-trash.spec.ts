@@ -132,6 +132,29 @@ describe('/papelera', () => {
     expect(useToast().toasts.value.at(-1)?.message).toBe('«Ensayo» se eliminó definitivamente')
   })
 
+  it('avisa cuando queda un día o se borra hoy', async () => {
+    mockApi('GET', '/api/trash', [{ ...file, id: 'a2', daysLeft: 1 }, { ...file, id: 'a3', name: 'hoy.jpg', daysLeft: 0 }])
+    const wrapper = await mountSuspended(PapeleraPage)
+    await flush()
+    const badges = wrapper.findAll('li .badge')
+    expect(badges.map(b => b.text())).toEqual(['Queda 1 día', 'Se borra hoy'])
+    expect(badges.every(b => b.classes().includes('badge-warning'))).toBe(true)
+  })
+
+  it('cancelar «Vaciar papelera» no borra nada', async () => {
+    setMe('admin')
+    mockApi('GET', '/api/trash', [folder])
+    mockApi('DELETE', '/api/trash', { purged: 1 })
+    const wrapper = await mountSuspended(PapeleraPage)
+    await flush()
+    await button(wrapper, 'Vaciar papelera')!.trigger('click')
+    await nextTick()
+    useConfirm().cancel()
+    await flush()
+    expect(calls.some(c => c.method === 'DELETE')).toBe(false)
+    expect(wrapper.text()).toContain('Ensayo')
+  })
+
   it('el admin puede vaciar la papelera tras confirmar', async () => {
     setMe('admin')
     mockApi('GET', '/api/trash', [folder, file])

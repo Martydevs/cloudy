@@ -4,6 +4,7 @@ import { mockNuxtImport, mountSuspended } from '@nuxt/test-utils/runtime'
 import { setResponseStatus } from 'h3'
 import { nextTick } from 'vue'
 import type { Me, Submission } from '#shared/types/api'
+import { MAX_GUEST_FILES } from '#shared/constants/files'
 import AppToast from '~/components/app/AppToast.vue'
 import DropZone from '~/components/upload/DropZone.vue'
 import SubmissionCard from '~/components/guests/SubmissionCard.vue'
@@ -73,6 +74,20 @@ describe('/enviar', () => {
     await wrapper.get('form').trigger('submit')
     await flush()
     expect(calls.some(c => c.url === '/api/public/submissions')).toBe(false)
+  })
+
+  it('limita el envío a MAX_GUEST_FILES archivos y permite quitar uno de la cola', async () => {
+    const wrapper = await mountSuspended(EnviarPage)
+    const many = Array.from({ length: MAX_GUEST_FILES + 1 }, (_, i) => file(`foto${i}.jpg`))
+    wrapper.findComponent(DropZone).vm.$emit('files', many)
+    await flush()
+    expect(wrapper.get('[role="alert"]').text()).toBe(`Puedes enviar como máximo ${MAX_GUEST_FILES} archivos`)
+    expect(wrapper.findAll('button[aria-label^="Cancelar foto"]')).toHaveLength(MAX_GUEST_FILES)
+
+    await wrapper.get('button[aria-label="Cancelar foto0.jpg"]').trigger('click')
+    await flush()
+    expect(wrapper.findAll('button[aria-label^="Cancelar foto"]')).toHaveLength(MAX_GUEST_FILES - 1)
+    expect(wrapper.text()).not.toContain('foto0.jpg')
   })
 
   it('envía el lote (presign → PUT → complete) y muestra el agradecimiento', async () => {
@@ -231,6 +246,31 @@ describe('/pendientes', () => {
     await flush()
     expect(useToast().toasts.value.at(-1)).toMatchObject({ type: 'error', message: 'Este envío ya fue revisado por otra persona' })
     expect(calls.filter(c => c.url === '/api/submissions').length).toBeGreaterThan(listCalls)
+  })
+
+  it('aprobar hacia una carpeta enlaza a esa carpeta en el aviso', async () => {
+    mockApi('GET', '/api/submissions', [submission({ files: [submission().files[0]!] })])
+    mockApi('GET', '/api/folders/tree', [{ id: 'd1', name: 'Domingo', parentId: null }])
+    mockApi('POST', '/api/submissions/s1/approve', { files: [{ name: 'foto.jpg' }] })
+    const wrapper = await mountSuspended(PendientesPage)
+    await flush()
+    await button(wrapper, 'Aprobar').trigger('click')
+    await vi.waitFor(() => expect(wrapper.findAll('[role="radio"]').some(r => r.text().includes('Domingo'))).toBe(true))
+    await wrapper.findAll('[role="radio"]').find(r => r.text().includes('Domingo'))!.trigger('click')
+    await button(wrapper, 'Aprobar aquí').trigger('click')
+    await flush()
+    expect(calls.find(c => c.url === '/api/submissions/s1/approve')?.body).toEqual({ folderId: 'd1' })
+    expect(useToast().toasts.value.at(-1)).toMatchObject({ message: 'Se aprobó «foto.jpg»', action: { label: 'Ver', to: '/archivos/d1' } })
+  })
+
+  it('las pestañas de revisados vacías no ofrecen el enlace para invitados', async () => {
+    mockApi('GET', '/api/submissions', [])
+    const wrapper = await mountSuspended(PendientesPage)
+    await flush()
+    await wrapper.findAll('[role="tab"]').find(t => t.text().includes('Rechazados'))!.trigger('click')
+    await flush()
+    expect(wrapper.text()).toContain('No hay envíos rechazados')
+    expect(buttonsWithText(wrapper, 'Copiar enlace para invitados')).toHaveLength(1)
   })
 
   it('cuando el pulso detecta un envío nuevo, la cola se recarga sola', async () => {

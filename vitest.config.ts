@@ -56,7 +56,8 @@ export default defineConfig({
       // Todo el producto. Sin exclusiones: los e2e cubren lo mismo contra Neon real, pero corren
       // en otro proceso y no suman cobertura.
       include: ['app/**/*.{ts,vue}', 'server/**/*.ts', 'shared/**/*.ts', 'scripts/env.ts'],
-      thresholds: { lines: 90, statements: 90, branches: 90, functions: 90 },
+      // Fase 11: umbral subido de 90 a 92 en las cuatro métricas (la constitución pide 80).
+      thresholds: { lines: 92, statements: 92, branches: 92, functions: 92 },
     },
   },
 })

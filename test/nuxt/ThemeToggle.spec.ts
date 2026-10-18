@@ -21,4 +21,24 @@ describe('ThemeToggle', () => {
     expect(useTheme().theme.value).toBe('cloudy')
     expect(button.attributes('aria-label')).toBe('Cambiar a tema claro')
   })
+
+  it('la variante con texto (menú de cuenta) muestra la etiqueta y también alterna', async () => {
+    useTheme().set('cloudy')
+    const wrapper = await mountSuspended(ThemeToggle, { props: { withLabel: true } })
+    const button = wrapper.get('button')
+    expect(button.text()).toBe('Cambiar a tema claro')
+    expect(button.classes()).not.toContain('btn-square')
+    await button.trigger('click')
+    expect(useTheme().theme.value).toBe('cloudy-light')
+    expect(button.text()).toBe('Cambiar a tema oscuro')
+    expect(button.attributes('aria-pressed')).toBe('true')
+    useTheme().set('cloudy')
+  })
+
+  it('una cookie con un valor desconocido vuelve al tema oscuro', () => {
+    clearNuxtState('theme')
+    useCookie<string>('cloudy-theme').value = 'rosa'
+    expect(useTheme().theme.value).toBe('cloudy')
+    useTheme().set('cloudy')
+  })
 })

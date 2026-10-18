@@ -225,6 +225,9 @@ describe('useAuthClient', () => {
     await expect(useAuthClient().signIn({ email: 'a@x.org', password: 'x' })).rejects.toMatchObject({ status: 401, code: 'INVALID_EMAIL_OR_PASSWORD' })
     auth.client.resetPassword.mockResolvedValueOnce({ data: null, error: { status: 400, statusText: 'Bad Request' } } as never)
     await expect(useAuthClient().resetPassword({ newPassword: '12345678', token: 't' })).rejects.toThrow('Bad Request')
+    // Sin mensaje ni texto de estado, el error sigue siendo un AuthRequestError reconocible.
+    auth.client.requestPasswordReset.mockResolvedValueOnce({ data: null, error: {} } as never)
+    await expect(useAuthClient().requestPasswordReset({ email: 'a@x.org', redirectTo: 'http://x' })).rejects.toThrow('Error')
   })
 
   it('recuperación, cambio de contraseña y nombre', async () => {
@@ -297,6 +300,50 @@ describe('usePulsePolling', () => {
     expect(pendingCount.value).toBe(2)
     wrapper.unmount()
   })
+
+  it('no sondea con la pestaña oculta ni sin conexión, sondea al volver y, desmontado, refreshPulse no hace nada', async () => {
+    mockApi('GET', '/api/realtime/pulse', { cursor: '2026-10-14T10:00:00.000Z', pendingCount: 1, newSubmissions: [] })
+    const Probe = defineComponent({
+      setup() {
+        usePulsePolling()
+        return () => h('div')
+      },
+    })
+    const wrapper = await mountSuspended(Probe)
+    await flush(10)
+    const pulses = () => calls.filter(c => c.url === '/api/realtime/pulse').length
+    const visibility = (state: 'hidden' | 'visible') => {
+      Object.defineProperty(document, 'visibilityState', { value: state, configurable: true })
+      document.dispatchEvent(new Event('visibilitychange'))
+    }
+    const online = (value: boolean) => {
+      Object.defineProperty(navigator, 'onLine', { value, configurable: true })
+      window.dispatchEvent(new Event(value ? 'online' : 'offline'))
+    }
+
+    visibility('hidden')
+    await flush()
+    let before = pulses()
+    await refreshPulse()
+    expect(pulses()).toBe(before)
+    visibility('visible')
+    await flush(10)
+    expect(pulses()).toBeGreaterThan(before)
+
+    online(false)
+    await flush()
+    before = pulses()
+    await refreshPulse()
+    expect(pulses()).toBe(before)
+    online(true)
+    await flush(10)
+    expect(pulses()).toBeGreaterThan(before)
+
+    wrapper.unmount()
+    before = pulses()
+    await refreshPulse()
+    expect(pulses()).toBe(before)
+  })
 })
 
 describe('useUploadDialog', () => {
@@ -330,6 +377,8 @@ describe('utilidades del cliente', () => {
 
   it('fileIcon, formatBytes, menús y tiempo relativo', () => {
     expect(fileIcon('audio')).toBe('lucide:music')
+    // Una categoría desconocida (datos viejos) no rompe la vista: ícono genérico.
+    expect(fileIcon('otra' as never)).toBe('lucide:file')
     expect(useFileIcon().CATEGORY_LABELS.presentation).toBe('Presentaciones')
     expect(useFormatBytes().formatBytes(0)).toBe('0 B')
     expect(formatBytes(1536)).toBe('1,5 KB')

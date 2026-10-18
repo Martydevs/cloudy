@@ -141,6 +141,40 @@ describe('useUploader', () => {
     expect(forbidden.items.value[0]).toMatchObject({ status: 'error', retryable: true })
   })
 
+  it('sube la miniatura aparte y, si esa subida falla, el archivo igual queda listo', async () => {
+    vi.stubGlobal('createImageBitmap', vi.fn(async () => ({ width: 1280, height: 640, close: vi.fn() })))
+    const toBlob = vi.spyOn(HTMLCanvasElement.prototype, 'toBlob').mockImplementation(function (cb: BlobCallback) {
+      cb(new Blob(['thumb'], { type: 'image/webp' }))
+    })
+    mockApi('POST', '/api/uploads', { fileId: 'up1', uploadUrl: 'https://s3.test/up1', thumbUploadUrl: 'https://s3.test/up1-thumb', headers: { 'content-type': 'image/jpeg' } })
+    behaviors.set('https://s3.test/up1-thumb', 'network')
+    const uploader = useUploader({ folderId: null })
+    uploader.add([file('foto.jpg')])
+    await flush(30)
+    expect(calls.find(c => c.url === '/api/uploads')?.body).toMatchObject({ withThumbnail: true })
+    expect(sent).toEqual(['https://s3.test/up1', 'https://s3.test/up1-thumb'])
+    expect(uploader.items.value[0]).toMatchObject({ status: 'done', progress: 100, error: null })
+    toBlob.mockRestore()
+  })
+
+  it('cancelar mientras se pide la firma libera la reserva y no sube nada', async () => {
+    let release!: (ticket: unknown) => void
+    const ticket = new Promise((resolve) => {
+      release = resolve
+    })
+    mockApi('POST', '/api/uploads', () => ticket)
+    const uploader = useUploader({ folderId: null })
+    uploader.add([file('lento.jpg')])
+    await flush(5)
+    expect(uploader.items.value[0]!.status).toBe('uploading')
+    uploader.cancel(uploader.items.value[0]!.id)
+    release({ fileId: 'up1', uploadUrl: 'https://s3.test/up1', headers: {} })
+    await flush(10)
+    expect(sent).toHaveLength(0)
+    expect(calls.some(c => c.method === 'DELETE' && c.url === '/api/uploads/up1')).toBe(true)
+    expect(uploader.items.value).toHaveLength(0)
+  })
+
   it('cancelar aborta el PUT, borra la reserva y quita el archivo de la cola', async () => {
     behaviors.set('https://s3.test/up1', 'hang')
     const uploader = useUploader({ folderId: null })

@@ -24,6 +24,16 @@ describe('ConfirmDialog', () => {
     wrapper.unmount()
   })
 
+  it('tocar el fondo o el cierre nativo del diálogo también cancelan', async () => {
+    const wrapper = await mountSuspended(ConfirmDialog, { props: { ...props, open: true }, attachTo: document.body })
+    await wrapper.get('.modal-backdrop button').trigger('click')
+    expect(wrapper.emitted('cancel')).toHaveLength(1)
+    await wrapper.get('dialog').trigger('cancel')
+    expect(wrapper.emitted('cancel')).toHaveLength(2)
+    expect(wrapper.emitted('confirm')).toBeUndefined()
+    wrapper.unmount()
+  })
+
   it('el botón de confirmar emite confirm y usa el estilo de peligro', async () => {
     const wrapper = await mountSuspended(ConfirmDialog, { props: { ...props, open: true } })
     const confirm = wrapper.findAll('button').find(b => b.text() === 'Eliminar')!

@@ -132,8 +132,9 @@ const usersHintId = useId()
       </ul>
       <div ref="sentinel" class="flex min-h-11 justify-center py-2">
         <span v-if="loadingMore" class="loading loading-spinner" aria-label="Cargando más actividad" />
-        <button v-else-if="nextCursor" type="button" class="btn" @click="loadMore()">Cargar más</button>
+        <!-- El fallo va antes que «Cargar más»: tras fallar, el cursor sigue ahí y si no el aviso nunca se vería. -->
         <p v-else-if="moreFailed" role="alert" class="text-error">{{ messages.load.moreActivity }} <button type="button" class="link" @click="loadMore()">Reintentar</button></p>
+        <button v-else-if="nextCursor" type="button" class="btn" @click="loadMore()">Cargar más</button>
       </div>
     </template>
   </div>

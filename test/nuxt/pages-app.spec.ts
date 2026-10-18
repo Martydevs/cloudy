@@ -106,6 +106,23 @@ describe('Inicio', () => {
     expect(wrapper.find('a[href="/archivos"]').text()).toBe('Ver todos')
   })
 
+  it('el contador de pendientes toma el mayor entre el pulso y el resumen; sin perfil saluda a secas', async () => {
+    mockApi('GET', '/api/dashboard', summary({ pendingCount: 2 }))
+    usePulse().pendingCount.value = 5
+    const wrapper = await mountSuspended(HomePage)
+    await flush()
+    expect(wrapper.get('.stat-value').text()).toBe('5')
+    usePulse().pendingCount.value = 0
+    await nextTick()
+    expect(wrapper.get('.stat-value').text()).toBe('2')
+
+    useMe().me.value = null
+    clearNuxtData()
+    const anonymous = await mountSuspended(HomePage)
+    await flush()
+    expect(anonymous.get('h1').text()).toBe('Hola')
+  })
+
   it('carga, error con reintento y copiar el enlace de invitados', async () => {
     mockApi('GET', '/api/dashboard', () => new Promise(() => {}))
     const loading = await mountSuspended(HomePage)
@@ -139,6 +156,18 @@ describe('Mi perfil', () => {
     expect(client.updateUser).toHaveBeenCalledWith({ name: 'Ana María' })
     expect(useMe().me.value?.profile.name).toBe('Ana María')
     expect(useToast().toasts.value.at(-1)?.message).toBe('Nombre actualizado')
+  })
+
+  it('si Neon Auth no guarda su copia del nombre, Cloudy lo conserva igual y avisa', async () => {
+    mockApi('PATCH', '/api/me', profile({ name: 'Ana María' }))
+    client.updateUser.mockRejectedValue(new Error('red'))
+    const wrapper = await mountSuspended(PerfilPage)
+    await fill(wrapper, 'Nombre', 'Ana María')
+    await wrapper.findAll('form')[0]!.trigger('submit')
+    await flush()
+    expect(useMe().me.value?.profile.name).toBe('Ana María')
+    expect(useToast().toasts.value.at(-1)?.message).toBe('Nombre actualizado')
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
   })
 
   it('si falla guardar el nombre lo dice en el formulario', async () => {

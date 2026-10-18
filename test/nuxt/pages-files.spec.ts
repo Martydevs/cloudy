@@ -276,6 +276,28 @@ describe('detalle de archivo', () => {
     expect(wrapper.get('dialog h2').text()).toBe('Renombrar archivo')
   })
 
+  it('en la raíz muestra «Archivos (raíz)», al autor del equipo y abre Mover desde el menú', async () => {
+    mockApi('GET', `/api/files/${F1}`, file({ path: [] }))
+    const wrapper = await mountSuspended(FileDetailPage, { route: `/archivos/ver/${F1}` })
+    await flush()
+    expect(wrapper.text()).toContain('Archivos (raíz)')
+    expect(wrapper.text()).toContain('Ana')
+    expect(wrapper.text()).toContain('Equipo')
+    expect(wrapper.get('a.btn-ghost').attributes('href')).toBe('/archivos')
+
+    await wrapper.get('button[aria-label="Más acciones de foto.jpg"]').trigger('click')
+    await wrapper.findAll('[role="menuitem"]').find(o => o.text() === 'Mover')!.trigger('click')
+    await flush()
+    expect(wrapper.get('dialog h2').text()).toBe('Mover «foto.jpg» a…')
+  })
+
+  it('un envío de invitado sin nombre figura como «Invitado»', async () => {
+    mockApi('GET', `/api/files/${F1}`, file({ origin: 'guest', uploadedBy: null, guestName: null }))
+    const wrapper = await mountSuspended(FileDetailPage, { route: `/archivos/ver/${F1}` })
+    await flush()
+    expect(wrapper.findAll('dd').map(d => d.text())).toContain('Invitado')
+  })
+
   it('al eliminarlo vuelve a su carpeta', async () => {
     mockApi('GET', `/api/files/${F1}`, file())
     mockApi('DELETE', `/api/files/${F1}`, null)
