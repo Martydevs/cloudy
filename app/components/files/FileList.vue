@@ -7,6 +7,8 @@ const emit = defineEmits<{
   fileAction: [action: ItemAction, file: FileItem]
   folderAction: [action: ItemAction, folder: FolderItem]
 }>()
+// Referencia de tiempo segura para el SSR; sustituye al util del mismo nombre en esta plantilla.
+const { timeAgo } = useRelativeTime()
 
 function onFile(key: string, file: FileItem) {
   if (key === 'open') navigateTo(`/archivos/ver/${file.id}`)

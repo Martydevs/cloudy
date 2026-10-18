@@ -4,6 +4,8 @@
 // absoluta: sin desajuste de hidratación y sin mostrar ni un instante una hora de otra zona.
 defineProps<{ iso: string }>()
 const mounted = useMounted()
+// La relativa del SSR usa la hora del render para que la hidratación la reproduzca exacta.
+const { timeAgo } = useRelativeTime()
 </script>
 
 <template>

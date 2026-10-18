@@ -7,6 +7,8 @@ const emit = defineEmits<{ action: [action: ItemAction, file: FileItem] }>()
 
 const href = computed(() => `/archivos/ver/${props.file.id}`)
 const menu = computed(() => fileMenuItems(props.file.id))
+// Referencia de tiempo segura para el SSR; sustituye al util del mismo nombre en esta plantilla.
+const { timeAgo } = useRelativeTime()
 
 function onSelect(key: string) {
   if (key === 'open') navigateTo(href.value)

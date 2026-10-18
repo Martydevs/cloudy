@@ -40,6 +40,26 @@ watch(() => props.collapsed, (collapsed) => {
   if (!collapsed) tip.value = null
 })
 
+// daisyUI quita el anillo de foco en `.menu` (pone `--tw-outline-style: none`, así que `outline-2` solo no
+// basta: hace falta `outline-solid`); se repone por dentro (el nav recorta por overflow) y en el color del
+// texto, que contrasta en ambos temas tanto en los ítems normales como en el activo.
+const FOCUS_RING = 'focus-visible:outline-2 focus-visible:outline-solid focus-visible:-outline-offset-2 focus-visible:outline-current'
+
+// Contraer/expandir sustituye un botón por el otro: si se activó con el teclado, el foco se queda en <body>.
+// Se pasa al botón nuevo solo cuando lo pidió la persona (no al restaurar el estado guardado al montar).
+const collapseToggle = useTemplateRef<HTMLButtonElement>('collapseToggle')
+let refocusToggle = false
+function toggleCollapse() {
+  refocusToggle = true
+  emit('toggleCollapse')
+}
+watch(() => props.collapsed, async () => {
+  if (!refocusToggle) return
+  refocusToggle = false
+  await nextTick()
+  collapseToggle.value?.focus()
+})
+
 // Cuenta al pie: una fila (o solo el avatar, contraída) que abre un menú hacia arriba con
 // Mi perfil, tema y Cerrar sesión. El aside recorta su contenido (`overflow-hidden`), así que el
 // menú se pinta en `body` con posición fija, igual que el aviso.
@@ -99,11 +119,12 @@ useEventListener('scroll', closeAccountMenu, { passive: true, capture: true })
            que los ítems del menú; al pasar el cursor o con foco de teclado solo se ve expandir. -->
       <button
         v-if="props.collapsed"
+        ref="collapseToggle"
         type="button"
         class="group relative btn btn-ghost btn-square size-11 cursor-ew-resize p-0!"
         aria-label="Expandir barra lateral"
         :aria-expanded="false"
-        @click="emit('toggleCollapse')"
+        @click="toggleCollapse"
       >
         <span class="absolute inset-0 flex items-center justify-center transition-opacity group-hover:opacity-0 group-focus-visible:opacity-0">
           <Icon name="lucide:cloud" class="size-6! text-primary" aria-hidden="true" />
@@ -117,11 +138,12 @@ useEventListener('scroll', closeAccountMenu, { passive: true, capture: true })
         <AppLogo />
         <!-- Solo escritorio: contraer aplica desde lg; en el cajón móvil la barra siempre va expandida. -->
         <button
+          ref="collapseToggle"
           type="button"
           class="btn btn-ghost btn-square hidden cursor-ew-resize lg:inline-flex"
           aria-label="Contraer barra lateral"
           :aria-expanded="true"
-          @click="emit('toggleCollapse')"
+          @click="toggleCollapse"
         >
           <Icon name="lucide:panel-left-close" class="size-5!" aria-hidden="true" />
         </button>
@@ -141,6 +163,7 @@ useEventListener('scroll', closeAccountMenu, { passive: true, capture: true })
           <NuxtLink
             :to="item.to"
             :class="[
+              FOCUS_RING,
               props.collapsed
                 ? 'size-11 place-content-center! p-0!'
                 : '!flex min-h-11 items-center gap-3 px-3',
@@ -222,16 +245,16 @@ useEventListener('scroll', closeAccountMenu, { passive: true, capture: true })
           <span class="block truncate text-xs font-normal">{{ profile.email }}</span>
         </li>
         <li role="none">
-          <ThemeToggle with-label class="min-h-11" />
+          <ThemeToggle with-label class="min-h-11" :class="FOCUS_RING" />
         </li>
         <li role="none">
-          <NuxtLink to="/perfil" role="menuitem" class="min-h-11" @click="emit('navigate')">
+          <NuxtLink to="/perfil" role="menuitem" class="min-h-11" :class="FOCUS_RING" @click="emit('navigate')">
             <Icon name="lucide:user" class="size-4" aria-hidden="true" />
             Mi perfil
           </NuxtLink>
         </li>
         <li role="none">
-          <button type="button" role="menuitem" class="min-h-11" @click="logout">
+          <button type="button" role="menuitem" class="min-h-11" :class="FOCUS_RING" @click="logout">
             <Icon name="lucide:log-out" class="size-4" aria-hidden="true" />
             Cerrar sesión
           </button>

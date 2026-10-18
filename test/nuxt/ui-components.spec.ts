@@ -174,6 +174,27 @@ describe('tarjetas y listas de archivos', () => {
     expect(wrapper.findAll('*').some(el => el.text().trim() === '2 KB')).toBe(true)
   })
 
+  it('mientras hidrata, la fecha relativa usa la hora del render del servidor aunque ya haya pasado un minuto', async () => {
+    // Intl redondea al minuto más cercano: el servidor renderizó a los 36 min 29 s («hace 36 minutos») y el
+    // navegador hidrata dos segundos después, ya en «37». Sin una referencia común, Vue marcaría un desajuste.
+    const createdAt = '2026-10-18T12:00:00.000Z'
+    const nuxtApp = useNuxtApp()
+    useState<number>('rendered-at').value = Date.parse('2026-10-18T12:36:29.000Z')
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-10-18T12:36:31.000Z'))
+    nuxtApp.isHydrating = true
+    try {
+      const hydrating = await mountSuspended(FileCard, { props: { file: file({ createdAt }) } })
+      expect(hydrating.get('time').text()).toBe('hace 36 minutos')
+    }
+    finally {
+      nuxtApp.isHydrating = false
+    }
+    // Ya hidratada (navegación en cliente), manda el reloj real.
+    const fresh = await mountSuspended(FileCard, { props: { file: file({ createdAt }) } })
+    expect(fresh.get('time').text()).toBe('hace 37 minutos')
+    clock.mockRestore()
+  })
+
   it('FileCard compacto sin miniatura muestra el ícono y no tiene menú', async () => {
     const wrapper = await mountSuspended(FileCard, { props: { file: file({ hasThumbnail: false, category: 'audio', name: 'a.mp3' }), compact: true } })
     expect(wrapper.find('img').exists()).toBe(false)

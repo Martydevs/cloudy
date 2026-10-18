@@ -114,6 +114,40 @@ describe('AppSidebar', () => {
     expect(wrapper.emitted('navigate')).toBeTruthy()
   })
 
+  it('los enlaces del menú llevan un anillo de foco visible en el color de su texto (daisyUI lo quita en `.menu`)', async () => {
+    setRole('admin')
+    const wrapper = await mountSuspended(AppSidebar, { attachTo: document.body, props: { collapsed: false } })
+    const ring = ['focus-visible:outline-2', 'focus-visible:outline-current']
+    const links = wrapper.findAll('nav a')
+    expect(links.length).toBeGreaterThan(0)
+    for (const link of links) expect(link.classes(), link.text()).toEqual(expect.arrayContaining(ring))
+
+    await wrapper.get('button[aria-label="Menú de usuario"]').trigger('click')
+    const items = [...document.body.querySelectorAll<HTMLElement>('[role="menu"] [role="menuitem"], [role="menu"] button')]
+    expect(items.length).toBe(3)
+    for (const item of items) expect([...item.classList], item.textContent ?? '').toEqual(expect.arrayContaining(ring))
+    wrapper.unmount()
+  })
+
+  it('al contraer o expandir con el teclado, el foco sigue en el botón de alternar', async () => {
+    setRole('editor')
+    const wrapper = await mountSuspended(AppSidebar, { attachTo: document.body, props: { collapsed: false } })
+    const collapse = wrapper.get('button[aria-label="Contraer barra lateral"]')
+    ;(collapse.element as HTMLButtonElement).focus()
+    await collapse.trigger('click')
+    expect(wrapper.emitted('toggleCollapse')).toHaveLength(1)
+    // El layout responde al evento cambiando la prop; el botón se sustituye por el de expandir.
+    await wrapper.setProps({ collapsed: true })
+    await nextTick()
+    expect(document.activeElement?.getAttribute('aria-label')).toBe('Expandir barra lateral')
+
+    await wrapper.get('button[aria-label="Expandir barra lateral"]').trigger('click')
+    await wrapper.setProps({ collapsed: false })
+    await nextTick()
+    expect(document.activeElement?.getAttribute('aria-label')).toBe('Contraer barra lateral')
+    wrapper.unmount()
+  })
+
   it('el aviso de la barra contraída también sale con el foco del teclado y se va al desplazar o expandir', async () => {
     setRole('editor')
     const tip = () => document.body.querySelector('[aria-hidden="true"].fixed')

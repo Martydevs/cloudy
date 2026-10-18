@@ -360,6 +360,55 @@ describe('US9 · recorrido de rutas (T151)', () => {
       }
     })
 
+    it('los enlaces de la barra lateral muestran el anillo de foco al tabular: ambos temas, activo e inactivo, expandida y contraída', async () => {
+      const { page } = await pool.get('desktop')
+      // Shift+Tab desde el inicio del documento va al último elemento tabulable (la cuenta); otro más, al último enlace del menú.
+      const ringOnLastLink = async () => {
+        await page.keyboard.press('Shift+Tab')
+        await page.keyboard.press('Shift+Tab')
+        return page.evaluate(() => {
+          const el = document.activeElement
+          if (!(el instanceof HTMLElement) || !el.closest('nav[aria-label="Secciones"]')) return null
+          const style = getComputedStyle(el)
+          return {
+            label: el.getAttribute('aria-label') ?? el.textContent?.trim(),
+            current: el.getAttribute('aria-current'),
+            outline: style.outlineStyle,
+            width: Number.parseFloat(style.outlineWidth),
+            sameAsText: style.outlineColor === style.color,
+          }
+        })
+      }
+      const expectRing = (ring: Awaited<ReturnType<typeof ringOnLastLink>>, label: string) => {
+        expect(ring, `${label}: el foco no llegó al menú`).not.toBeNull()
+        expect(ring!.outline, `${label}: sin anillo`).not.toBe('none')
+        expect(ring!.width, `${label}: anillo sin ancho`).toBeGreaterThan(0)
+        expect(ring!.sameAsText, `${label}: el anillo no toma el color del texto`).toBe(true)
+      }
+
+      for (const theme of THEMES) {
+        await page.context().addCookies([{ name: 'cloudy-theme', value: theme, url: E2E_URL }])
+        for (const [path, current] of [['/', null], ['/actividad', 'page']] as const) {
+          await page.goto(`${E2E_URL}${path}`)
+          await waitForHydration(page)
+          const ring = await ringOnLastLink()
+          expectRing(ring, `${path} · ${theme}`)
+          expect(ring!.label).toBe('Actividad')
+          expect(ring!.current).toBe(current)
+        }
+      }
+
+      await page.getByRole('button', { name: 'Contraer barra lateral' }).click()
+      try {
+        await page.goto(`${E2E_URL}/actividad`)
+        await waitForHydration(page)
+        expectRing(await ringOnLastLink(), 'contraída · /actividad')
+      }
+      finally {
+        await page.getByRole('button', { name: 'Expandir barra lateral' }).click()
+      }
+    })
+
     it('al crear una carpeta, el aviso no tapa «Nueva carpeta» ni «Subir» (escritorio)', async () => {
       const { page } = await pool.get('desktop')
       await page.goto(`${E2E_URL}/archivos`)

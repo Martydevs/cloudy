@@ -6,7 +6,9 @@ const MINUTE = 60_000
 /**
  * Tiempo relativo («hace 2 horas», «ayer»). Por debajo de un minuto devuelve siempre «hace un
  * momento»: el texto por segundos cambiaba entre el render del servidor y la hidratación y Vue
- * marcaba un desajuste. `now` permite refrescarlo en vivo (comentarios) y probarlo.
+ * marcaba un desajuste. `now` permite refrescarlo en vivo (comentarios) y probarlo. En componentes
+ * que se renderizan en el servidor úsalo a través de `useRelativeTime()`, que fija `now` a la hora del
+ * render mientras hidrata.
  */
 export function timeAgo(iso: string, now: Date | number = Date.now()): string {
   const date = new Date(iso)

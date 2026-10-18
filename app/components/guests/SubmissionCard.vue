@@ -4,6 +4,8 @@ import { daysLeft } from '#shared/retention'
 
 const props = defineProps<{ submission: Submission, busy?: boolean }>()
 const emit = defineEmits<{ approve: [folderId: string | null], reject: [reason: string] }>()
+// Referencia de tiempo segura para el SSR; sustituye al util del mismo nombre en esta plantilla.
+const { timeAgo } = useRelativeTime()
 
 const picking = ref(false)
 const rejecting = ref(false)

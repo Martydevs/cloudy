@@ -14,6 +14,8 @@ const { data, error, pending, refresh } = await useApiFetch<TrashItem[]>('/api/t
 
 const canEmpty = computed(() => can(profile.value?.role, 'trash.empty'))
 const busyId = ref<string | null>(null)
+// Referencia de tiempo segura para el SSR; sustituye al util del mismo nombre en esta plantilla.
+const { timeAgo } = useRelativeTime()
 
 function itemIcon(item: TrashItem): string {
   if (item.kind === 'folder') return 'lucide:folder'

@@ -23,6 +23,8 @@ const { currentPage, pageCount, isFirstPage, isLastPage, prev, next } = useOffse
 })
 
 const admin = useUserAdmin(() => refresh())
+// Referencia de tiempo segura para el SSR; sustituye al util del mismo nombre en esta plantilla.
+const { timeAgo } = useRelativeTime()
 const pendingFirst = computed(() => data.value?.items ?? [])
 const summary = computed(() => {
   const pendingCount = pendingFirst.value.filter(u => u.status === 'pending').length
