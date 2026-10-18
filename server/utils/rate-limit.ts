@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto'
 import { sql } from 'drizzle-orm'
 import { createError, setResponseHeader } from 'h3'
 import type { H3Event } from 'h3'
+import { RATE_LIMITED_MESSAGE } from '#shared/constants/messages'
 import { rateLimits } from '../db/schema'
 
 /** Inicio de la ventana fija de `windowSec` segundos que contiene `now`. */
@@ -39,9 +40,12 @@ export async function hitRateLimit(
   if ((row?.count ?? 0) > limit) {
     const retryAfter = Math.max(1, Math.ceil((start.getTime() + windowSec * 1000 - now.getTime()) / 1000))
     if (event) setResponseHeader(event, 'Retry-After', retryAfter)
+    // El cliente traduce todo 429 (`serverMessage`); el mensaje en español es defensa en profundidad
+    // para quien llame a la API directamente.
     throw createError({
       statusCode: 429,
       statusMessage: 'Too Many Requests',
+      message: RATE_LIMITED_MESSAGE,
       data: { retryAfter },
     })
   }

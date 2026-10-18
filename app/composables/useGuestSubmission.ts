@@ -1,5 +1,4 @@
 // Envío de un invitado (FR-016): validar en local → presignar el lote → PUT de 3 en 3 → un solo `complete`.
-import { FetchError } from 'ofetch'
 import { MAX_GUEST_FILES } from '#shared/constants/files'
 import { checkUploadFile } from '#shared/validation/files'
 import type { UploadItem } from '~/composables/useUploader'
@@ -51,17 +50,6 @@ export function useGuestSubmission() {
     items.value = items.value.filter(i => i.id !== id)
   }
 
-  function describe(err: unknown): string {
-    if (err instanceof FetchError) {
-      const code = err.response?.status
-      if (code === 429) return 'Has enviado demasiados archivos; intenta en una hora'
-      const message = (err.data as { message?: string, data?: { errors?: Record<string, string> } } | undefined)
-      const field = message?.data?.errors && Object.values(message.data.errors)[0]
-      if (field || message?.message) return field ?? message!.message!
-    }
-    return 'No pudimos enviar los archivos. Revisa tu conexión e inténtalo de nuevo.'
-  }
-
   async function submit(form: { senderName: string, note: string }): Promise<SubmissionResult | null> {
     const queued = items.value.filter(i => i.status === 'queued')
     if (queued.length === 0) {
@@ -104,7 +92,8 @@ export function useGuestSubmission() {
     }
     catch (err) {
       for (const item of queued) patch(item.id, { status: 'queued', progress: 0 })
-      error.value = describe(err)
+      // El límite por hora de invitados tiene su propio texto; el resto sigue la regla general.
+      error.value = serverMessage(err, messages.guest.sendFailed, { 429: messages.guest.tooMany })
       status.value = 'error'
       return null
     }

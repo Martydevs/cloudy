@@ -1,6 +1,6 @@
 <script setup lang="ts">
 withDefaults(defineProps<{ message?: string }>(), {
-  message: 'No pudimos cargar la información. Revisa tu conexión e inténtalo de nuevo.',
+  message: messages.load.generic,
 })
 const emit = defineEmits<{ retry: [] }>()
 </script>

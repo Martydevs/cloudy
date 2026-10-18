@@ -35,9 +35,26 @@ describe('serverMessage', () => {
     expect(serverMessage(conflict, FALLBACK)).toBe('Este envío ya fue revisado por otra persona')
   })
 
-  it('un 4xx sin mensaje devuelve el respaldo', () => {
-    // `createError({ statusCode: 404 })` sin `message` llega con una cadena vacía.
+  it('un 4xx sin mensaje propio devuelve el respaldo', () => {
+    // `createError({ statusCode: 404 })` sin `message` llega con una cadena vacía…
     expect(serverMessage(responseError(404, { statusCode: 404, statusMessage: '', message: '' }), FALLBACK)).toBe(FALLBACK)
+    // …y con solo `statusMessage`, h3 copia la frase del estado a `message` (también la de Nitro para rutas inexistentes).
+    expect(serverMessage(responseError(404, { statusCode: 404, statusMessage: 'Not Found', message: 'Not Found' }), FALLBACK)).toBe(FALLBACK)
+    expect(serverMessage(responseError(405, { statusCode: 405, statusMessage: 'Method Not Allowed', message: 'Method Not Allowed' }), FALLBACK)).toBe(FALLBACK)
+  })
+
+  it('los textos por estado son respaldos específicos: ganan al común del 429 y entran cuando el servidor no explica', () => {
+    const tooMany = 'Has enviado demasiados archivos; intenta en una hora'
+    const limited = responseError(429, { statusCode: 429, statusMessage: 'Too Many Requests', message: 'Too Many Requests' })
+    expect(serverMessage(limited, FALLBACK, { 429: tooMany })).toBe(tooMany)
+
+    const unsupported = responseError(415, { statusCode: 415, statusMessage: 'Unsupported Media Type', message: 'Unsupported Media Type' })
+    expect(serverMessage(unsupported, FALLBACK, { 415: '«x.jpg»: formato no admitido' })).toBe('«x.jpg»: formato no admitido')
+    expect(serverMessage(unsupported, FALLBACK, { 413: 'otro' })).toBe(FALLBACK)
+
+    // Un mensaje explícito del servidor sigue ganando al texto por estado.
+    const explained = responseError(422, { statusCode: 422, statusMessage: 'Signature mismatch', message: 'El contenido no corresponde al tipo de archivo' })
+    expect(serverMessage(explained, FALLBACK, { 422: 'otro' })).toBe('El contenido no corresponde al tipo de archivo')
   })
 
   it('el error de un campo tiene prioridad sobre el mensaje general', () => {

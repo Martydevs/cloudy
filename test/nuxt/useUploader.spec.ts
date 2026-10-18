@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { setResponseStatus } from 'h3'
 import { calls, failWith, flush, mockApi, resetCalls } from './helpers/api'
 
 type Behavior = 'ok' | 'network' | 'hang' | 403
@@ -112,6 +113,17 @@ describe('useUploader', () => {
     expect(uploader.items.value[0]).toMatchObject({ status: 'error', retryable: false, error: 'El contenido no corresponde al tipo de archivo' })
     uploader.retry(uploader.items.value[0]!.id)
     expect(uploader.items.value[0]!.status).toBe('error')
+  })
+
+  it('un 5xx con texto en inglés se explica en español y se puede reintentar', async () => {
+    mockApi('POST', '/api/uploads', (event) => {
+      setResponseStatus(event, 500)
+      return { statusCode: 500, statusMessage: 'Server Error', message: 'Server Error' }
+    })
+    const uploader = useUploader({ folderId: null })
+    uploader.add([file('foto.jpg')])
+    await flush(20)
+    expect(uploader.items.value[0]).toMatchObject({ status: 'error', retryable: true, error: 'Se perdió la conexión al subir «foto.jpg». Reintenta.' })
   })
 
   it('413/415 del servidor y PUT rechazado por el bucket', async () => {

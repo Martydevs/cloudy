@@ -38,8 +38,7 @@ export function usePulsePolling() {
       cursor.value = pulse.cursor
       // Aviso en vivo de cada envío nuevo (FR-018), con enlace a la cola (T121).
       for (const submission of pulse.newSubmissions) {
-        const count = submission.fileCount === 1 ? '1 archivo' : `${submission.fileCount} archivos`
-        toast.info(`Nuevo envío de ${submission.senderName} (${count})`, { action: { label: 'Ver', to: '/pendientes' } })
+        toast.info(messages.submissions.received(submission.senderName, submission.fileCount), { action: { label: 'Ver', to: '/pendientes' } })
       }
     }
     catch {

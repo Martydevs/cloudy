@@ -60,9 +60,9 @@ export function useItemActions(onChanged: (change: ItemChange, kind: ItemKind, i
     if (current.type === 'create') {
       await run(async () => {
         const folder = await api<FolderItem>('/api/folders', { method: 'POST', body: { name: value, parentId: current.parentId } })
-        toast.success(folder.name === value ? `Carpeta «${folder.name}» creada` : `Ya existía «${value}»: se creó «${folder.name}»`)
+        toast.success(folder.name === value ? messages.files.folderCreated(folder.name) : messages.files.folderCreatedAs(value, folder.name))
         onChanged('created', 'folder', folder)
-      }, 'No pudimos crear la carpeta. Inténtalo de nuevo.')
+      }, messages.files.createFailed)
       return
     }
     const { kind, item } = current
@@ -70,9 +70,9 @@ export function useItemActions(onChanged: (change: ItemChange, kind: ItemKind, i
     await run(async () => {
       const url = kind === 'file' ? `/api/files/${item.id}` : `/api/folders/${item.id}`
       const updated = await api<Item>(url, { method: 'PATCH', body: { name } })
-      toast.success(`Ahora se llama «${updated.name}»`)
+      toast.success(messages.files.renamed(updated.name))
       onChanged('renamed', kind, updated)
-    }, 'No pudimos renombrar. Inténtalo de nuevo.')
+    }, messages.files.renameFailed)
   }
 
   async function submitMove(target: string | null) {
@@ -83,16 +83,16 @@ export function useItemActions(onChanged: (change: ItemChange, kind: ItemKind, i
       const url = kind === 'file' ? `/api/files/${item.id}` : `/api/folders/${item.id}`
       const body = kind === 'file' ? { folderId: target } : { parentId: target }
       const updated = await api<Item>(url, { method: 'PATCH', body })
-      toast.success(`Se movió «${updated.name}»`)
+      toast.success(messages.files.moved(updated.name))
       onChanged('moved', kind, updated)
-    }, 'No pudimos mover el elemento. Inténtalo de nuevo.')
+    }, messages.files.moveFailed)
   }
 
   async function trash(kind: ItemKind, item: Item) {
     let message = 'Podrás restaurarlo desde la papelera durante 30 días.'
     if (kind === 'folder') {
       const { items } = await api<{ items: number }>(`/api/folders/${item.id}/count`).catch(() => ({ items: 0 }))
-      if (items > 0) message = `Se enviarán ${items === 1 ? '1 elemento' : `${items} elementos`} a la papelera junto con la carpeta. ${message}`
+      if (items > 0) message = `Se enviarán ${pluralize(items, 'elemento', 'elementos')} a la papelera junto con la carpeta. ${message}`
     }
     const ok = await confirm({
       title: `¿Eliminar «${item.name}»?`,
@@ -103,11 +103,11 @@ export function useItemActions(onChanged: (change: ItemChange, kind: ItemKind, i
     if (!ok) return
     try {
       await api(kind === 'file' ? `/api/files/${item.id}` : `/api/folders/${item.id}`, { method: 'DELETE' })
-      toast.success(`«${item.name}» se envió a la papelera`)
+      toast.success(messages.files.trashed(item.name))
       onChanged('trashed', kind, item)
     }
     catch (error) {
-      toast.error(serverMessage(error, 'No pudimos eliminarlo. Inténtalo de nuevo.'))
+      toast.error(serverMessage(error, messages.files.trashFailed))
     }
   }
 

@@ -42,20 +42,20 @@ export function useUserAdmin(onChanged: () => Promise<unknown> | void) {
     busyId,
     activate: (user: Profile, role: Role) => run(user, async () => {
       await patch(user, { status: 'active', role })
-      toast.success(`${user.name} ya puede entrar como ${ROLE_LABELS[role].toLowerCase()}`)
-    }, 'No pudimos activar la cuenta. Inténtalo de nuevo.'),
+      toast.success(messages.users.activated(user.name, ROLE_LABELS[role].toLowerCase()))
+    }, messages.users.activateFailed),
     disable: (user: Profile) => run(user, async () => {
       await patch(user, { status: 'disabled' })
-      toast.success(`La cuenta de ${user.name} quedó desactivada`)
-    }, 'No pudimos desactivar la cuenta. Inténtalo de nuevo.'),
+      toast.success(messages.users.disabled(user.name))
+    }, messages.users.disableFailed),
     reactivate: (user: Profile) => run(user, async () => {
       await patch(user, { status: 'active' })
-      toast.success(`La cuenta de ${user.name} vuelve a estar activa`)
-    }, 'No pudimos reactivar la cuenta. Inténtalo de nuevo.'),
+      toast.success(messages.users.reactivated(user.name))
+    }, messages.users.reactivateFailed),
     changeRole: (user: Profile, role: Role) => run(user, async () => {
       await patch(user, { role })
-      toast.success(`${user.name} ahora es ${ROLE_LABELS[role].toLowerCase()}`)
-    }, 'No pudimos cambiar el rol. Inténtalo de nuevo.'),
+      toast.success(messages.users.roleChanged(user.name, ROLE_LABELS[role].toLowerCase()))
+    }, messages.users.roleFailed),
     remove: async (user: Profile) => {
       const ok = await confirm({
         title: `¿Eliminar la cuenta de ${user.name}?`,
@@ -66,8 +66,8 @@ export function useUserAdmin(onChanged: () => Promise<unknown> | void) {
       if (!ok) return
       await run(user, async () => {
         await api(`/api/users/${user.userId}`, { method: 'DELETE' })
-        toast.success(`La cuenta de ${user.name} fue eliminada`)
-      }, 'No pudimos eliminar la cuenta. Inténtalo de nuevo.')
+        toast.success(messages.users.removed(user.name))
+      }, messages.users.removeFailed)
     },
   }
 }

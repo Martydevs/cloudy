@@ -16,10 +16,10 @@ useHead({
 <template>
   <!-- La página anterior sigue visible mientras carga la siguiente: la barra avisa que hay una navegación en curso. -->
   <NuxtLoadingIndicator color="var(--color-primary)" :height="3" />
+  <!-- Los avisos (AppToast) los monta cada layout dentro de su columna de contenido. -->
   <NuxtLayout>
     <NuxtPage />
   </NuxtLayout>
-  <AppToast />
   <ConfirmDialog
     :open="isRevealed"
     :title="options?.title ?? ''"

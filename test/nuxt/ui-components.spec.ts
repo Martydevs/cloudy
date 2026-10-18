@@ -81,6 +81,26 @@ describe('AppToast', () => {
     toast.toasts.value = []
   })
 
+  it('va pegado bajo la barra superior, centrado sobre el contenido y compacto; no abajo donde tapaba los botones de acción', async () => {
+    const wrapper = await mountSuspended(AppToast)
+    // La región viva es un envoltorio sin alto, pegajoso dentro de la columna de contenido (`h-16` de AppTopbar + 1rem).
+    const region = wrapper.get('[role="status"]')
+    expect(region.classes()).toEqual(expect.arrayContaining(['sticky', 'top-20', 'h-0']))
+    // La pila se centra respecto a ese envoltorio (no al viewport) y desde `sm` es compacta.
+    const stack = region.get('.toast')
+    expect(stack.classes()).toEqual(expect.arrayContaining(['toast-top', 'toast-center', 'absolute', 'sm:max-w-md']))
+    expect(stack.classes()).not.toEqual(expect.arrayContaining(['toast-bottom']))
+    expect(stack.classes()).not.toEqual(expect.arrayContaining(['toast-end']))
+
+    useToast().success('Guardado')
+    await nextTick()
+    expect(wrapper.get('.alert').classes()).toContain('min-h-12')
+    // El botón de cerrar conserva su área táctil y toma el color del texto del aviso (contraste en ambos temas).
+    const close = wrapper.get('button[aria-label="Cerrar aviso"]')
+    expect(close.classes()).toEqual(expect.arrayContaining(['btn', 'btn-square', 'text-current']))
+    useToast().toasts.value = []
+  })
+
   it('se oculta solo a los 4 s y conserva como máximo 4 avisos', async () => {
     vi.useFakeTimers()
     const toast = useToast()

@@ -21,7 +21,7 @@ function onSelect(key: string) {
         <span class="truncate font-medium" :title="folder.name">{{ folder.name }}</span>
         <span class="truncate text-xs text-base-content/70">
           <template v-if="folder.path?.length">{{ folder.path.join(' / ') }}</template>
-          <template v-else-if="folder.itemCount !== undefined">{{ folder.itemCount === 1 ? '1 elemento' : `${folder.itemCount} elementos` }}</template>
+          <template v-else-if="folder.itemCount !== undefined">{{ pluralize(folder.itemCount, 'elemento', 'elementos') }}</template>
         </span>
       </span>
     </NuxtLink>

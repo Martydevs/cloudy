@@ -18,16 +18,20 @@ export interface UploadItem {
 
 const CONCURRENCY = 3
 
-/** Mensaje para el usuario y si tiene sentido reintentar. */
-function describeError(error: unknown, name: string): { message: string, retryable: boolean } {
-  if (error instanceof FetchError) {
-    const status = error.response?.status ?? 0
-    const serverMessage = (error.data as { message?: string } | undefined)?.message
-    if (status === 413 || status === 415) return { message: serverMessage ?? `«${name}»: formato no admitido`, retryable: false }
-    if (status === 422) return { message: serverMessage ?? 'El contenido no corresponde al tipo de archivo', retryable: false }
-    if (status === 401 || status === 403) return { message: 'Tu sesión cambió. Vuelve a iniciar sesión e inténtalo de nuevo.', retryable: false }
-  }
-  return { message: `Se perdió la conexión al subir «${name}». Reintenta.`, retryable: true }
+/** Con estos códigos reintentar no cambia nada: el archivo o la sesión son el problema. */
+const NOT_RETRYABLE = new Set([401, 403, 413, 415, 422])
+
+/** Mensaje para el usuario (regla general de `serverMessage` con respaldos por código) y si tiene sentido reintentar. */
+function uploadFailure(error: unknown, name: string): { message: string, retryable: boolean } {
+  const status = error instanceof FetchError ? error.response?.status ?? 0 : 0
+  const message = serverMessage(error, messages.files.uploadInterrupted(name), {
+    413: messages.files.unsupported(name),
+    415: messages.files.unsupported(name),
+    422: messages.files.invalidContent,
+    401: messages.common.sessionChanged,
+    403: messages.common.sessionChanged,
+  })
+  return { message, retryable: !NOT_RETRYABLE.has(status) }
 }
 
 export function useUploader(options: { folderId: MaybeRefOrGetter<string | null>, onSettled?: (uploaded: FileItem[]) => void }) {
@@ -79,9 +83,9 @@ export function useUploader(options: { folderId: MaybeRefOrGetter<string | null>
 
   function settle() {
     if (batch.length > 0) {
-      toast.success(batch.length === 1 ? `Se subió «${batch[0]!.name}»` : `Se subieron ${batch.length} archivos`)
+      toast.success(batch.length === 1 ? messages.files.uploadedOne(batch[0]!.name) : messages.files.uploadedMany(batch.length))
     }
-    if (failed > 0) toast.error(failed === 1 ? 'Un archivo no se pudo subir' : `${failed} archivos no se pudieron subir`)
+    if (failed > 0) toast.error(messages.files.uploadFailedCount(failed))
     const uploaded = batch
     batch = []
     failed = 0
@@ -122,7 +126,7 @@ export function useUploader(options: { folderId: MaybeRefOrGetter<string | null>
     }
     catch (error) {
       if (error instanceof UploadAbort) return
-      const { message, retryable } = describeError(error, file.name)
+      const { message, retryable } = uploadFailure(error, file.name)
       patch(id, { status: 'error', error: message, retryable })
       failed++
       // Sin registros a medias (Constitución II): se libera la reserva del servidor.

@@ -38,7 +38,7 @@ const summary = computed(() => {
     </header>
 
     <SkeletonList v-if="!data && pending" :rows="5" />
-    <ErrorState v-else-if="error" message="No pudimos cargar los usuarios. Revisa tu conexión." @retry="refresh()" />
+    <ErrorState v-else-if="error" :message="messages.load.users" @retry="refresh()" />
     <EmptyState
       v-else-if="!data || data.items.length === 0"
       icon="lucide:users"

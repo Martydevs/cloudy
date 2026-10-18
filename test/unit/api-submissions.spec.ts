@@ -1,6 +1,7 @@
 // US3 — envíos de invitados: endpoints públicos, cola, vista previa, aprobación y rechazo.
 import { readFileSync } from 'node:fs'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { RATE_LIMITED_MESSAGE } from '../../shared/constants/messages'
 import { authAs, created, expectGuarded, expectStatus, installNitro, loadHandler, makeEvent, sqlText, UUID, UUID2 } from './helpers/nitro'
 
 const s3 = vi.hoisted(() => ({
@@ -81,10 +82,12 @@ describe('POST /api/public/submissions', () => {
     expect(fake.db.batch).not.toHaveBeenCalled()
   })
 
-  it('responde 429 al superar 5 envíos por hora', async () => {
+  it('responde 429 al superar 5 envíos por hora, con el mensaje en español', async () => {
     installNitro([[{ count: 6 }]])
     const handler = await loadHandler('api/public/submissions/index.post.ts')
-    await expectStatus(Promise.resolve().then(() => handler(makeEvent({ auth: undefined, body }))), 429)
+    const error = await expectStatus(Promise.resolve().then(() => handler(makeEvent({ auth: undefined, body }))), 429)
+    // Defensa en profundidad: el cliente traduce el 429, pero el servidor envía el mismo texto compartido.
+    expect(error.message).toBe(RATE_LIMITED_MESSAGE)
   })
 })
 

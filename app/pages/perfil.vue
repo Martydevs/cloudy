@@ -29,10 +29,10 @@ async function saveName(data: Infer<typeof profileNameInput>) {
     // Neon Auth guarda su propia copia del nombre; si falla, Cloudy ya tiene el valor correcto.
     await updateUser({ name: data.name }).catch(() => {})
     if (me.value) me.value = { ...me.value, profile: updated, user: { ...me.value.user, name: updated.name } }
-    toast.success('Nombre actualizado')
+    toast.success(messages.profile.nameSaved)
   }
-  catch {
-    nameError.value = 'No pudimos guardar el nombre. Inténtalo de nuevo.'
+  catch (error) {
+    nameError.value = serverMessage(error, messages.profile.nameFailed)
   }
   finally {
     savingName.value = false
@@ -48,7 +48,7 @@ async function savePassword(data: Infer<typeof changePasswordInput>) {
   try {
     await changePassword({ currentPassword: data.currentPassword, newPassword: data.password })
     passwordFormKey.value++
-    toast.success('Contraseña actualizada')
+    toast.success(messages.profile.passwordSaved)
   }
   catch (error) {
     passwordError.value = authErrorMessage(error, 'No pudimos cambiar la contraseña. Revisa la contraseña actual.')

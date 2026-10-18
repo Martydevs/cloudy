@@ -26,7 +26,7 @@ async function onSubmit(data: Infer<typeof resetInput>) {
   serverError.value = ''
   try {
     await resetPassword({ newPassword: data.password, token: token.value })
-    toast.success('Contraseña actualizada. Ya puedes iniciar sesión.')
+    toast.success(messages.profile.passwordReset)
     await navigateTo('/login')
   }
   catch (error) {

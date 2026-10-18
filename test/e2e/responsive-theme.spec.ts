@@ -5,7 +5,7 @@ import { randomUUID } from 'node:crypto'
 import { readdir } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import { createPage, setup } from '@nuxt/test-utils/e2e'
-import type { BrowserContext, Page } from 'playwright-core'
+import type { BrowserContext, Locator, Page } from 'playwright-core'
 import { afterAll, describe, expect, it } from 'vitest'
 import { ALLOWED_TYPES, getExtension } from '../../shared/constants/files'
 import { E2E_URL, email, ensureAccount, login, runId, setProfile, signedInAs, testSql, viewports, waitForHydration } from './setup/fixtures'
@@ -304,6 +304,12 @@ async function audit(page: Page, errors: string[], path: string, theme: Theme, v
 interface Box { x: number, y: number, width: number, height: number }
 const overlaps = (a: Box, b: Box) => a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height
 
+/**
+ * Espera a que termine la animación de entrada del aviso (daisyUI lo escala desde 0,9): medir en plena
+ * animación daría una caja más pequeña que la final y un «no se solapan» engañoso.
+ */
+const settled = (toast: Locator) => toast.evaluate(el => Promise.all(el.getAnimations({ subtree: true }).map(animation => animation.finished)).then(() => undefined))
+
 describe('US9 · recorrido de rutas (T151)', () => {
   it('las listas cubren todas las páginas de app/pages', async () => {
     const dir = fileURLToPath(new URL('../../app/pages', import.meta.url))
@@ -354,6 +360,23 @@ describe('US9 · recorrido de rutas (T151)', () => {
       }
     })
 
+    it('al crear una carpeta, el aviso no tapa «Nueva carpeta» ni «Subir» (escritorio)', async () => {
+      const { page } = await pool.get('desktop')
+      await page.goto(`${E2E_URL}/archivos`)
+      await waitForHydration(page)
+      const newFolder = page.getByRole('button', { name: 'Nueva carpeta' }).first()
+      const upload = page.getByRole('button', { name: 'Subir', exact: true })
+      await newFolder.click()
+      await page.getByLabel('Nombre de la carpeta').fill(`Aviso ${runId()}`)
+      await page.getByRole('button', { name: 'Crear carpeta' }).click()
+      const toast = page.getByRole('status').locator('.alert', { hasText: 'creada' })
+      await expect.poll(() => toast.isVisible()).toBe(true)
+      await settled(toast)
+      const [toastBox, newFolderBox, uploadBox] = await Promise.all([toast.boundingBox(), newFolder.boundingBox(), upload.boundingBox()])
+      expect(toastBox && newFolderBox && overlaps(toastBox, newFolderBox), 'el aviso tapa «Nueva carpeta»').toBe(false)
+      expect(toastBox && uploadBox && overlaps(toastBox, uploadBox), 'el aviso tapa «Subir»').toBe(false)
+    })
+
     it('el aviso «Comentario publicado» no tapa el botón «Comentar»', async () => {
       for (const viewport of VIEWPORTS) {
         const { page } = await pool.get(viewport)
@@ -368,6 +391,7 @@ describe('US9 · recorrido de rutas (T151)', () => {
         await button.click()
         const toast = page.getByRole('status').locator('.alert', { hasText: 'Comentario publicado' })
         await expect.poll(() => toast.isVisible()).toBe(true)
+        await settled(toast)
         // Con el botón pegado al borde inferior, donde salían los avisos, no deben solaparse.
         await button.evaluate(el => el.scrollIntoView({ block: 'end' }))
         const [toastBox, buttonBox] = await Promise.all([toast.boundingBox(), button.boundingBox()])

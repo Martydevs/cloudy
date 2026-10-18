@@ -24,7 +24,8 @@ function submitSearch() {
 </script>
 
 <template>
-  <header class="sticky top-0 z-30 flex items-center gap-2 border-b border-base-300 bg-base-100/95 px-2 py-2 backdrop-blur sm:px-4">
+  <!-- Alto fijo: los avisos (AppToast, `top-20`) se colocan justo debajo. -->
+  <header class="sticky top-0 z-30 flex h-16 items-center gap-2 border-b border-base-300 bg-base-100/95 px-2 backdrop-blur sm:px-4">
     <button type="button" class="btn btn-ghost btn-square lg:hidden" aria-label="Abrir menú" @click="emit('toggleMenu')">
       <Icon name="lucide:menu" class="size-5" aria-hidden="true" />
     </button>

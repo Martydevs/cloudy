@@ -1,5 +1,6 @@
 <template>
   <div class="min-h-dvh bg-base-200">
+    <AppToast />
     <header class="border-b border-base-300 bg-base-100">
       <div class="mx-auto flex max-w-2xl items-center justify-between p-4">
         <AppLogo />

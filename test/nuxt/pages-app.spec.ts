@@ -149,6 +149,15 @@ describe('Mi perfil', () => {
     expect(wrapper.text()).toContain('No pudimos guardar el nombre')
   })
 
+  it('si el servidor rechaza el nombre, muestra su motivo en el formulario', async () => {
+    mockApi('PATCH', '/api/me', failWith(422, { errors: { name: 'Ese nombre ya lo usa otra cuenta' } }))
+    const wrapper = await mountSuspended(PerfilPage)
+    await fill(wrapper, 'Nombre', 'Ana María')
+    await wrapper.findAll('form')[0]!.trigger('submit')
+    await flush()
+    expect(wrapper.get('[role="alert"]').text()).toContain('Ese nombre ya lo usa otra cuenta')
+  })
+
   it('cambia la contraseña y explica si la actual es incorrecta', async () => {
     setMe({ role: 'admin' })
     const wrapper = await mountSuspended(PerfilPage)

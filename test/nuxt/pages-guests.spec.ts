@@ -122,6 +122,20 @@ describe('/enviar', () => {
     expect(wrapper.get('[role="alert"]').text()).toContain('No pudimos enviar los archivos')
     expect(wrapper.text()).toContain('En espera')
   })
+
+  it('un 5xx con texto en inglés del servidor se explica con el respaldo en español', async () => {
+    // Lo que envía Nitro ante un error no controlado.
+    mockApi('POST', '/api/public/submissions', (event) => {
+      setResponseStatus(event, 500)
+      return { statusCode: 500, statusMessage: 'Server Error', message: 'Server Error' }
+    })
+    const wrapper = await mountSuspended(EnviarPage)
+    await wrapper.get('input[type="text"]').setValue('Eva')
+    wrapper.findComponent(DropZone).vm.$emit('files', [file('foto.jpg')])
+    await wrapper.get('form').trigger('submit')
+    await flush(10)
+    expect(wrapper.get('[role="alert"]').text()).toBe('No pudimos enviar los archivos. Revisa tu conexión e inténtalo de nuevo.')
+  })
 })
 
 describe('SubmissionCard', () => {

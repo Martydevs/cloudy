@@ -18,11 +18,17 @@ export function useGuestLink() {
       }
     }
     if (canCopy.value) {
-      await copy(link.value)
-      toast.success('Enlace para invitados copiado')
+      try {
+        await copy(link.value)
+        toast.success(messages.guest.linkCopied)
+      }
+      catch {
+        // VueUse ya cae a `execCommand('copy')` si el portapapeles falla; esto cubre un rechazo de todos modos.
+        toast.error(messages.guest.copyFailed(link.value))
+      }
     }
     else {
-      toast.info(`Comparte este enlace: ${link.value}`)
+      toast.info(messages.guest.shareLink(link.value))
     }
   }
 

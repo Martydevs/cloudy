@@ -199,6 +199,22 @@ describe('FileExplorer · acciones', () => {
     expect(useToast().toasts.value.at(-1)?.message).toBe('«foto.jpg» se envió a la papelera')
   })
 
+  it('al renombrar, la tarjeta muestra el nombre nuevo sin esperar a que se recargue la lista', async () => {
+    mockApi('PATCH', `/api/folders/${D1}`, { ...folder, name: 'Ensayo' })
+    const wrapper = await mountSuspended(FileExplorer, { props: { folderId: null } })
+    await flush()
+    // La recarga posterior queda pendiente: lo que se vea sale de la respuesta del servidor aplicada en local.
+    mockApi('GET', '/api/folders/root/children', () => new Promise(() => {}))
+    await wrapper.get('button[aria-label="Acciones de la carpeta Domingo"]').trigger('click')
+    await wrapper.findAll('[role="menuitem"]').find(o => o.text() === 'Renombrar')!.trigger('click')
+    await flush()
+    await wrapper.get('dialog input').setValue('Ensayo')
+    await wrapper.get('dialog form').trigger('submit')
+    await flush()
+    expect(wrapper.find('a[aria-label="Abrir carpeta Ensayo"]').exists()).toBe(true)
+    expect(wrapper.find('a[aria-label="Abrir carpeta Domingo"]').exists()).toBe(false)
+  })
+
   it('las acciones de carpeta también llegan al explorador', async () => {
     const wrapper = await mountSuspended(FileExplorer, { props: { folderId: null } })
     await flush()

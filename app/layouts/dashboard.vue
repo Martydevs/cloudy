@@ -41,6 +41,8 @@ watch(() => mobileOpen.value && !isDesktop.value, (locked) => {
         class="btn btn-primary absolute left-2 top-2 z-50 -translate-y-20 focus:translate-y-0"
       >Saltar al contenido</a>
       <AppTopbar @toggle-menu="mobileOpen = !mobileOpen" />
+      <!-- Justo bajo la barra: los avisos se centran sobre esta columna, no sobre el viewport. -->
+      <AppToast />
       <main id="contenido" tabindex="-1" class="mx-auto w-full max-w-7xl flex-1 p-4 outline-none lg:p-6">
         <slot />
       </main>

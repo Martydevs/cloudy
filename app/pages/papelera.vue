@@ -22,7 +22,7 @@ function itemIcon(item: TrashItem): string {
 }
 
 const location = (path: string[]) => `/${path.join('/')}`
-const elements = (n: number) => (n === 1 ? '1 elemento' : `${n} elementos`)
+const elements = (n: number) => pluralize(n, 'elemento', 'elementos')
 const daysLabel = (days: number) => (days === 0 ? 'Se borra hoy' : days === 1 ? 'Queda 1 día' : `Quedan ${days} días`)
 
 async function run(id: string, task: () => Promise<void>, fallback: string) {
@@ -43,12 +43,12 @@ const restoreItem = (item: TrashItem) => run(item.id, async () => {
   const { name, restoredTo, movedToRoot } = await api<TrashRestoreResult>(`/api/trash/${item.kind}/${item.id}/restore`, { method: 'POST' })
   const action = { label: 'Ver', to: restoredTo.folderId ? `/archivos/${restoredTo.folderId}` : '/archivos' }
   if (movedToRoot) {
-    toast.info(`«${name}» se restauró en Archivos porque su carpeta original sigue en la papelera`, { action })
+    toast.info(messages.trash.restoredToRoot(name), { action })
     return
   }
   const where = restoredTo.path.length ? location(restoredTo.path) : 'Archivos'
-  toast.success(`«${name}» se restauró en ${where}`, { action })
-}, 'No pudimos restaurarlo. Inténtalo de nuevo.')
+  toast.success(messages.trash.restored(name, where), { action })
+}, messages.trash.restoreFailed)
 
 async function purgeItem(item: TrashItem) {
   const content = item.kind === 'folder' && item.itemCount > 0 ? ` y ${elements(item.itemCount)} que contiene` : ''
@@ -61,8 +61,8 @@ async function purgeItem(item: TrashItem) {
   if (!ok) return
   await run(item.id, async () => {
     await api(`/api/trash/${item.kind}/${item.id}`, { method: 'DELETE' })
-    toast.success(`«${item.name}» se eliminó definitivamente`)
-  }, 'No pudimos eliminarlo. Inténtalo de nuevo.')
+    toast.success(messages.trash.purged(item.name))
+  }, messages.trash.purgeFailed)
 }
 
 async function emptyTrash() {
@@ -75,8 +75,8 @@ async function emptyTrash() {
   if (!ok) return
   await run('all', async () => {
     const { purged } = await api<{ purged: number }>('/api/trash', { method: 'DELETE' })
-    toast.success(purged === 1 ? 'Se eliminó 1 elemento definitivamente' : `Se eliminaron ${purged} elementos definitivamente`)
-  }, 'No pudimos vaciar la papelera. Inténtalo de nuevo.')
+    toast.success(messages.trash.emptied(purged))
+  }, messages.trash.emptyFailed)
 }
 </script>
 
@@ -101,7 +101,7 @@ async function emptyTrash() {
     </header>
 
     <SkeletonList v-if="!data && pending" :rows="4" />
-    <ErrorState v-else-if="error" message="No pudimos cargar la papelera. Revisa tu conexión." @retry="refresh()" />
+    <ErrorState v-else-if="error" :message="messages.load.trash" @retry="refresh()" />
     <EmptyState
       v-else-if="!data || data.length === 0"
       icon="lucide:trash-2"

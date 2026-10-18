@@ -35,13 +35,13 @@ async function submit() {
     await thread.post(result.value.data.body)
     body.value = ''
     touched.value = false
-    toast.success('Comentario publicado')
+    toast.success(messages.comments.published)
   }
   catch (err) {
     const statusCode = (err as { statusCode?: number }).statusCode
-    if (statusCode === 422) fieldError.value = serverMessage(err, 'Revisa el comentario')
-    else if (statusCode === 409) formError.value = 'Este archivo está en la papelera. Restáuralo desde la Papelera para poder comentar.'
-    else formError.value = serverMessage(err, 'No pudimos publicar el comentario. Inténtalo de nuevo.')
+    if (statusCode === 422) fieldError.value = serverMessage(err, messages.comments.review)
+    else if (statusCode === 409) formError.value = messages.comments.fileInTrash
+    else formError.value = serverMessage(err, messages.comments.publishFailed)
   }
   finally {
     sending.value = false
@@ -58,7 +58,7 @@ async function submit() {
         <span v-if="comments.length" class="badge badge-ghost">{{ comments.length }}</span>
       </h2>
 
-      <ErrorState v-if="loadError" message="No pudimos cargar los comentarios." @retry="thread.refresh()" />
+      <ErrorState v-if="loadError" :message="messages.load.comments" @retry="thread.refresh()" />
       <SkeletonList v-else-if="status !== 'success'" :rows="2" />
       <EmptyState
         v-else-if="comments.length === 0"

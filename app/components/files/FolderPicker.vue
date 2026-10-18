@@ -52,7 +52,7 @@ function close() {
     <div class="modal-box flex max-h-[85dvh] flex-col gap-3">
       <h2 :id="titleId" class="text-lg font-semibold">{{ title }}</h2>
       <SkeletonList v-if="status === 'pending'" :rows="4" />
-      <ErrorState v-else-if="error" message="No pudimos cargar las carpetas." @retry="refresh()" />
+      <ErrorState v-else-if="error" :message="messages.load.folders" @retry="refresh()" />
       <ul v-else class="menu w-full gap-1 overflow-y-auto p-0" role="radiogroup" :aria-labelledby="titleId">
         <li>
           <button

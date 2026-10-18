@@ -41,7 +41,7 @@ const firstName = computed(() => profile.value?.name.split(' ')[0] ?? '')
     </section>
 
     <SkeletonList v-if="!data && !error" :rows="8" variant="grid" />
-    <ErrorState v-else-if="error" message="No pudimos cargar el resumen. Revisa tu conexión." @retry="refresh()" />
+    <ErrorState v-else-if="error" :message="messages.load.dashboard" @retry="refresh()" />
     <template v-else-if="data">
       <section aria-labelledby="resumen-title">
         <h2 id="resumen-title" class="sr-only">Resumen</h2>

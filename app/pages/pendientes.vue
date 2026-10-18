@@ -37,15 +37,15 @@ async function review(submission: Submission, task: () => Promise<void>, fallbac
 
 const approve = (submission: Submission, folderId: string | null) => review(submission, async () => {
   const { files } = await api<{ files: FileItem[] }>(`/api/submissions/${submission.id}/approve`, { method: 'POST', body: { folderId } })
-  toast.success(files.length === 1 ? `Se aprobó «${files[0]!.name}»` : `Se aprobaron ${files.length} archivos de ${submission.senderName}`, {
+  toast.success(files.length === 1 ? messages.submissions.approvedOne(files[0]!.name) : messages.submissions.approvedMany(files.length, submission.senderName), {
     action: { label: 'Ver', to: folderId ? `/archivos/${folderId}` : '/archivos' },
   })
-}, 'No pudimos aprobar el envío. Inténtalo de nuevo.')
+}, messages.submissions.approveFailed)
 
 const reject = (submission: Submission, reason: string) => review(submission, async () => {
   await api(`/api/submissions/${submission.id}/reject`, { method: 'POST', body: { reason } })
-  toast.success(`Se rechazó el envío de ${submission.senderName}`)
-}, 'No pudimos rechazar el envío. Inténtalo de nuevo.')
+  toast.success(messages.submissions.rejected(submission.senderName))
+}, messages.submissions.rejectFailed)
 
 const EMPTY: Record<SubmissionStatus, string> = {
   pending: 'No hay envíos pendientes',
@@ -85,7 +85,7 @@ const EMPTY: Record<SubmissionStatus, string> = {
     </div>
 
     <SkeletonList v-if="!data && pending" :rows="3" />
-    <ErrorState v-else-if="error" message="No pudimos cargar los envíos. Revisa tu conexión." @retry="refresh()" />
+    <ErrorState v-else-if="error" :message="messages.load.submissions" @retry="refresh()" />
     <EmptyState
       v-else-if="!data || data.length === 0"
       icon="lucide:inbox"

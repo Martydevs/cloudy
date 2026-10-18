@@ -75,15 +75,16 @@ const usersHintId = useId()
     </header>
 
     <div class="flex flex-col gap-2 sm:flex-row">
+      <!-- Mismo ancho para ambas etiquetas: los dos selectores quedan alineados en teléfono. -->
       <label class="flex min-w-0 flex-1 items-center gap-2">
-        <span class="shrink-0 text-sm">Acción</span>
+        <span class="w-16 shrink-0 text-sm">Acción</span>
         <select v-model="action" class="select min-w-0 flex-1">
           <option value="">Todas</option>
           <option v-for="key in ACTIVITY_ACTIONS" :key="key" :value="key">{{ activityLabel(key) }}</option>
         </select>
       </label>
       <label class="flex min-w-0 flex-1 items-center gap-2">
-        <span class="shrink-0 text-sm">Persona</span>
+        <span class="w-16 shrink-0 text-sm">Persona</span>
         <select
           v-model="actor"
           class="select min-w-0 flex-1"
@@ -95,12 +96,10 @@ const usersHintId = useId()
         </select>
       </label>
     </div>
-    <p v-if="usersError" :id="usersHintId" class="text-sm text-base-content/70">
-      No pudimos cargar la lista de personas, así que ese filtro no está disponible. Recarga la página para intentarlo de nuevo.
-    </p>
+    <p v-if="usersError" :id="usersHintId" class="text-sm text-base-content/70">{{ messages.load.people }}</p>
 
     <SkeletonList v-if="!firstPage && pending" :rows="8" />
-    <ErrorState v-else-if="error" message="No pudimos cargar la actividad. Revisa tu conexión." @retry="refresh()" />
+    <ErrorState v-else-if="error" :message="messages.load.activity" @retry="refresh()" />
     <EmptyState
       v-else-if="items.length === 0 && hasFilters"
       icon="lucide:filter-x"
@@ -134,7 +133,7 @@ const usersHintId = useId()
       <div ref="sentinel" class="flex min-h-11 justify-center py-2">
         <span v-if="loadingMore" class="loading loading-spinner" aria-label="Cargando más actividad" />
         <button v-else-if="nextCursor" type="button" class="btn" @click="loadMore()">Cargar más</button>
-        <p v-else-if="moreFailed" role="alert" class="text-error">No pudimos cargar más. <button type="button" class="link" @click="loadMore()">Reintentar</button></p>
+        <p v-else-if="moreFailed" role="alert" class="text-error">{{ messages.load.moreActivity }} <button type="button" class="link" @click="loadMore()">Reintentar</button></p>
       </div>
     </template>
   </div>

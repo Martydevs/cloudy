@@ -47,7 +47,7 @@ function statusOf(error: unknown): number | undefined {
 
 /** 404: el comentario ya no existe (p. ej. lo borró un admin); se quita del hilo. */
 function gone() {
-  toast.info('Este comentario ya no existe')
+  toast.info(messages.comments.gone)
   emit('deleted', props.comment.id)
 }
 
@@ -60,14 +60,14 @@ async function save() {
   try {
     const updated = await api<Comment>(url.value, { method: 'PATCH', body: { body: result.value.data.body } })
     emit('updated', updated)
-    toast.success('Comentario actualizado')
+    toast.success(messages.comments.updated)
     stopEdit()
   }
   catch (error) {
     const status = statusOf(error)
     if (status === 404) gone()
-    else if (status === 422) serverError.value = serverMessage(error, 'Revisa el comentario')
-    else toast.error(serverMessage(error, 'No pudimos guardar el comentario. Inténtalo de nuevo.'))
+    else if (status === 422) serverError.value = serverMessage(error, messages.comments.review)
+    else toast.error(serverMessage(error, messages.comments.saveFailed))
   }
   finally {
     saving.value = false
@@ -85,11 +85,11 @@ async function destroy() {
   try {
     await api(url.value, { method: 'DELETE' })
     emit('deleted', props.comment.id)
-    toast.success('Comentario eliminado')
+    toast.success(messages.comments.deleted)
   }
   catch (error) {
     if (statusOf(error) === 404) gone()
-    else toast.error(serverMessage(error, 'No pudimos eliminar el comentario. Inténtalo de nuevo.'))
+    else toast.error(serverMessage(error, messages.comments.deleteFailed))
   }
 }
 </script>

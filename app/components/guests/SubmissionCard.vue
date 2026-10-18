@@ -49,7 +49,7 @@ function confirmReject() {
       <p class="text-sm text-base-content/70">
         {{ timeAgo(submission.createdAt) }}
         <template v-if="submission.status === 'pending'"> · {{ expiry }}</template>
-        · {{ submission.files.length === 1 ? '1 archivo' : `${submission.files.length} archivos` }}
+        · {{ pluralize(submission.files.length, 'archivo', 'archivos') }}
       </p>
       <p v-if="submission.note" class="whitespace-pre-line break-words">{{ submission.note }}</p>
 

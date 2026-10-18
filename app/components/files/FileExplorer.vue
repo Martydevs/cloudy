@@ -96,7 +96,7 @@ async function loadMore() {
     cursor.value = page.nextCursor
   }
   catch {
-    useToast().error('No pudimos cargar más archivos. Desplázate de nuevo para reintentar.')
+    useToast().error(messages.load.moreFiles)
   }
   finally {
     loadingMore.value = false
@@ -114,6 +114,15 @@ const actions = useItemActions((change, kind, item) => {
   if (change === 'trashed' && kind === 'file') {
     // Se quita de la vista al instante; `refresh` corrige el resto.
     moreFiles.value = moreFiles.value.filter(f => f.id !== item.id)
+  }
+  // El nombre nuevo se aplica en local con la respuesta del servidor: la tarjeta no espera a la recarga.
+  // `data` es superficial (useFetch), así que se reemplaza la página en vez de mutar la entrada.
+  if (change === 'renamed' && data.value) {
+    const patch = <T extends { id: string }>(entry: T): T => (entry.id === item.id ? { ...entry, ...item } : entry)
+    const renamed = <P extends { folders: { id: string }[], files: { id: string }[] }>(page: P): P =>
+      ({ ...page, folders: page.folders.map(patch), files: page.files.map(patch) })
+    data.value = renamed(data.value)
+    moreFiles.value = moreFiles.value.map(patch)
   }
   refresh()
 })
@@ -173,11 +182,12 @@ const TYPE_FILTERS: { value: FileCategory | undefined, label: string }[] = [
             </button>
           </div>
         </div>
-        <div class="flex items-center gap-2">
-          <label class="flex min-w-0 flex-1 items-center gap-2 @5xl:flex-none">
+        <!-- En teléfono el orden ocupa el ancho (objetivo táctil); desde `sm` el grupo no se estira. -->
+        <div class="flex items-center gap-2 sm:self-end @5xl:self-auto">
+          <label class="flex min-w-0 flex-1 items-center gap-2 sm:flex-none">
             <span class="shrink-0 text-sm">Ordenar por</span>
             <select
-              class="select min-w-0 flex-1 @5xl:w-56"
+              class="select min-w-0 flex-1 sm:w-56"
               :value="sortOption"
               @change="setSort(($event.target as HTMLSelectElement).value as SortOption)"
             >
@@ -211,7 +221,7 @@ const TYPE_FILTERS: { value: FileCategory | undefined, label: string }[] = [
     </div>
 
     <SkeletonList v-if="!data && !error" :rows="12" :variant="view" />
-    <ErrorState v-else-if="error" message="No pudimos cargar los archivos. Revisa tu conexión." @retry="refresh()" />
+    <ErrorState v-else-if="error" :message="messages.load.files" @retry="refresh()" />
     <EmptyState
       v-else-if="isEmpty && q"
       icon="lucide:search-x"
