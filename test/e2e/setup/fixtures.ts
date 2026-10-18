@@ -3,9 +3,11 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { randomUUID } from 'node:crypto'
 import { neon } from '@neondatabase/serverless'
 import { inject } from 'vitest'
 import type { Page } from 'playwright-core'
+import { ALLOWED_TYPES, getExtension } from '../../../shared/constants/files'
 import { readEnvFile, requireVar } from '../../../scripts/env'
 import { E2E_URL } from './constants'
 
@@ -45,26 +47,57 @@ export async function waitForHydration(page: Page) {
 }
 
 /**
- * Neon Auth (Better Auth) limita sign-up/sign-in por IP del lado del servidor y el proxy no le
- * reenvía la IP del navegador: todas las peticiones de los e2e cuentan como una sola IP. Se
- * espacian para no superar ese límite (≈3 cada 10 s). El registro se comparte entre archivos.
+ * Neon Auth corre Better Auth 1.7, que limita por IP + ruta: `/sign-in/*` y `/sign-up/*` admiten
+ * 3 peticiones por ventana de 10 s, y la ventana se reinicia solo cuando pasan 10 s desde la
+ * **última petición admitida** (`decideConsume` en `better-auth/api/rate-limiter`); una petición
+ * bloqueada no la mueve. Con tráfico continuo cada ~10 s la ventana nunca se reinicia y la cuarta
+ * recibe 429. El proxy no reenvía la IP del navegador, así que todos los e2e cuentan como una sola
+ * IP, y el estado se comparte entre archivos y corridas en un archivo temporal. Se lleva la misma
+ * contabilidad que el servidor, por ruta y con margen para la latencia y el reloj del servidor:
+ * hasta 3 seguidas y después una pausa de 12 s desde la última.
  */
 const AUTH_WINDOW_MS = 10_000
-const AUTH_MAX_IN_WINDOW = 2
+const AUTH_MARGIN_MS = 2_000
+const AUTH_MAX_IN_WINDOW = 3
+type AuthPath = 'sign-in' | 'sign-up'
+interface PaceState { count: number, last: number }
+type PaceFile = Partial<Record<AuthPath, PaceState>>
 
-export async function paceAuthRequest() {
-  // Compartido entre corridas: dos corridas seguidas también cuentan para el límite de Neon Auth.
-  const file = join(tmpdir(), 'cloudy-e2e-auth.json')
-  for (;;) {
-    const now = Date.now()
-    const recent = (existsSync(file) ? JSON.parse(readFileSync(file, 'utf8')) as number[] : [])
-      .filter(t => now - t < AUTH_WINDOW_MS)
-    if (recent.length < AUTH_MAX_IN_WINDOW) {
-      writeFileSync(file, JSON.stringify([...recent, now]))
-      return
-    }
-    await new Promise(resolve => setTimeout(resolve, AUTH_WINDOW_MS - (now - recent[0]!) + 50))
+const paceFile = join(tmpdir(), 'cloudy-e2e-auth.json')
+
+function readPace(): PaceFile {
+  try {
+    const parsed: unknown = existsSync(paceFile) ? JSON.parse(readFileSync(paceFile, 'utf8')) : {}
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed as PaceFile : {}
   }
+  catch {
+    return {}
+  }
+}
+
+const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
+
+export async function paceAuthRequest(path: AuthPath) {
+  for (;;) {
+    const state = readPace()
+    const current = state[path]
+    const now = Date.now()
+    if (!current || now - current.last >= AUTH_WINDOW_MS + AUTH_MARGIN_MS) state[path] = { count: 1, last: now }
+    else if (current.count < AUTH_MAX_IN_WINDOW) state[path] = { count: current.count + 1, last: now }
+    else {
+      await sleep(current.last + AUTH_WINDOW_MS + AUTH_MARGIN_MS - now)
+      continue
+    }
+    writeFileSync(paceFile, JSON.stringify(state))
+    return
+  }
+}
+
+/** Neon Auth respondió 429 igualmente (p. ej. tráfico ajeno a esta corrida): se asume la ventana llena. */
+function markLimited(path: AuthPath) {
+  const state = readPace()
+  state[path] = { count: AUTH_MAX_IN_WINDOW, last: Date.now() }
+  writeFileSync(paceFile, JSON.stringify(state))
 }
 
 export async function registerViaUi(page: Page, { name = 'Persona de prueba', email, password = PASSWORD }: Credentials) {
@@ -74,7 +107,7 @@ export async function registerViaUi(page: Page, { name = 'Persona de prueba', em
   await page.getByLabel('Correo electrónico').fill(email)
   await page.getByLabel('Contraseña', { exact: true }).fill(password)
   await page.getByLabel('Confirmar contraseña').fill(password)
-  await paceAuthRequest()
+  await paceAuthRequest('sign-up')
   await page.getByRole('button', { name: 'Crear cuenta' }).click()
   const alert = page.getByRole('alert')
   await Promise.race([
@@ -90,22 +123,77 @@ export async function login(page: Page, { email, password = PASSWORD }: Credenti
   await waitForHydration(page)
   await page.getByLabel('Correo electrónico').fill(email)
   await page.getByLabel('Contraseña').fill(password)
-  await paceAuthRequest()
-  await page.getByRole('button', { name: 'Iniciar sesión' }).click()
-  // Si el servidor responde con un error, se informa su texto en vez de esperar 30 s a ciegas.
   const alert = page.getByRole('alert')
-  await Promise.race([
-    page.waitForURL(url => !url.pathname.startsWith('/login')),
-    alert.waitFor({ state: 'visible' }).then(async () => {
-      throw new Error(`El login de ${email} falló: ${await alert.innerText()}`)
-    }),
-  ])
+  // `path` puede traer query (`/login?redirect=…`): se compara solo la ruta.
+  const loginPath = new URL(path, E2E_URL).pathname
+  for (let attempt = 0; ; attempt++) {
+    await paceAuthRequest('sign-in')
+    await page.getByRole('button', { name: 'Iniciar sesión' }).click()
+    // Si el servidor responde con un error, se informa su texto en vez de esperar 30 s a ciegas.
+    const failure = await Promise.race([
+      page.waitForURL(url => !url.pathname.startsWith(loginPath)).then(() => null),
+      alert.waitFor({ state: 'visible' }).then(() => alert.innerText()),
+    ])
+    if (failure === null) return
+    // Un 429 de Neon Auth se reintenta una vez tras esperar su ventana; cualquier otro error es real.
+    // La página traduce el 429 en app/utils/auth-errors.ts («Demasiados intentos, …»).
+    if (attempt === 0 && failure.includes('Demasiados intentos')) {
+      markLimited('sign-in')
+      continue
+    }
+    throw new Error(`El login de ${email} falló: ${failure}`)
+  }
 }
 
 /** Cambia el estado/rol directamente en la BD de pruebas (simula la aprobación del admin). */
 export async function setProfile(targetEmail: string, values: { status: 'pending' | 'active' | 'disabled' | 'removed', role: 'admin' | 'editor' | null }) {
   const sql = testSql()
   await sql`UPDATE profiles SET status = ${values.status}, role = ${values.role}, updated_at = now() WHERE email = ${targetEmail}`
+}
+
+/** id de Neon Auth del perfil con ese correo; existe desde la primera petición autenticada. */
+export async function profileUserId(targetEmail: string): Promise<string> {
+  const [row] = await testSql()`SELECT user_id FROM profiles WHERE email = ${targetEmail}`
+  if (!row) throw new Error(`No existe el perfil ${targetEmail}`)
+  return row.user_id as string
+}
+
+export async function seedFolder(name: string, owner: string, parentId: string | null = null): Promise<string> {
+  const [row] = await testSql()`INSERT INTO folders (name, parent_id, created_by) VALUES (${name}, ${parentId}, ${owner}) RETURNING id`
+  return row!.id as string
+}
+
+/** Extensiones variadas para que las listas sembradas mezclen todas las categorías. */
+const SEED_EXTENSIONS = ['jpg', 'png', 'mp3', 'wav', 'mp4', 'mov', 'pptx', 'pdf', 'docx', 'txt']
+
+/**
+ * Siembra `count` filas `ready` en una sola consulta, sin bytes en el bucket. Sin `thumb_key`, las
+ * tarjetas muestran el icono de la categoría y nunca piden `/thumbnail`, así que no hay 404.
+ * Los nombres son `<label> <n>.<ext>` y las claves de storage van bajo `e2e/<runId>/`.
+ */
+export async function seedFiles(owner: string, folderId: string | null, count: number, label: string): Promise<string[]> {
+  const ids = Array.from({ length: count }, () => randomUUID())
+  const names = ids.map((_, i) => `${label} ${String(i + 1).padStart(3, '0')}.${SEED_EXTENSIONS[i % SEED_EXTENSIONS.length]}`)
+  const exts = names.map(getExtension)
+  const types = exts.map(ext => ALLOWED_TYPES[ext]!)
+  await testSql().query(
+    `INSERT INTO files (id, folder_id, name, extension, mime_type, category, size_bytes, storage_key, upload_status, origin, uploaded_by)
+     SELECT id::uuid, $2::uuid, name, extension, mime_type, category::file_category, size_bytes, storage_key, 'ready', 'team', $9
+     FROM unnest($1::text[], $3::text[], $4::text[], $5::text[], $6::text[], $7::bigint[], $8::text[])
+       AS t(id, name, extension, mime_type, category, size_bytes, storage_key)`,
+    [
+      ids,
+      folderId,
+      names,
+      exts,
+      types.map(type => type.mimes[0]),
+      types.map(type => type.category),
+      ids.map((_, i) => 1000 + i),
+      ids.map(id => `e2e/${runId()}/files/${id}`),
+      owner,
+    ],
+  )
+  return ids
 }
 
 function cookieHeader(res: Response): string {
@@ -125,12 +213,19 @@ async function authPost(path: string, body: Record<string, string>): Promise<Res
  * sin pasar por la UI. Devuelve la cookie de sesión.
  */
 export async function ensureAccount({ name = 'Persona de prueba', email, password = PASSWORD }: Credentials): Promise<string> {
-  await paceAuthRequest()
-  let res = await authPost('sign-up/email', { name, email, password })
-  if (!res.ok) {
-    await paceAuthRequest()
-    res = await authPost('sign-in/email', { email, password })
+  // Con un 429 de Neon Auth se espera su ventana y se reintenta una vez (ver paceAuthRequest).
+  const post = async (path: AuthPath, body: Record<string, string>) => {
+    await paceAuthRequest(path)
+    let res = await authPost(`${path}/email`, body)
+    if (res.status === 429) {
+      markLimited(path)
+      await paceAuthRequest(path)
+      res = await authPost(`${path}/email`, body)
+    }
+    return res
   }
+  let res = await post('sign-up', { name, email, password })
+  if (!res.ok) res = await post('sign-in', { email, password })
   if (!res.ok) throw new Error(`No se pudo preparar la cuenta ${email}: ${res.status}`)
   const cookie = cookieHeader(res)
   // La primera petición autenticada crea el perfil (FR-002).
