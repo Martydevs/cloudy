@@ -38,6 +38,8 @@ function onSelect(key: string) {
       </div>
     </NuxtLink>
     <span v-if="file.origin === 'guest'" class="badge badge-secondary badge-sm absolute left-3 top-3">invitado</span>
+    <!-- Sobre la miniatura, para no recortar más la línea de metadatos de la tarjeta. -->
+    <CommentCount :count="file.commentCount" class="badge badge-neutral badge-sm absolute right-3 top-3" />
     <div v-if="!compact" class="absolute bottom-1 right-1">
       <ActionMenu :label="`Acciones de ${file.name}`" :items="menu" @select="onSelect" />
     </div>

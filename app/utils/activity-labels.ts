@@ -51,5 +51,6 @@ export function activityDetail(action: string, meta: Record<string, unknown> | n
   if (action === 'user.activate' && typeof meta.role === 'string') return `como ${role(meta.role)}`
   if ((action === 'file.rename' || action === 'folder.rename') && typeof meta.from === 'string') return `antes «${meta.from}»`
   if (action === 'submission.reject' && typeof meta.reason === 'string' && meta.reason) return `motivo: ${meta.reason}`
+  if (action === 'comment.admin_delete' && typeof meta.author === 'string') return `escrito por ${meta.author}`
   return ''
 }

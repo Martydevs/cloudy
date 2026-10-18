@@ -87,7 +87,7 @@ const ORIGIN_LABELS = { team: 'Equipo', guest: 'Invitado' } as const
             </dl>
           </div>
         </div>
-        <!-- Los comentarios (US8) se montan aquí. -->
+        <LazyCommentThread :file-id="file.id" />
       </aside>
     </div>
 

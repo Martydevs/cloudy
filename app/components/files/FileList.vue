@@ -49,6 +49,7 @@ function onFolder(key: string, folder: FolderItem) {
         <span class="flex items-center gap-2">
           <span class="truncate font-medium" :title="file.name">{{ file.name }}</span>
           <span v-if="file.origin === 'guest'" class="badge badge-secondary badge-sm">invitado</span>
+          <CommentCount :count="file.commentCount" class="text-xs text-base-content/70" />
         </span>
         <span class="truncate text-xs text-base-content/70">
           <template v-if="file.path?.length">{{ file.path.join(' / ') }} · </template>
