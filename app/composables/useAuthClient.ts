@@ -80,9 +80,22 @@ export function useAuthClient() {
     unwrap(await client.requestPasswordReset(input))
   }
 
+  /**
+   * Un enlace caducado o ya usado llega como `INVALID_TOKEN` (400) de Better Auth, pero el cliente de
+   * Neon lo normaliza y **lanza** `bad_jwt` (401, «Invalid or expired session token»), como si fuera
+   * un problema de sesión: la página lo tomaba por «Correo o contraseña incorrectos» (T162, defecto 2).
+   * Aquí se devuelve siempre el código de Better Auth, que es el que entiende `restablecer.vue`.
+   */
   async function resetPassword(input: { newPassword: string, token: string }) {
     const client = await getClient()
-    unwrap(await client.resetPassword(input))
+    try {
+      unwrap(await client.resetPassword(input))
+    }
+    catch (error) {
+      const { code, message, status } = (error ?? {}) as { code?: string, message?: string, status?: number }
+      if (code === 'bad_jwt' || code === 'INVALID_TOKEN') throw new AuthRequestError(message ?? 'Invalid token', status ?? 400, 'INVALID_TOKEN')
+      throw error
+    }
   }
 
   async function changePassword(input: { currentPassword: string, newPassword: string }) {

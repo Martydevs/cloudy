@@ -230,6 +230,29 @@ describe('useAuthClient', () => {
     await expect(useAuthClient().requestPasswordReset({ email: 'a@x.org', redirectTo: 'http://x' })).rejects.toThrow('Error')
   })
 
+  it('un enlace de restablecimiento inválido llega como INVALID_TOKEN aunque el cliente de Neon lance bad_jwt (T162, defecto 2)', async () => {
+    // El cliente de Neon normaliza el `INVALID_TOKEN` (400) de Better Auth y lanza un error de sesión.
+    auth.client.resetPassword.mockRejectedValueOnce(Object.assign(new Error('Invalid or expired session token'), { status: 401, code: 'bad_jwt' }))
+    await expect(useAuthClient().resetPassword({ newPassword: '12345678', token: 'usado' })).rejects.toMatchObject({ code: 'INVALID_TOKEN', status: 401 })
+    // Cualquier otro error lanzado se propaga tal cual.
+    auth.client.resetPassword.mockRejectedValueOnce(Object.assign(new Error('red'), { status: 503, code: 'network_error' }))
+    await expect(useAuthClient().resetPassword({ newPassword: '12345678', token: 't' })).rejects.toMatchObject({ code: 'network_error' })
+  })
+
+  it('la página de restablecer muestra «El enlace caducó o ya se usó» y «Pedir un enlace nuevo» con un token usado', async () => {
+    auth.client.resetPassword.mockRejectedValueOnce(Object.assign(new Error('Invalid or expired session token'), { status: 401, code: 'bad_jwt' }))
+    const { default: RestablecerPage } = await import('~/pages/restablecer.vue')
+    const wrapper = await mountSuspended(RestablecerPage, { route: '/restablecer?token=usado' })
+    const [password, confirm] = wrapper.findAll('input[type="password"]')
+    await password!.setValue('nueva-clave-123')
+    await confirm!.setValue('nueva-clave-123')
+    await wrapper.get('form').trigger('submit')
+    await flush()
+    expect(wrapper.text()).toContain('El enlace caducó o ya se usó')
+    expect(wrapper.text()).not.toContain('Correo o contraseña incorrectos')
+    expect(wrapper.get('a[href="/recuperar"]').text()).toBe('Pedir un enlace nuevo')
+  })
+
   it('recuperación, cambio de contraseña y nombre', async () => {
     const client = useAuthClient()
     await client.requestPasswordReset({ email: 'a@x.org', redirectTo: 'http://x/restablecer' })
