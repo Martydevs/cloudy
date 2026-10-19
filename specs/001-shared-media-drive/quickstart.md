@@ -120,3 +120,65 @@ Resultado esperado: todo en verde, con cobertura ≥ 80 % de líneas en `server/
 
 - **Eliminar una cuenta por completo**: en Cloudy, "Eliminar" deja al usuario como `removed` y bloquea el acceso. Para borrar también la identidad, hacerlo en la consola de Neon Auth.
 - **Correos con marca propia**: en producción, configurar un SMTP en Neon Auth. Personalizar el contenido con webhooks queda fuera de la v1.
+
+## 8. Resultado de validación (T162, 2026-10-18)
+
+Ejecutado contra la rama de desarrollo (`bun run dev`) en Chromium, a 360 px y ≥ 1280 px, en `cloudy` y `cloudy-light`, con CPU ×4 y 4G emulados para las mediciones. Los e2e corren contra la rama de pruebas.
+
+### Escenarios de §4
+
+| # | Escenario | Resultado |
+|---|-----------|-----------|
+| 1 | Primer administrador | NO EJECUTADO: exige una BD vacía; lo cubre el e2e `auth-roles` (US2) en cada corrida. |
+| 2 | Registro con aprobación | PASS |
+| 3 | Protección de rutas | PASS |
+| 4 | Subir y encontrar | PASS (tras corregir el conteo de las tarjetas de carpeta, ver defectos) |
+| 5 | Rechazos de validación | PASS |
+| 6 | Invitados en vivo | PASS |
+| 7 | Concurrencia en la aprobación | PASS parcial: el aviso «ya fue revisado» se verificó; el comportamiento del sondeo fallido se comprobó con una lista simulada (defecto 3). |
+| 8 | Papelera | PASS |
+| 9 | Comentarios | PASS |
+| 10 | Último admin | NO APLICA en desarrollo: la rama tiene 4 administradores; lo cubre el unit test de `users.ts` (409 al quitar al último). |
+| 11 | Tema y responsivo | PASS (tras corregir el teclado del menú de cuenta, el cajón móvil y el buscador de 43 px, ver defectos) |
+| 12 | Recuperar contraseña | PASS parcial: el enlace usado muestra «El enlace caducó o ya se usó» con «Pedir un enlace nuevo» (defecto 2 corregido); la entrega del correo no se comprobó (sin buzón). |
+| 13 | Cron | PASS parcial: solo se verificó el 401 sin cabecera; la limpieza la cubre el unit test de `cron/cleanup`. |
+
+**INP** (escenario 11, CPU ×4 + 4G, 360 px): abrir el cajón 72–80 ms · elegir una sección 48 ms · cambiar de carpeta 16–24 ms · abrir una vista previa 16–24 ms. Todo ≤ 200 ms.
+
+**Cabeceras de seguridad** (T158): toda respuesta trae `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin`, `X-Frame-Options: DENY` y `Permissions-Policy` (cámara, micrófono, geolocalización, pago, USB y captura de pantalla denegados).
+
+**Vista previa de PDF**: `X-Frame-Options: DENY` no bloquea el `<iframe>` (el navegador lo evalúa en la respuesta final del bucket, no en el 302), pero el renderizado no se confirmó visualmente: Chromium sin cabeza no trae visor de PDF.
+
+**Precarga de la fuente**: `@nuxt/fonts` no emite el `<link rel="preload">` en desarrollo; se omitió comprobarlo en `preview` porque ese comando usa el `.env` de producción. Queda para la prueba de humo del despliegue (§6).
+
+### Defectos encontrados y corregidos
+
+1. Las tarjetas de carpeta decían «0 elementos» siempre: la subconsulta correlacionada referenciaba `"id"` sin calificar y Postgres lo resolvía contra la tabla interior. `folderItemCountSql()` califica la columna; unit test sobre el SQL generado y e2e en `files.spec`.
+2. Un enlace de restablecimiento usado mostraba «Correo o contraseña incorrectos»: el cliente de Neon convierte el `INVALID_TOKEN` de Better Auth en `bad_jwt` (401). `resetPassword()` devuelve `INVALID_TOKEN`; pruebas de componente del composable y de la página.
+3. Un sondeo fallido en `/pendientes` sustituía la lista por el estado de error: se conserva la última lista buena con un aviso, botón «Reintentar» y reintento automático a los 5 s. Prueba de componente.
+4. El menú de cuenta no se alcanzaba con el teclado (vive en `body`): ↓/↑ abren y enfocan, las flechas recorren, Tab cierra y devuelve el foco. Prueba de componente.
+5. El cajón móvil no movía el foco: al abrirse enfoca el primer enlace cuando el panel ya es visible (daisyUI anima `visibility`), la página queda `inert` y al cerrar vuelve a «Abrir menú». Pruebas de componente y e2e (`responsive-theme`).
+6. El buscador de la barra superior medía 43 px en teléfono: `min-h-11` en la etiqueta (el `input` interior mide 43 px dentro de los 45 px de la etiqueta, que es lo que recibe el toque, como mide T151).
+7. Con `prefers-reduced-motion: reduce` el cajón móvil tampoco enfocaba: el panel ya era visible pero el enlace seguía oculto unos cuadros. Ahora se reintenta cuadro a cuadro hasta que el foco queda en el enlace o vence el plazo. E2E también con movimiento reducido.
+8. El reintento automático de `/pendientes` no se re-armaba si el propio reintento fallaba (solo reaccionaba al primer fallo). Ahora cada recarga fallida lo re-arma. Prueba de componente con dos fallos seguidos y un éxito.
+
+No son defectos (se dejan como están): los PDF se clasifican como «Presentaciones»; la búsqueda «dom» solo compara nombres.
+
+### Gates de §5
+
+| Gate | Resultado |
+|------|-----------|
+| `bun run typecheck` | PASS |
+| `bun run test:unit` + `bun run test:nuxt` | PASS · 624 pruebas |
+| `bun run test:e2e` | PASS · 73 pruebas (9 archivos, incluido `performance.spec`) |
+| `bun run test:coverage` | PASS · líneas 98,63 % · ramas 93,12 % · funciones 94,46 % · sentencias 98,03 % (umbral 92 %) |
+| `bun run build` | PASS |
+| `bun run analyze` (Sonda) | PASS · ruta más pesada ≈ 132 KiB gzip (≤ 200 KB) |
+| Rendimiento (e2e, 360×740, 4G, CPU ×4, mediana de 3 cargas en frío) | PASS · `/` LCP 1020 ms · carpeta con 200 elementos 1348 ms · `/enviar` 848 ms · CLS 0 en las tres |
+
+### Desviaciones
+
+- Escenarios 1 y 10 no se ejecutaron a mano (BD vacía / varios administradores); quedan cubiertos por pruebas automatizadas.
+- Escenarios 7, 12 y 13 son parciales por los motivos indicados en la tabla.
+- La verificación del `preload` de la fuente y el renderizado del PDF se trasladan a la prueba de humo del despliegue (§6).
+- Las corridas completas de e2e revelaron dos fragilidades del laboratorio, corregidas en `test/e2e/setup/fixtures.ts` y en la prueba de rendimiento: el ritmo de inicios de sesión frente al límite de Better Auth (3 por 10 s por ruta, ventana desde la última petición) y una carga de calentamiento por ruta antes de medir.
