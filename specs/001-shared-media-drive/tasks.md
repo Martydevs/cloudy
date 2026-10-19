@@ -761,25 +761,37 @@ description: "Task list for Cloudy — Disco multimedia compartido (feature 001)
 
 **Purpose**: Los gates de la constitución (I rendimiento, IV calidad, V cobertura), la seguridad, la documentación y la validación final.
 
-- [ ] T155 [P] Crear `test/e2e/performance.spec.ts` (R18):
+- [x] T155 [P] Crear `test/e2e/performance.spec.ts` (R18):
   - Chromium con el viewport `phone` y CDP `Network.emulateNetworkConditions({ downloadThroughput: 9e6/8, uploadThroughput: 1.5e6/8, latency: 170 })` y `Emulation.setCPUThrottlingRate({ rate: 4 })`.
   - Mide LCP y CLS con `PerformanceObserver` en `page.evaluate`.
   - Toma la mediana de 3 cargas en `/` (sembrado con 50 archivos), `/archivos/<carpeta con 200 elementos>` y `/enviar`.
   - Afirma LCP ≤ 2500 ms y CLS ≤ 0.1.
-- [ ] T156 [P] Medir el bundle con Sonda (`bun run analyze`, reportes en `.sonda/`) y comprobar que el JS inicial de cada ruta sea ≤ 200 KB gzip (Constitución I). Sustituye al script propio `scripts/check-bundle.ts`.
-- [ ] T157 Optimizar lo que fallen T155 y T156:
+- [x] T156 [P] Medir el bundle con Sonda (`bun run analyze`, reportes en `.sonda/`) y comprobar que el JS inicial de cada ruta sea ≤ 200 KB gzip (Constitución I). Sustituye al script propio `scripts/check-bundle.ts`.
+- [x] T157 Optimizar lo que fallen T155 y T156:
   - Convertir componentes pesados en `Lazy*` donde se usan (`app/pages/archivos/ver/[fileId].vue`, `app/components/files/FileExplorer.vue`, `app/layouts/dashboard.vue`): `FilePreview`, `UploadDialog`, `FolderPicker` y `CommentThread`.
   - Revisar que no haya N+1 con `EXPLAIN` en `server/api/folders/[id]/children.get.ts` y `server/api/files/search.get.ts`.
   - Agregar `width`/`height` a las imágenes para el CLS.
-- [ ] T158 Endurecer la seguridad:
+- [x] T158 Endurecer la seguridad:
   - En `server/middleware/security-headers.ts`: `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin`, `X-Frame-Options: DENY` y `Permissions-Policy` mínima.
   - Verificar que ningún endpoint de `server/api/**` (salvo `public/*`, `cron/*` y `me.get`) omite `requireRole`, con un test `test/unit/endpoint-guards.spec.ts` que recorra los archivos y busque `requireRole(` o `requireActive(`.
   - Verificar que no se registran ni se devuelven secretos.
-- [ ] T159 [P] Ejecutar `bun run typecheck` y corregir todos los errores en `app/`, `server/`, `shared/` y `test/`, sin `any` sin justificar (Constitución IV).
-- [ ] T160 [P] Ejecutar `bun run test:coverage` y agregar los tests unitarios que falten para alcanzar al menos el 80 % de líneas en `server/utils/**` y `shared/**` (Constitución V).
-- [ ] T161 [P] Reescribir `README.md` con la descripción de Cloudy, los requisitos, las variables (solo nombres), los comandos y enlaces a `AGENTS.md`, `.specify/memory/constitution.md` y `specs/001-shared-media-drive/quickstart.md`. Eliminar el contenido del "Nuxt Minimal Starter".
-- [ ] T162 Ejecutar toda la validación manual de `specs/001-shared-media-drive/quickstart.md` §4 (escenarios 1–13, incluido el INP con DevTools) y §5 (gates), y anotar los resultados y las desviaciones en `specs/001-shared-media-drive/quickstart.md` en una nueva sección "§8 Resultado de validación".
+- [x] T159 [P] Ejecutar `bun run typecheck` y corregir todos los errores en `app/`, `server/`, `shared/` y `test/`, sin `any` sin justificar (Constitución IV).
+- [x] T160 [P] Ejecutar `bun run test:coverage` y agregar los tests unitarios que falten para alcanzar al menos el 80 % de líneas en `server/utils/**` y `shared/**` (Constitución V).
+- [x] T161 [P] Reescribir `README.md` con la descripción de Cloudy, los requisitos, las variables (solo nombres), los comandos y enlaces a `AGENTS.md`, `.specify/memory/constitution.md` y `specs/001-shared-media-drive/quickstart.md`. Eliminar el contenido del "Nuxt Minimal Starter".
+- [x] T162 Ejecutar toda la validación manual de `specs/001-shared-media-drive/quickstart.md` §4 (escenarios 1–13, incluido el INP con DevTools) y §5 (gates), y anotar los resultados y las desviaciones en `specs/001-shared-media-drive/quickstart.md` en una nueva sección "§8 Resultado de validación".
 - [ ] T163 Revisar `vercel.json` y `nuxt.config.ts` para el preset `vercel`. Hacer un deploy de vista previa en Vercel con las variables de producción (sin `NUXT_TEST_*`), correr `bun run storage:setup` con el dominio de la vista previa y una prueba de humo con los escenarios 1, 4 y 6 del quickstart. Documentarlo en `specs/001-shared-media-drive/quickstart.md` §6.
+  - Pendiente: deploy de vista previa a decisión del equipo; preparado en quickstart §6 (revisión de `vercel.json` y `nuxt.config.ts` hecha; `CORS_EXTRA_ORIGINS` listo para el alias).
+
+> **Hecho (2026-10-18, rama `001-polish`)**. Notas de implementación:
+> - **Rendimiento (T155–T157)**: `test/e2e/performance.spec.ts` mide LCP y CLS a 360×740 con 4G y CPU ×4 por CDP, caché del navegador apagada, una carga de calentamiento por ruta (la primera SSR tras arrancar paga código y TLS, +200–500 ms) y la mediana de 3; registra por carga TTFB, DOMContentLoaded, elemento LCP y peticiones `/api`. Resultado en build de producción: `/` 1020 ms · carpeta con 200 elementos 1348 ms · `/enviar` 848 ms · CLS 0. El Inicio medía CLS 0,148 por dos causas: DM Sans con `font-display: swap` sin preload y respaldos con métricas que no existen en Android/Linux (ahora `optional` + `preload` + Roboto, R18), y los iconos montados en el cliente sin caja hasta que llegaba su CSS (regla base `.iconify`). `FilePreview` y `FolderPicker` como `Lazy*`; cajas de proporción fija en el visor. `children.get` pasó de 4 viajes secuenciales a Neon a 2 (`Promise.all`): TTFB de ~720 a ~510 ms.
+> - **Bundle (T156)**: Sonda (`bun run analyze`); ruta más pesada ≈ 132 KiB gzip (≤ 200 KB).
+> - **Seguridad (T158)**: `server/middleware/security-headers.ts` (`nosniff`, `Referrer-Policy`, `X-Frame-Options: DENY`, `Permissions-Policy` mínima); `test/unit/endpoint-guards.spec.ts` recorre `server/api/**` y exige `requireRole`/`requireActive` salvo `public/*`, `cron/*` y `me.get`; límite por IP (10/h) en `public/submissions/:id/complete`; auditoría de secretos sin hallazgos.
+> - **T159–T161**: typecheck limpio sin `any`; cobertura sobre el umbral de 92; `README.md` reescrito; `vercel` (CLI) justificado en Complexity Tracking.
+> - **Laboratorio e2e**: Neon Auth (Better Auth 1.7) admite 3 `sign-in`/`sign-up` por 10 s por IP y ruta, con la ventana contada desde la última petición admitida; `fixtures.ts` lleva la misma contabilidad por ruta y reintenta una vez ante un 429. `login()` compara solo la ruta (`/login?redirect=…`).
+> - **Validación manual (T162, quickstart §8)**: ocho defectos corregidos con prueba de regresión: (1) tarjetas de carpeta con «0 elementos» (columna sin calificar en la subconsulta); (2) enlace de restablecimiento usado mostraba «Correo o contraseña incorrectos» (el cliente de Neon convierte `INVALID_TOKEN` en `bad_jwt`); (3) un sondeo fallido en `/pendientes` sustituía la lista (ahora se conserva, con aviso y «Reintentar»); (4) menú de cuenta sin teclado (↓/↑, flechas, Tab, Esc); (5) el cajón móvil no movía el foco (primer enlace, `inert`, vuelta a «Abrir menú»); (6) buscador de 43 px (`min-h-11`); (7) con movimiento reducido el enlace seguía oculto unos cuadros (reintento hasta que el foco queda); (8) el reintento de `/pendientes` no se re-armaba tras fallar (ahora cada fallo lo re-arma).
+> - **Gates finales**: typecheck; unit + nuxt 630; e2e 73 (9 archivos); cobertura 98.12 / 93.24 / 94.57 / 98.67 (stmts / branches / funcs / lines); build correcto.
+> - **Desviaciones**: escenarios 1 y 10 cubiertos por pruebas automatizadas y no a mano; 7, 12 y 13 parciales (ver §8); `preload` de la fuente y renderizado del PDF pendientes de la prueba de humo del despliegue; T163 sin ejecutar a decisión del equipo.
+> - **Datos de QA en la rama de desarrollo, para limpiar a mano**: cuentas `qa12*` y `perf-cls@cloudy.test`, carpetas «Domingo QA12» y «Vacía QA12», envíos pendientes «Invitado Poll*».
 
 ---
 

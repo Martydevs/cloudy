@@ -152,6 +152,14 @@ Never print or commit their values.
 - Neon Object Storage: set `forcePathStyle: true`; `CopyObject` is not supported (reuse keys instead).
 - `drizzle.config.ts` must read `NUXT_DATABASE_URL` (not `DATABASE_URL`).
 - Theme lives in the `cloudy-theme` cookie and is applied as `data-theme` on `<html>` during SSR.
+- Neon Auth (Better Auth 1.7) rate-limits `sign-in`/`sign-up` to **3 per 10 s per IP and path**, and the
+  window restarts from the last *accepted* request. All e2e logins share one IP: always go through
+  `signedInAs`/`ensureAccount`/`login` in `test/e2e/setup/fixtures.ts` (they pace per path and retry one
+  429); never call the auth API directly from a spec.
+- The Neon auth client *throws* its own normalized codes (`bad_jwt`, `invalid_credentials`, …), not Better
+  Auth's; `useAuthClient` maps what pages need (e.g. a used reset link → `INVALID_TOKEN`).
+- `scripts/storage-setup*` accepts an optional `CORS_EXTRA_ORIGINS` (comma-separated `https://` origins, or
+  `http://localhost:*`) to add a preview alias without dropping the site domain.
 
 ## Workflow
 

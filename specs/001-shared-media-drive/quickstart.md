@@ -110,11 +110,18 @@ Resultado esperado: todo en verde, con cobertura ≥ 80 % de líneas en `server/
 
 ## 6. Despliegue en Vercel
 
-1. Importar el repositorio en Vercel. El preset Nitro `vercel` se detecta solo.
-2. Cargar en Vercel las variables de `.env` (producción), con `NUXT_PUBLIC_SITE_URL` igual al dominio final. Para los *previews*, usar la rama de desarrollo o la integración de Neon para Vercel.
-3. Correr `bun run storage:setup:prod` para que el CORS del bucket de producción incluya el dominio.
-4. `vercel.json` registra el cron diario `/api/cron/cleanup`. Verificarlo en *Project → Cron Jobs*.
-5. Hacer una prueba de humo con los escenarios 1, 4 y 6 en el dominio final.
+> **Pendiente (T163, 2026-10-18)**: el deploy de vista previa quedó a decisión del equipo. Lo que sigue está revisado y preparado, pero **no se ha ejecutado**.
+
+Revisión hecha para el preset `vercel`: Nitro lo detecta solo (variable `VERCEL` en el build; no hay que fijar `nitro.preset`); `nitro.experimental.asyncContext` funciona en las funciones Node de Vercel (`AsyncLocalStorage`); todas las claves de `runtimeConfig` se sobrescriben en tiempo de ejecución con sus `NUXT_*`, salvo `cronSecret`, que se lee de `CRON_SECRET` al construir (es el nombre que Vercel usa para firmar la cabecera `Authorization: Bearer` del cron), así que esa variable debe existir también en el entorno de **build**; `vercel.json` solo registra el cron diario `/api/cron/cleanup` (09:00 UTC); Bun se usa en Vercel por `bun.lock`, con `esbuild` en `trustedDependencies`. No se encontró nada que corregir.
+
+Pasos pendientes, en orden:
+
+1. `bunx vercel link` (la CLI está en `devDependencies`) e importar el repositorio si todavía no existe el proyecto.
+2. En *Settings → Environment Variables*, entorno **Preview**, cargar las variables de `.env` (producción) con los mismos nombres del §2, **sin ninguna `NUXT_TEST_*`**, y `NUXT_PUBLIC_SITE_URL` igual al alias estable de la vista previa (`https://<proyecto>-git-<rama>-<equipo>.vercel.app`). `CRON_SECRET` incluido.
+3. `bunx vercel deploy` y anotar la URL del alias.
+4. `CORS_EXTRA_ORIGINS=https://<alias> bun run storage:setup:prod`: suma el alias al CORS del bucket de producción sin quitar el dominio final (varios alias se separan con comas).
+5. Prueba de humo en el alias con los escenarios 1, 4 y 6 de §4, y comprobar en el HTML el `<link rel="preload" as="font">` de DM Sans y el renderizado del PDF (quedaron fuera de §8).
+6. Verificar el cron en *Project → Cron Jobs* y, para producción, repetir 2–5 con el dominio final (`bun run storage:setup:prod` sin extras lo deja solo con ese dominio).
 
 ## 7. Operación
 
@@ -169,9 +176,9 @@ No son defectos (se dejan como están): los PDF se clasifican como «Presentacio
 | Gate | Resultado |
 |------|-----------|
 | `bun run typecheck` | PASS |
-| `bun run test:unit` + `bun run test:nuxt` | PASS · 624 pruebas |
+| `bun run test:unit` + `bun run test:nuxt` | PASS · 630 pruebas |
 | `bun run test:e2e` | PASS · 73 pruebas (9 archivos, incluido `performance.spec`) |
-| `bun run test:coverage` | PASS · líneas 98,63 % · ramas 93,12 % · funciones 94,46 % · sentencias 98,03 % (umbral 92 %) |
+| `bun run test:coverage` | PASS · líneas 98,67 % · ramas 93,24 % · funciones 94,57 % · sentencias 98,12 % (umbral 92 %) |
 | `bun run build` | PASS |
 | `bun run analyze` (Sonda) | PASS · ruta más pesada ≈ 132 KiB gzip (≤ 200 KB) |
 | Rendimiento (e2e, 360×740, 4G, CPU ×4, mediana de 3 cargas en frío) | PASS · `/` LCP 1020 ms · carpeta con 200 elementos 1348 ms · `/enviar` 848 ms · CLS 0 en las tres |
