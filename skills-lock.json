@@ -6,6 +6,12 @@
       "sourceType": "autoskills-registry",
       "computedHash": "2174f783a038a7ca4869c4c18e14726ec13b9c6b705d59253f647d0ca37cb78d"
     },
+    "ai-sdk": {
+      "source": "vercel/ai",
+      "sourceType": "github",
+      "skillPath": "skills/use-ai-sdk/SKILL.md",
+      "computedHash": "d6910e7d8bb527d2823ba58b6225b304ae649c135fc7e43ec2d2152251c218db"
+    },
     "daisyui": {
       "source": "saadeghi/daisyui",
       "sourceType": "github",
@@ -22,10 +28,22 @@
       "sourceType": "autoskills-registry",
       "computedHash": "a4e6516a601f72ffd8bcd0d64609e8ba724d2ce92569a059a6890a5caadf072b"
     },
+    "neon": {
+      "source": "neondatabase/agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/neon/SKILL.md",
+      "computedHash": "1be07bf84ddf85b14f1f26a4d782d1374c480b378f1716a155d4ac3d31389ca2"
+    },
     "neon-postgres": {
       "source": "neondatabase/agent-skills",
       "sourceType": "autoskills-registry",
       "computedHash": "d1bac4ef5df933e477b8660ee91902f89fcc27a25a45c6c9850925d20c72f452"
+    },
+    "neon-realtime": {
+      "source": "neondatabase/agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/neon-realtime/SKILL.md",
+      "computedHash": "a2315c95a84fc505989c5232608085dbfef9c0401925369acf24bc350ca71807"
     },
     "nuxt": {
       "source": "antfu/skills",
