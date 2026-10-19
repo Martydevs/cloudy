@@ -40,16 +40,15 @@ const drawerSide = useTemplateRef<HTMLElement>('drawerSide')
 let opener: HTMLElement | null = null
 
 /**
- * daisyUI anima `visibility` al abrir el cajón y enfocar un elemento oculto no hace nada: se espera
- * cuadro a cuadro a que el panel sea visible (con `prefers-reduced-motion` lo es de inmediato) y, por
- * si el cómputo nunca lo reporta, se enfoca de todos modos al vencer el plazo.
+ * daisyUI anima `visibility` al abrir el cajón y enfocar un elemento oculto no hace nada; además el
+ * enlace puede seguir oculto unos cuadros después de que el panel ya se vea (con `prefers-reduced-motion`
+ * incluido). Se intenta cuadro a cuadro hasta que el foco realmente queda en el enlace o vence el plazo.
  */
 function focusFirstLinkWhenVisible(deadline = performance.now() + 600) {
-  const side = drawerSide.value
-  const link = side?.querySelector<HTMLElement>('nav a')
-  if (!side || !link || !phoneOpen.value) return
-  if (getComputedStyle(side).visibility !== 'hidden' || performance.now() > deadline) link.focus()
-  else requestAnimationFrame(() => focusFirstLinkWhenVisible(deadline))
+  const link = drawerSide.value?.querySelector<HTMLElement>('nav a')
+  if (!link || !phoneOpen.value) return
+  link.focus()
+  if (document.activeElement !== link && performance.now() < deadline) requestAnimationFrame(() => focusFirstLinkWhenVisible(deadline))
 }
 
 watch(phoneOpen, async (open) => {

@@ -330,12 +330,23 @@ describe('/pendientes', () => {
       failing = true
       usePulse().pendingCount.value += 1
       await vi.waitFor(() => expect(wrapper.find('[role="status"]').exists()).toBe(true))
+      const attempts = () => calls.filter(c => c.url === '/api/submissions').length
 
-      failing = false
-      const before = calls.filter(c => c.url === '/api/submissions').length
+      // El primer reintento automático también falla: se vuelve a armar otro. Se mide crecimiento, no
+      // una cuenta exacta: las páginas montadas por pruebas anteriores siguen vivas y también reintentan.
+      const beforeFirst = attempts()
       await vi.advanceTimersByTimeAsync(5000)
-      await vi.waitFor(() => expect(calls.filter(c => c.url === '/api/submissions').length).toBeGreaterThan(before))
+      await vi.waitFor(() => expect(attempts()).toBeGreaterThan(beforeFirst))
+      expect(wrapper.find('[role="status"]').exists()).toBe(true)
+      expect(wrapper.text()).toContain('Eva')
+
+      // Sin re-armado no habría más peticiones; el segundo reintento llega con el servidor recuperado.
+      const afterFirst = attempts()
+      failing = false
+      await vi.advanceTimersByTimeAsync(5000)
+      await vi.waitFor(() => expect(attempts()).toBeGreaterThan(afterFirst))
       await vi.waitFor(() => expect(wrapper.find('[role="status"]').exists()).toBe(false))
+      expect(wrapper.text()).toContain('Eva')
     }
     finally {
       vi.useRealTimers()

@@ -31,10 +31,11 @@ watch(tab, () => {
   list.value = null
 })
 const staleError = computed(() => !!error.value && !!list.value)
-// Cada fallo re-arma un reintento a los 5 s (y hay botón para no esperar); un éxito lo cancela.
+// Cada recarga fallida (Nuxt crea un objeto de error nuevo en cada una) re-arma un reintento a los 5 s,
+// también cuando el reintento automático vuelve a fallar; hay botón para no esperar y un éxito lo cancela.
 const retry = useTimeoutFn(() => refresh(), POLL_INTERVAL_MS, { immediate: false })
-watch(staleError, (stale) => {
-  if (stale) retry.start()
+watch(error, (failure) => {
+  if (failure && list.value) retry.start()
   else retry.stop()
 })
 

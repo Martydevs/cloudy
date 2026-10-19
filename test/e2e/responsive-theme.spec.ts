@@ -57,6 +57,16 @@ describe('US5 · dashboard responsivo', () => {
     // Se toca el overlay a la derecha del panel; Playwright espera a que termine la animación.
     await page.getByRole('button', { name: 'Cerrar menú' }).click({ position: { x: 340, y: 400 } })
     await expect.poll(() => sidebar.isVisible()).toBe(false)
+
+    // Con `prefers-reduced-motion: reduce` no hay transición y el enlace tarda unos cuadros más en ser
+    // enfocable que el panel: el foco debe quedar igualmente en el primer enlace.
+    await page.emulateMedia({ reducedMotion: 'reduce' })
+    await page.getByRole('button', { name: 'Abrir menú' }).click()
+    await expect.poll(() => sidebar.isVisible()).toBe(true)
+    await expect.poll(focused).toBe('a Inicio')
+    await page.keyboard.press('Escape')
+    await expect.poll(focused).toBe('button Abrir menú')
+    await page.emulateMedia({ reducedMotion: null })
     await page.close()
   })
 
