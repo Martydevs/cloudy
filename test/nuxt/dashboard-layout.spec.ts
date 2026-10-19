@@ -75,4 +75,27 @@ describe('layout dashboard', () => {
     expect(document.body.style.overflow).not.toBe('hidden')
     wrapper.unmount()
   })
+
+  it('en teléfono, abrir el panel enfoca su primer enlace y deja la página inert; al cerrar, el foco vuelve a «Abrir menú» (T162, defecto 5)', async () => {
+    resize(360)
+    const wrapper = await mountSuspended(DashboardLayout, { attachTo: document.body, slots: { default: () => 'página' } })
+    await flush()
+    const opener = wrapper.get('button[aria-label="Abrir menú"]')
+    const content = () => wrapper.get('.drawer-content')
+    ;(opener.element as HTMLElement).focus()
+    expect(document.activeElement).toBe(opener.element)
+
+    await opener.trigger('click')
+    await flush()
+    expect(drawer(wrapper).checked).toBe(true)
+    expect(document.activeElement).toBe(wrapper.get('.drawer-side nav a').element)
+    expect(content().attributes('inert')).toBeDefined()
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    await flush()
+    expect(drawer(wrapper).checked).toBe(false)
+    expect(document.activeElement).toBe(opener.element)
+    expect(content().attributes('inert')).toBeUndefined()
+    wrapper.unmount()
+  })
 })

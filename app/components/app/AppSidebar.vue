@@ -70,7 +70,17 @@ const accountTrigger = useTemplateRef<HTMLButtonElement>('accountTrigger')
 const accountMenuEl = useTemplateRef<HTMLElement>('accountMenuEl')
 const accountMenu = shallowRef<{ bottom: number, left: number, width?: number } | null>(null)
 
-function openAccountMenu() {
+/** Entradas del menú en orden: tema, Mi perfil y Cerrar sesión. */
+function menuEntries(): HTMLElement[] {
+  return [...(accountMenuEl.value?.querySelectorAll<HTMLElement>('[role="menuitem"], button') ?? [])]
+}
+
+/**
+ * Abre el menú y lleva el foco a una entrada (la primera, o la última con ↑). El menú vive en `body`,
+ * fuera del orden de tabulación del disparador, así que sin esto el teclado no llegaba a «Mi perfil»
+ * ni a «Cerrar sesión» (T162, defecto 4).
+ */
+async function openAccountMenu(focus: 'first' | 'last' = 'first') {
   const el = accountTrigger.value
   if (!el) return
   hideTip()
@@ -83,6 +93,29 @@ function openAccountMenu() {
   else {
     // Encima de la fila, con su mismo ancho.
     accountMenu.value = { bottom: window.innerHeight - rect.top + 8, left: rect.left, width: rect.width }
+  }
+  await nextTick()
+  menuEntries().at(focus === 'first' ? 0 : -1)?.focus()
+}
+
+/** ↑/↓ recorren las entradas en círculo; Inicio/Fin van a los extremos. */
+function onMenuKeydown(event: KeyboardEvent) {
+  const entries = menuEntries()
+  const index = entries.indexOf(document.activeElement as HTMLElement)
+  const go = (target: number) => {
+    event.preventDefault()
+    entries.at(((target % entries.length) + entries.length) % entries.length)?.focus()
+  }
+  switch (event.key) {
+    case 'ArrowDown': return go(index + 1)
+    case 'ArrowUp': return go(index - 1)
+    case 'Home': return go(0)
+    case 'End': return go(-1)
+    case 'Tab':
+      // Tab sale del menú: se cierra y el foco vuelve al disparador antes de que el navegador avance,
+      // así continúa desde la fila de cuenta (hacia delante o hacia atrás) y no desde el final de `body`.
+      closeAccountMenu()
+      accountTrigger.value?.focus()
   }
 }
 
@@ -203,6 +236,8 @@ useEventListener('scroll', closeAccountMenu, { passive: true, capture: true })
         aria-haspopup="menu"
         :aria-expanded="accountMenu !== null"
         @click="toggleAccountMenu"
+        @keydown.down.prevent="openAccountMenu('first')"
+        @keydown.up.prevent="openAccountMenu('last')"
         @mouseenter="showTip($event, profile?.name ?? 'Cuenta')"
         @mouseleave="hideTip()"
         @focusin="showTip($event, profile?.name ?? 'Cuenta')"
@@ -220,6 +255,8 @@ useEventListener('scroll', closeAccountMenu, { passive: true, capture: true })
         aria-haspopup="menu"
         :aria-expanded="accountMenu !== null"
         @click="toggleAccountMenu"
+        @keydown.down.prevent="openAccountMenu('first')"
+        @keydown.up.prevent="openAccountMenu('last')"
       >
         <span class="inline-flex size-9 shrink-0 items-center justify-center rounded-full bg-neutral font-medium text-neutral-content">{{ initials }}</span>
         <span class="flex min-w-0 flex-1 flex-col">
@@ -239,6 +276,7 @@ useEventListener('scroll', closeAccountMenu, { passive: true, capture: true })
         class="menu fixed z-50 rounded-box border border-base-300 bg-base-100 p-2 shadow-lg"
         :class="{ 'w-60': props.collapsed }"
         :style="{ bottom: `${accountMenu.bottom}px`, left: `${accountMenu.left}px`, width: accountMenu.width ? `${accountMenu.width}px` : undefined }"
+        @keydown="onMenuKeydown"
       >
         <li v-if="profile" role="none" class="menu-title">
           <span class="block truncate font-medium text-base-content">{{ profile.name }}</span>

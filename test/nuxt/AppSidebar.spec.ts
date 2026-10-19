@@ -252,6 +252,49 @@ describe('AppSidebar · menú de cuenta', () => {
     wrapper.unmount()
   })
 
+  it('el teclado entra al menú: ↓ abre y enfoca la primera entrada, ↑/↓ recorren en círculo, Tab lo cierra y devuelve el foco (T162, defecto 4)', async () => {
+    setRole('editor')
+    const wrapper = await mountSuspended(AppSidebar, { attachTo: document.body, props: { collapsed: false } })
+    const trigger = wrapper.get('button[aria-label="Menú de usuario"]')
+    const entries = () => [...document.body.querySelectorAll<HTMLElement>('[role="menu"] [role="menuitem"], [role="menu"] button')]
+    const focused = () => (document.activeElement as HTMLElement | null)?.textContent?.trim()
+    const press = (key: string) => menu()!.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }))
+
+    await trigger.trigger('keydown', { key: 'ArrowDown' })
+    await vi.waitFor(() => expect(menu()).not.toBeNull())
+    await vi.waitFor(() => expect(document.activeElement).toBe(entries()[0]))
+    expect(entries().map(e => e.textContent?.trim())).toEqual(['Cambiar a tema claro', 'Mi perfil', 'Cerrar sesión'])
+
+    press('ArrowDown')
+    expect(focused()).toBe('Mi perfil')
+    press('ArrowDown')
+    expect(focused()).toBe('Cerrar sesión')
+    press('ArrowDown')
+    expect(document.activeElement).toBe(entries()[0])
+    press('ArrowUp')
+    expect(focused()).toBe('Cerrar sesión')
+    press('Home')
+    expect(document.activeElement).toBe(entries()[0])
+    press('End')
+    expect(focused()).toBe('Cerrar sesión')
+
+    // Tab sale del menú: se cierra y el foco está en el disparador cuando el navegador avanza.
+    press('Tab')
+    await nextTick()
+    expect(menu()).toBeNull()
+    expect(document.activeElement).toBe(trigger.element)
+
+    // ↑ abre por el final; el clic también deja el foco dentro.
+    await trigger.trigger('keydown', { key: 'ArrowUp' })
+    await vi.waitFor(() => expect(focused()).toBe('Cerrar sesión'))
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    await nextTick()
+    expect(document.activeElement).toBe(trigger.element)
+    await trigger.trigger('click')
+    await vi.waitFor(() => expect(document.activeElement).toBe(entries()[0]))
+    wrapper.unmount()
+  })
+
   it('el menú se cierra al cambiar el tamaño de la ventana y al navegar; Esc sin menú no hace nada', async () => {
     setRole('editor')
     const wrapper = await mountSuspended(AppSidebar, { attachTo: document.body, props: { collapsed: false } })
