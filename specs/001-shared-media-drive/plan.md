@@ -186,6 +186,7 @@ test/
 |---------------------|----------------------|-----------------------------------------|
 | devDependencies `vue-tsc` + `typescript` | La Constitución IV exige que `nuxt typecheck` pase, y no corre sin ellas | Confiar solo en el build: Vite no verifica tipos, así que los errores llegarían a producción |
 | Utilidades propias: firmas binarias, validadores, limitador de tasa | No existe equivalente en Nuxt, VueUse, daisyUI ni en los paquetes instalados (Constitución II) | `file-type`, `zod` o Upstash agregarían dependencias o servicios fuera del stack para lógica pequeña y fácil de probar |
+| devDependency `vercel` (CLI) | Despliegues de vista previa reproducibles desde la línea de comandos para T163 (`bunx vercel`), con la misma versión para todo el equipo. Su dependencia `esbuild` va en `trustedDependencies`: su `postinstall` descarga el binario de la plataforma y Bun lo bloquea por defecto | Instalación global (`npm i -g vercel`): versión distinta por máquina y fuera del lockfile; o desplegar solo desde el panel de Vercel, sin reproducibilidad desde el repo |
 
 ## Siguientes pasos
 
