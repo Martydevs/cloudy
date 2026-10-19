@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { FileItem, Submission, SubmissionStatus } from '#shared/types/api'
+import { POLL_INTERVAL_MS } from '#shared/constants/files'
 
 definePageMeta({ layout: 'dashboard', access: 'private' })
 useHead({ title: 'Pendientes · Cloudy' })
@@ -30,6 +31,12 @@ watch(tab, () => {
   list.value = null
 })
 const staleError = computed(() => !!error.value && !!list.value)
+// Cada fallo re-arma un reintento a los 5 s (y hay botón para no esperar); un éxito lo cancela.
+const retry = useTimeoutFn(() => refresh(), POLL_INTERVAL_MS, { immediate: false })
+watch(staleError, (stale) => {
+  if (stale) retry.start()
+  else retry.stop()
+})
 
 const busyId = ref<string | null>(null)
 
@@ -96,7 +103,10 @@ const EMPTY: Record<SubmissionStatus, string> = {
       </button>
     </div>
 
-    <p v-if="staleError" role="status" class="text-sm text-base-content/70">{{ messages.load.submissionsRefresh }}</p>
+    <div v-if="staleError" role="status" class="flex flex-wrap items-center gap-3 text-sm text-base-content/70">
+      <span>{{ messages.load.submissionsRefresh }}</span>
+      <button type="button" class="btn" :disabled="pending" @click="refresh()">Reintentar</button>
+    </div>
     <SkeletonList v-if="!list && pending" :rows="3" />
     <ErrorState v-else-if="error && !list" :message="messages.load.submissions" @retry="refresh()" />
     <EmptyState

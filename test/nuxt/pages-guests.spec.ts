@@ -301,13 +301,45 @@ describe('/pendientes', () => {
     await flush(10)
     expect(wrapper.text()).toContain('Eva')
     expect(wrapper.find('[role="alert"]').exists()).toBe(false)
-    expect(wrapper.get('[role="status"]').text()).toContain('No pudimos actualizar la cola')
+    const notice = wrapper.get('[role="status"]')
+    expect(notice.text()).toContain('No pudimos actualizar la cola')
+    // El aviso trae un botón de tamaño normal (≥ 44 px) para no esperar al reintento automático.
+    const retryButton = notice.get('button')
+    expect(retryButton.text()).toBe('Reintentar')
+    expect(retryButton.classes()).toContain('btn')
+    expect(retryButton.classes().some(c => /^btn-(xs|sm)$/.test(c))).toBe(false)
 
+    // Reintentar a mano recupera la lista y quita el aviso.
     failing = false
-    usePulse().pendingCount.value += 1
+    const before = calls.filter(c => c.url === '/api/submissions').length
+    await retryButton.trigger('click')
     await flush(10)
+    expect(calls.filter(c => c.url === '/api/submissions').length).toBeGreaterThan(before)
     expect(wrapper.text()).toContain('Eva')
     expect(wrapper.find('[role="status"]').exists()).toBe(false)
+  })
+
+  it('tras un sondeo fallido, la cola se reintenta sola a los 5 s (T162, B)', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    try {
+      let failing = false
+      mockApi('GET', '/api/submissions', event => (failing ? failWith(500)(event) : [submission()]))
+      const wrapper = await mountSuspended(PendientesPage)
+      await vi.waitFor(() => expect(wrapper.text()).toContain('Eva'))
+
+      failing = true
+      usePulse().pendingCount.value += 1
+      await vi.waitFor(() => expect(wrapper.find('[role="status"]').exists()).toBe(true))
+
+      failing = false
+      const before = calls.filter(c => c.url === '/api/submissions').length
+      await vi.advanceTimersByTimeAsync(5000)
+      await vi.waitFor(() => expect(calls.filter(c => c.url === '/api/submissions').length).toBeGreaterThan(before))
+      await vi.waitFor(() => expect(wrapper.find('[role="status"]').exists()).toBe(false))
+    }
+    finally {
+      vi.useRealTimers()
+    }
   })
 
   it('estados de carga, error y vacío con el enlace para invitados', async () => {
