@@ -1,0 +1,88 @@
+# Contrato de UI: texto extraído de imágenes
+
+Extiende [001 contracts/ui-routes.md](../../001-shared-media-drive/contracts/ui-routes.md). No hay rutas nuevas.
+
+## Componentes y composable nuevos
+
+### `app/composables/useImageText.ts`
+
+Es la única lógica de cliente del panel.
+
+**Entrada**:
+- `endpoint`: `/api/files/:id/text` o `/api/submissions/:sid/files/:fid/text`.
+- `{ autoRead: boolean, editable: boolean }`.
+
+**Expone**:
+- Estado: `state: Ref<ImageText | null>`, `loading` y `error`, que es el error de red, no el de la lectura.
+- Acciones: `read(force?)`, `save(text)` y `copy()`.
+
+**Comportamiento**:
+- **Al montar**: con `autoRead`, hace `POST` sin `force` (equipo: lectura al abrir). En Pendientes solo hace el
+  `POST` si el estado es `pending`, o `reading` con más de 90 s; si no, usa el `text` que ya vino en el listado.
+- **Mientras dura `reading`**: consulta `GET` cada 3 s con `useIntervalFn` y se detiene en un estado terminal.
+  Se pausa con `useDocumentVisibility` y `useOnline`, como `usePulsePolling`.
+- **`copy()`**: usa `useClipboard` y muestra el toast `messages.imageText.copied`.
+
+### `app/components/files/ImageTextPanel.vue`
+
+- **Props**: `endpoint`, `initial?: ImageText | null`, `editable`, `autoRead`.
+- **Estados** (FR-005, FR-020), todos con copy de `messages.imageText`:
+
+| Estado | Contenido |
+|--------|-----------|
+| `reading` o carga inicial | `SkeletonList` de 3 filas en variante `list` y el texto "Leyendo texto…" en una región `aria-live="polite"` |
+| `ready` | El texto en `<p class="whitespace-pre-line">`, que conserva los saltos de línea (FR-002). Botón **Copiar texto**. Si `editable`: botón **Editar** y **Volver a leer** en un menú `⋯` visible. Insignia "editado por X" si aplica |
+| `empty` | `EmptyState` con el icono `scan-text` y "No se reconoció texto en esta imagen", más **Volver a leer** |
+| `failed` | `ErrorState` con el mensaje según `error` (`timeout`/`provider`/`rate_limited` → "No pudimos leer el texto ahora. Inténtalo de nuevo en un momento."; `invalid_*` → "No pudimos leer esta imagen."), que emite `retry` → `read(true)` |
+| `unavailable` | Texto de ayuda "No disponible para este archivo: solo se lee el texto de imágenes JPG, PNG o HEIC de hasta 5 MB." (para HEIC sin copia: "…esta foto HEIC se subió sin copia para lectura"), sin botones |
+| error de red del propio panel | `ErrorState` con reintento de la petición |
+
+- **Edición**: un `textarea` con etiqueta "Texto de la imagen", contador `n / 10 000`, botones **Guardar** y
+  **Cancelar**. Al guardar muestra el toast `messages.imageText.saved`.
+- **Volver a leer con corrección manual**: si `editedAt` no es nulo, primero pasa por `useConfirm` →
+  `ConfirmDialog` ("Se reemplazará tu corrección").
+- **Botones**: de tamaño `btn` base, con `lg:btn-sm` solo en escritorio (Constitución III).
+
+### `app/utils/heic-copy.ts`
+
+- **Función**: `makeTextSourceCopy(file: File): Promise<Blob | null>`, en el mismo estilo que `makeThumbnail`
+  (research A4).
+- **Cuándo actúa**: solo si `isImageTextEligible({ extension: 'heic', size })`.
+- **Carga**: `heic-to` con `import()` dinámico, en un chunk aparte que no entra en el JS inicial de ninguna ruta.
+- **Conversión**: JPEG con calidad 0.85; si pesa más de 5 MB, una vez más con 0.7.
+- **Errores**: cualquier error → `null`.
+
+### Subida con copia JPEG
+
+| Composable | Cambio |
+|------------|--------|
+| `app/composables/useUploader.ts` (equipo) | Junto a `makeThumbnail`, llama a `makeTextSourceCopy(file)`. Pide la firma con `withTextSource: !!copy` y, tras subir el original y la miniatura, sube la copia a `ticket.textSourceUploadUrl` con `content-type: image/jpeg`. Un fallo se ignora, igual que con la miniatura. Mientras convierte, la fila de la cola muestra "Preparando…" |
+| `app/composables/useGuestSubmission.ts` (invitados) | Igual, por archivo: `withTextSource` en el cuerpo de `POST /api/public/submissions` y PUT a `textSourceUploadUrl`. Mientras `complete` responde (hasta ~40 s), el botón muestra `messages.guest.sendingReading` ("Enviando… estamos leyendo tus notas") |
+
+## Pantallas que cambian
+
+| Pantalla | Cambio |
+|----------|--------|
+| `app/pages/archivos/ver/[fileId].vue` | Si `file.category === 'image'`, el aside muestra `<LazyImageTextPanel :endpoint="/api/files/${id}/text" auto-read editable />` antes de los comentarios. En móvil va debajo de la vista previa y en `lg:` en la columna lateral, como el aside actual. Las fotos HEIC, que no tienen `<img>`, también muestran su texto |
+| `app/components/guests/SubmissionCard.vue` | Bajo cada miniatura de imagen, `<LazyImageTextPanel :endpoint=… :initial="file.text" auto-read :editable="false" />` en versión compacta: el texto se trunca a 6 líneas con un botón "Ver todo" |
+| `app/pages/enviar.vue` | Junto al selector de archivos, un aviso `text-base-content/70` (FR-011): "Leeremos automáticamente el texto de tus imágenes para que el equipo pueda revisarlas." |
+| `app/components/files/FileExplorer.vue` (resultados de búsqueda) | Si `matchedIn === 'text'`, la fila muestra la insignia "En el texto". Con `q` activo, el estado vacío añade la nota de que solo se busca en el texto de imágenes ya leídas (FR-015) |
+
+## Copy (`app/utils/messages.ts`)
+
+La sección nueva `imageText` lleva:
+- `reading`, `empty`, `unavailable`, `failedRetryable`, `failedPermanent`.
+- `copied`, `saved`, `confirmReread`, `editedBy(name)`.
+- `searchHint`, `guestNotice`.
+- Además, en la sección `guest`, `sendingReading`; en `files`, `preparing`.
+
+Todo en español y en el mismo tono amable del resto de la sección `messages`.
+
+## Accesibilidad
+
+- El panel es una `<section>` con encabezado "Texto de la imagen".
+- Los cambios de estado se anuncian con `aria-live="polite"`.
+- Los botones tienen nombre accesible.
+- El foco vuelve al botón **Editar** al cancelar o guardar.
+- `motion-reduce` en el skeleton.
+- Contraste AA en ambos temas (no `text-warning` sobre `base-100` claro).

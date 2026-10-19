@@ -25,6 +25,7 @@
     "storage:setup:prod": "APP_ENV=production bun scripts/storage-setup.ts"
   },
   "dependencies": {
+    "@ai-sdk/openai": "^4.0.97",
     "@aws-sdk/client-s3": "^3.1152.0",
     "@aws-sdk/s3-request-presigner": "^3.1152.0",
     "@neondatabase/auth": "0.6.0-beta",
@@ -34,12 +35,15 @@
     "@nuxt/image": "2.1.0",
     "@tailwindcss/vite": "^4.3.3",
     "@vueuse/nuxt": "15.0.0",
+    "ai": "^7.0.145",
     "daisyui": "^5.7.50",
     "drizzle-orm": "^0.45.4",
+    "heic-to": "^1.6.6",
     "nuxt": "^4.6.1",
     "tailwindcss": "^4.3.3",
     "vue": "^3.5.43",
-    "vue-router": "^5.4.0"
+    "vue-router": "^5.4.0",
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@iconify-json/lucide": "^1.2.144",
