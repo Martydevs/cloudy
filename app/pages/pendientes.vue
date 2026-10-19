@@ -19,6 +19,18 @@ const { data, error, pending, refresh } = await useApiFetch<Submission[]>('/api/
 // Llegó o se revisó un envío en otra pestaña: se recarga la cola.
 watch(pendingCount, () => refresh())
 
+// Nuxt vacía `data` cuando falla una recarga: se conserva la última lista buena para que un sondeo
+// fallido no sustituya la cola por el error (solo se avisa); la siguiente recarga la recupera.
+// Al cambiar de pestaña se parte de cero para que se vea el esqueleto (T162, defecto 3).
+const list = ref<Submission[] | null>(null)
+watch(data, (value) => {
+  if (value) list.value = value
+}, { immediate: true })
+watch(tab, () => {
+  list.value = null
+})
+const staleError = computed(() => !!error.value && !!list.value)
+
 const busyId = ref<string | null>(null)
 
 async function review(submission: Submission, task: () => Promise<void>, fallback: string) {
@@ -84,10 +96,11 @@ const EMPTY: Record<SubmissionStatus, string> = {
       </button>
     </div>
 
-    <SkeletonList v-if="!data && pending" :rows="3" />
-    <ErrorState v-else-if="error" :message="messages.load.submissions" @retry="refresh()" />
+    <p v-if="staleError" role="status" class="text-sm text-base-content/70">{{ messages.load.submissionsRefresh }}</p>
+    <SkeletonList v-if="!list && pending" :rows="3" />
+    <ErrorState v-else-if="error && !list" :message="messages.load.submissions" @retry="refresh()" />
     <EmptyState
-      v-else-if="!data || data.length === 0"
+      v-else-if="!list || list.length === 0"
       icon="lucide:inbox"
       :title="EMPTY[tab]"
       :description="tab === 'pending' ? 'Comparte el enlace para invitados y lo que envíen aparecerá aquí.' : ''"
@@ -95,7 +108,7 @@ const EMPTY: Record<SubmissionStatus, string> = {
       <button v-if="tab === 'pending'" type="button" class="btn btn-primary" @click="copyGuestLink">Copiar enlace para invitados</button>
     </EmptyState>
     <ul v-else class="flex flex-col gap-3" aria-label="Envíos">
-      <li v-for="submission in data" :key="submission.id">
+      <li v-for="submission in list" :key="submission.id">
         <SubmissionCard
           :submission="submission"
           :busy="busyId === submission.id"

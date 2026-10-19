@@ -289,6 +289,27 @@ describe('/pendientes', () => {
     expect(wrapper.text()).toContain('Nueva')
   })
 
+  it('un sondeo fallido conserva la lista cargada y solo avisa; la siguiente recarga lo recupera (T162, defecto 3)', async () => {
+    let failing = false
+    mockApi('GET', '/api/submissions', event => (failing ? failWith(500)(event) : [submission()]))
+    const wrapper = await mountSuspended(PendientesPage)
+    await flush()
+    expect(wrapper.text()).toContain('Eva')
+
+    failing = true
+    usePulse().pendingCount.value += 1
+    await flush(10)
+    expect(wrapper.text()).toContain('Eva')
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+    expect(wrapper.get('[role="status"]').text()).toContain('No pudimos actualizar la cola')
+
+    failing = false
+    usePulse().pendingCount.value += 1
+    await flush(10)
+    expect(wrapper.text()).toContain('Eva')
+    expect(wrapper.find('[role="status"]').exists()).toBe(false)
+  })
+
   it('estados de carga, error y vacío con el enlace para invitados', async () => {
     mockApi('GET', '/api/submissions', () => new Promise(() => {}))
     const loading = await mountSuspended(PendientesPage)

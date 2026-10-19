@@ -27,6 +27,7 @@ export const messages = {
     file: 'No pudimos cargar el archivo.',
     folders: 'No pudimos cargar las carpetas.',
     submissions: `No pudimos cargar los envíos. ${CONNECTION}`,
+    submissionsRefresh: 'No pudimos actualizar la cola. Se volverá a intentar en unos segundos.',
     trash: `No pudimos cargar la papelera. ${CONNECTION}`,
     users: `No pudimos cargar los usuarios. ${CONNECTION}`,
     people: 'No pudimos cargar la lista de personas, así que ese filtro no está disponible. Recarga la página para intentarlo de nuevo.',
