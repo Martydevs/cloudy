@@ -1,7 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { neon } from '@neondatabase/serverless'
+import { drizzle } from 'drizzle-orm/neon-http'
+import { folders } from '../../server/db/schema'
 import {
   assertNoCycle,
   buildBreadcrumbs,
+  folderItemCountSql,
   folderPaths,
   getVisibleFolder,
   retryOnUniqueViolation,
@@ -181,5 +185,18 @@ describe('paginación por cursor', () => {
     expect(filesKeyset('size', 'asc', encodeCursor({ v: '10', id: 'f1' })).where).toBeDefined()
     expect(filesKeyset('name', 'asc', encodeCursor({ v: 'a', id: 'f1' })).where).toBeDefined()
     expect(commentCountSql()).toBeDefined()
+  })
+})
+
+// T162, defecto 1: las tarjetas de carpeta decían «0 elementos» siempre. En la selección de una
+// consulta sin join drizzle imprime `${folders.id}` como `"id"` y la subconsulta lo resolvía contra
+// su propia tabla. Se comprueba el SQL real que genera el select (sqlText() no pasa por ese camino).
+describe('folderItemCountSql', () => {
+  it('referencia la carpeta exterior con el nombre calificado dentro de un select sin join', () => {
+    const db = drizzle(neon('postgres://usuario:clave@localhost/cloudy'))
+    const { sql } = db.select({ folder: folders, itemCount: folderItemCountSql() }).from(folders).toSQL()
+    expect(sql).toMatch(/c\.parent_id = "folders"\."id"/)
+    expect(sql).toMatch(/f\.folder_id = "folders"\."id"/)
+    expect(sql).not.toMatch(/= "id"/)
   })
 })

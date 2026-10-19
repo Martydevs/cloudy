@@ -104,6 +104,21 @@ export async function getVisibleFolder(id: string): Promise<FolderRow> {
   return folder
 }
 
+/**
+ * Conteo de elementos visibles (subcarpetas y archivos listos) de cada carpeta de una consulta sobre
+ * `folders`, como subconsulta correlacionada. La carpeta exterior se referencia con el nombre
+ * calificado en crudo: dentro de la selección de una consulta sin join, drizzle imprime `${folders.id}`
+ * como `"id"` a secas y Postgres lo resolvía contra la tabla interior (`c.id` / `f.id`): el conteo
+ * daba siempre 0 (T162, defecto 1).
+ */
+export function folderItemCountSql(): SQL<number> {
+  const outer = sql.raw('"folders"."id"')
+  return sql<number>`(
+    (SELECT count(*) FROM folders c WHERE c.parent_id = ${outer} AND c.deleted_at IS NULL)
+    + (SELECT count(*) FROM files f WHERE f.folder_id = ${outer} AND f.deleted_at IS NULL AND f.upload_status = 'ready')
+  )::int`
+}
+
 /** Ancestros de la carpeta, desde la raíz, con un CTE recursivo. */
 export async function buildBreadcrumbs(folderId: string | null): Promise<Breadcrumb[]> {
   const root: Breadcrumb = { id: null, name: 'Archivos' }

@@ -33,13 +33,7 @@ export default defineEventHandler(async (event): Promise<FolderChildren> => {
 
   // Las subcarpetas van completas en la primera página y se ocultan al filtrar por tipo.
   const listSubfolders = () => db
-    .select({
-      folder: folders,
-      itemCount: sql<number>`(
-        (SELECT count(*) FROM folders c WHERE c.parent_id = ${folders.id} AND c.deleted_at IS NULL)
-        + (SELECT count(*) FROM files f WHERE f.folder_id = ${folders.id} AND f.deleted_at IS NULL AND f.upload_status = 'ready')
-      )::int`,
-    })
+    .select({ folder: folders, itemCount: folderItemCountSql() })
     .from(folders)
     .where(and(sameFolder(folders.parentId, folderId), isNull(folders.deletedAt)))
     .orderBy(sort === 'date' && dir === 'desc' ? sql`${folders.createdAt} desc` : asc(sql`lower(${folders.name})`))

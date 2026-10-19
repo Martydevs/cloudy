@@ -53,6 +53,13 @@ describe('US1 · archivos del equipo', () => {
     // Miniatura generada en el navegador.
     await expect.poll(() => page.getByRole('img', { name: 'foto.jpg' }).isVisible()).toBe(true)
 
+    // La tarjeta de la carpeta cuenta sus elementos (T162, defecto 1: decía «0 elementos» siempre).
+    await page.goto(`${E2E_URL}/archivos`)
+    await waitForHydration(page)
+    await expect.poll(() => page.getByRole('link', { name: 'Abrir carpeta Domingo' }).textContent()).toContain('3 elementos')
+    await page.goto(folderUrl)
+    await waitForHydration(page)
+
     // La vista de lista muestra quién subió, fecha y tamaño.
     await page.getByRole('button', { name: 'Ver en lista' }).click()
     const row = page.getByRole('listitem').filter({ hasText: 'audio.mp3' })
