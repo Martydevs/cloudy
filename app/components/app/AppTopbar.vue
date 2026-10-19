@@ -31,7 +31,8 @@ function submitSearch() {
     </button>
 
     <form role="search" class="flex min-w-0 flex-1 justify-center" @submit.prevent="submitSearch">
-      <label class="input w-full max-w-xl">
+      <!-- `min-h-11`: objetivo táctil ≥ 44 px en teléfono (T162, el campo medía 43 px). -->
+      <label class="input min-h-11 w-full max-w-xl">
         <Icon name="lucide:search" class="size-4 opacity-60" aria-hidden="true" />
         <input
           ref="searchInput"

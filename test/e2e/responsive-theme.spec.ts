@@ -25,6 +25,21 @@ describe('US5 · dashboard responsivo', () => {
     await expect.poll(() => sidebar.isVisible()).toBe(true)
     expect(await page.getByRole('link', { name: 'Usuarios' }).count()).toBe(0)
 
+    // Teclado (T162, defecto 5): al abrirse, el foco va al primer enlace del panel, cuando ya es visible
+    // (daisyUI anima `visibility`; happy-dom no lo reproduce, por eso se comprueba aquí). Esc lo devuelve.
+    const focused = () => page.evaluate(() => {
+      const el = document.activeElement
+      return el instanceof HTMLElement ? `${el.tagName.toLowerCase()} ${el.getAttribute('aria-label') ?? el.textContent?.trim()}` : 'none'
+    })
+    await expect.poll(focused).toBe('a Inicio')
+    expect(await page.evaluate(() => document.querySelector('.drawer-content')?.hasAttribute('inert'))).toBe(true)
+    await page.keyboard.press('Escape')
+    await expect.poll(() => sidebar.isVisible()).toBe(false)
+    await expect.poll(focused).toBe('button Abrir menú')
+    expect(await page.evaluate(() => document.querySelector('.drawer-content')?.hasAttribute('inert'))).toBe(false)
+    await page.getByRole('button', { name: 'Abrir menú' }).click()
+    await expect.poll(() => sidebar.isVisible()).toBe(true)
+
     // Elegir una sección cierra el panel.
     await sidebar.getByRole('link', { name: 'Archivos' }).click()
     await page.waitForURL(url => url.pathname === '/archivos')
