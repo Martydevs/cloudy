@@ -19,15 +19,21 @@ DTO `ImageText`: ver [data-model.md](../data-model.md#dto-compartido-sharedtypes
 
 ### `POST /api/uploads/:fileId/complete` (existente, cambia)
 
-Además de lo que ya hace, si el archivo es HEIC apta, valida la copia con `head` (0 < tamaño ≤ 5 MB) y
-`matchesSignature('jpg', readRange(0, 4095))`:
+La respuesta y su latencia no cambian. Además de lo que ya hace:
 
-| Copia | Resultado |
-|-------|-----------|
-| Válida | `text_source_key = textsrc/<id>.jpg` y `text_status` queda en `NULL` (se lee al abrir). |
-| Ausente o inválida | Si existe, se borra el objeto; `text_status = 'unavailable'`. |
+1. Si el archivo es HEIC apta, valida la copia con `head` (0 < tamaño ≤ 5 MB) y
+   `matchesSignature('jpg', readRange(0, 4095))`:
 
-La subida **nunca** falla por la copia (FR-023).
+   | Copia | Resultado |
+   |-------|-----------|
+   | Válida | `text_source_key = textsrc/<id>.jpg`; la imagen es apta y se lee en segundo plano (paso 2). |
+   | Ausente o inválida | Si existe, se borra el objeto; `text_status = 'unavailable'`. |
+
+2. Si la imagen es apta (`isImageTextEligible`, con copia válida en el caso HEIC), programa la lectura con
+   `runInBackground(() => readFileImage(fileId))` (research A6): la tarea reclama la fila (`NULL` → `reading`)
+   y la lee después de responder. Varias subidas a la vez → una tarea por `complete`, en paralelo.
+
+La subida **nunca** falla ni espera por la copia ni por la lectura (FR-004, FR-023).
 
 ### `DELETE /api/uploads/:fileId` y `discardUpload` (existentes, cambian)
 
@@ -38,30 +44,31 @@ Borran también `textsrc/<id>.jpg`.
 ### `GET /api/files/:id/text`
 
 - **Auth**: editor.
-- **Respuesta**: `200 ImageText` del archivo visible: `ready` en carpetas, sin papelera.
+- **Respuesta**: `200 ImageText` de un archivo visible: subida completa (`files.status = 'ready'`), en una carpeta y fuera de la papelera.
 - **Errores**:
   - `404` si el archivo no existe, no es visible o no es imagen.
   - `401`/`403` según la sesión.
-- **Uso**: consulta cada 3 s mientras otra petición mantiene la lectura en `reading`.
+- **Uso**: consulta cada 3 s mientras la lectura sigue en `reading` (en segundo plano tras la subida, o en
+  otra petición).
 
 ### `POST /api/files/:id/text`
 
-Lee la imagen si hace falta y devuelve el resultado. Cubre la lectura al abrir la vista previa (FR-001b), el
-reintento y "Volver a leer" (FR-006).
+Lee la imagen en la misma petición y devuelve el resultado. Es el **respaldo** de la lectura en segundo plano
+(imagen que quedó sin leer al abrir la vista previa, FR-001b) y cubre el reintento y "Volver a leer" (FR-006).
 
 - **Auth**: editor.
 - **Body**: `{ force?: boolean }` (por defecto `false`).
 
-**Sin `force`** (al abrir la vista previa):
+**Sin `force`** (el panel lo llama solo si el estado es `pending`):
 
 | Estado actual | Respuesta |
 |---------------|-----------|
 | `ready`, `empty`, `failed` o `unavailable` | Lo devuelve tal cual, sin llamar al modelo. |
-| `NULL`, o `reading` vencida (> 90 s) | Reclama la fila, lee en la misma petición (≤ 45 s) y responde con el estado final. |
-| `reading` vigente | `200 { status: 'reading' }` de inmediato. |
+| `NULL`, o `reading` con más de 90 s | Reclama la fila con `readFileImage`, lee en la misma petición (≤ 45 s) y responde con el estado final. |
+| `reading` vigente (por ejemplo, la lectura de segundo plano aún en curso) | `200 { status: 'reading' }` de inmediato. |
 
 **Con `force: true`** (Reintentar o Volver a leer): reclama la fila desde `failed`, `ready` o `empty`, y la lee
-igual que arriba.
+igual que arriba, en la petición.
 
 **Errores**:
 - `404` si el archivo no existe, no es visible o no es imagen.
@@ -97,17 +104,19 @@ Corrección manual (FR-014, FR-018).
 
 ### `POST /api/public/submissions/:id/complete` (existente, cambia)
 
-La respuesta no cambia; solo puede tardar hasta ~40 s más.
+La respuesta y su latencia no cambian: responde de inmediato y la lectura sigue en segundo plano.
 
 1. **Copias**: igual que hoy acepta o rechaza cada archivo. Para las HEIC aptas valida la copia JPEG como en
    `/api/uploads/:id/complete`: si es válida guarda `text_source_key`; si no, marca `unavailable`.
-2. **Lectura**: antes de responder, `await readSubmissionImages(submissionId, { concurrency: 4, deadlineMs: 40_000 })`
-   lee las imágenes **aptas** del envío (FR-009, research A6).
+2. **Lectura**: programa `runInBackground(() => readSubmissionImages(submissionId, { concurrency: 4 }))`, que
+   lee las imágenes **aptas** del envío después de responder (FR-009, research A6).
+   - **Pool**: 4 lecturas a la vez; cada una con `timeout` 30 s y `maxRetries: 1`.
    - **Límite**: cada lectura pasa primero por `hitRateLimit(null, 'guest-text:<senderKey>', 20/h)`. Si se
      excede, la imagen queda en `NULL`.
-   - **Tope**: al vencer los 40 s no se inician más lecturas; las no iniciadas quedan en `NULL` y las abortadas
-     en `failed`/`timeout`. Se leerán cuando un revisor abra el envío.
-   - **Errores**: ningún fallo de lectura cambia el código ni el cuerpo de la respuesta (FR-004).
+   - **Presupuesto**: `AbortSignal.timeout(240_000)` compartido; al vencer no se inician más lecturas: las no
+     iniciadas quedan en `NULL` y las abortadas en `failed`/`timeout`. Se leerán cuando un revisor abra el envío.
+   - **Errores**: `readSubmissionImages` nunca lanza; ningún fallo de lectura cambia el código ni el cuerpo de
+     la respuesta (FR-004).
 
 Al modelo solo se envían los bytes de la imagen; nunca el nombre, la nota ni la IP (FR-019).
 
@@ -115,10 +124,19 @@ Al modelo solo se envían los bytes de la imagen; nunca el nombre, la nota ni la
 
 Cada `SubmissionFile` gana `text: ImageText | null` (`null` si no es imagen).
 
+### `GET /api/submissions/:id/files/:fileId/text`
+
+- **Auth**: editor.
+- **Respuesta**: `200 ImageText` del archivo del envío.
+- **Errores**: `404` si el envío o el archivo no existen. No exige que el envío siga `pending`.
+- **Uso**: consulta cada 3 s mientras una lectura sigue en `reading` (tarjeta de Pendientes).
+
 ### `POST /api/submissions/:id/files/:fileId/text`
 
 Igual que `POST /api/files/:id/text`, pero sobre `guest_submission_files`. Es la red de seguridad de la lectura
-al recibir, y sirve también para Reintentar.
+en segundo plano al recibir (imágenes en `NULL` por el presupuesto o el límite) y sirve también para
+Reintentar. La tarjeta lo llama sin `force` solo si el estado es `pending`; con `force: true` solo tras un
+Reintentar del usuario.
 
 - **Auth**: editor.
 - **Condición**: el envío debe estar `pending`.

@@ -1,0 +1,314 @@
+---
+
+description: "Task list for Cloudy — Extracción del texto de notas e intenciones de oración (feature 002)"
+---
+
+# Tasks: Extracción del texto de notas e intenciones de oración
+
+**Input**: Documentos de diseño en `specs/002-note-text-extraction/`
+
+**Prerequisites**: plan.md, spec.md, research.md (A1–A10), data-model.md, contracts/api.md, contracts/ui.md, quickstart.md · Constitución v1.0.0 · Base: feature 001 (`specs/001-shared-media-drive/`)
+
+**Tests**: **Requeridos** por la Constitución V y por el plan (sección "V. Pruebas"). Por cada historia hay tests unitarios (`test/unit`), de componente (`test/nuxt`) y e2e (`test/e2e`, contra el stub de OpenAI). Dentro de cada historia los tests se escriben antes que la implementación y deben fallar primero.
+
+**Organization**: Las tareas se agrupan por historia de usuario en orden de prioridad (US1 P1 → US2 P2 → US3 P3). La capacidad de lectura (IA, estados, reclamación, segundo plano, copia HEIC) y el panel de solo lectura (`useImageText` + `ImageTextPanel`) son fundacionales porque los comparten las tres.
+
+## Format: `[ID] [P?] [Story] Description`
+
+- **[P]**: se puede ejecutar en paralelo (archivos distintos, sin dependencias pendientes).
+- **[Story]**: la historia de usuario de spec.md a la que pertenece la tarea (US1…US3).
+
+## Convenciones obligatorias para quien implemente (de AGENTS.md, la constitución y el plan)
+
+- **Frontera de IA**: todo lo que conoce al proveedor vive en `server/ai/` (no auto-importado; se importa explícitamente). Los endpoints solo usan `server/utils/image-text.ts`. S3 solo desde `server/utils/storage.ts`.
+- **Zod solo en el flujo de IA** (`server/ai/schemas.ts`). Los cuerpos HTTP se siguen validando con los validadores propios de `shared/validation/*` y `readValid`/`paramId`.
+- **Endpoints**: cada uno llama `requireRole(event, 'editor')` (deja pasar a admins), salvo los públicos de invitados.
+- **Segundo plano**: solo con `runInBackground` de `server/utils/background.ts`, el único módulo que importa `@vercel/functions` (`waitUntil`); ningún endpoint espera una lectura programada en segundo plano (research A6). El servidor no procesa imágenes: al modelo van los bytes tal como están guardados.
+- **Privacidad**: al modelo solo se envían bytes de imagen (FR-019); en logs solo id y código de error; en actividad solo `{ length }`.
+- **Interfaz**: textos en español en `app/utils/messages.ts`; errores HTTP solo con `serverMessage()`; clases semánticas de daisyUI; iconos `lucide:*`; `btn` base con `lg:btn-sm` como máximo; cuatro estados (`SkeletonList`, `EmptyState`, `ErrorState`, contenido).
+- **Tests**: seleccionan con `getByRole`/`getByLabel`; los e2e pasan por `signedInAs`/`ensureAccount`/`login` de `test/e2e/setup/fixtures.ts`.
+- **Definición de hecho por tarea y por fase**: la de AGENTS.md ("Workflow"): typecheck → tests → verificación en navegador al final → reporte.
+
+---
+
+## Phase 1: Setup (Shared Infrastructure)
+
+**Purpose**: Rama, dependencias, configuración y ajustes al código que el usuario ya preparó (plan, "Cambios a la base existente").
+
+- [ ] T001 Crear la rama `002-note-text-extraction` desde `001-shared-media-drive` con `git switch -c 002-note-text-extraction` (el plan la da por creada, pero hoy no existe) y mover ahí el trabajo de esta feature.
+- [ ] T002 Ajustar `server/ai/openai.ts` (research A10):
+  - `import type { RuntimeConfig } from 'nuxt/schema'`.
+  - Pasar `baseURL: config.openaiBaseUrl || undefined` a `createOpenAI`.
+  - Exportar `IMAGE_TEXT_MODEL = 'gpt-4o'`.
+  - Renombrar `IMAGE_EXRTACTION_PROMPT` → `IMAGE_EXTRACTION_PROMPT` y redactarlo para una sola imagen ("Extract the content of the following image").
+  - En `IMAGE_EXTRACTION_INSTRUCTION`, reemplazar las reglas "With multiple images…" y "If no legible text remains, return exactly: [texto no reconocido]" por: varias notas en una misma imagen se transcriben en orden separadas por una línea en blanco, y la respuesta es el objeto `{ hasText, text }` (`hasText: false` y `text: ""` si no queda texto legible). Conservar el resto de las reglas del usuario literalmente.
+- [ ] T003 [P] Agregar `openaiBaseUrl: ''` a `runtimeConfig` en `nuxt.config.ts` (sin tocar `openai*` ni `neonRealtime*`) y agregar a `.env.example` `NUXT_OPENAI_APIKEY=`, `NUXT_OPENAI_ORG=`, `NUXT_OPENAI_PROJ=` y `NUXT_OPENAI_BASE_URL=` con el comentario "vacío = OpenAI; solo e2e".
+- [ ] T004 [P] Instalar la dependencia nueva con `bun add @vercel/functions`. Confirmar que su fila ya está en el Complexity Tracking de `specs/002-note-text-extraction/plan.md` (`@vercel/functions` solo desde `server/utils/background.ts`).
+- [ ] T005 [P] Agregar fixtures en `test/fixtures/files/`: `nota.jpg` y `nota.png` (nota adhesiva legible con el logotipo de Skykids), `paisaje.jpg` (sin texto) y `grande.jpg` (> 5 242 880 bytes, firma JPEG válida). `nota.heic` (foto real de iPhone < 5 MB, sin datos personales) la aporta el usuario (plan, "Siguientes pasos"); dejarlo anotado si aún no está.
+- [ ] T006 [P] Actualizar `AGENTS.md` (plan, punto 4): fila "IA" en la tabla Stack (AI SDK v7 + OpenAI gpt-4o en `server/ai/`); `NUXT_OPENAI_APIKEY`, `NUXT_OPENAI_ORG`, `NUXT_OPENAI_PROJ`, `NUXT_OPENAI_BASE_URL` en la lista de variables; regla "Neon Auth, storage, IA **y segundo plano** solo a través de sus módulos"; gotcha "`event.waitUntil` de Nitro no está conectado en Vercel Node: el trabajo en segundo plano usa `waitUntil` de `@vercel/functions`, solo a través de `server/utils/background.ts`"; gotcha de `heic-to` solo navegador con `import()` dinámico; "Active feature" → `specs/002-note-text-extraction/`.
+
+**Checkpoint**: `bun run typecheck` pasa con el `openai.ts` ajustado y las dependencias instaladas.
+
+---
+
+## Phase 2: Foundational (Blocking Prerequisites)
+
+**Purpose**: Modelo de datos, frontera de IA, segundo plano, orquestación de lectura, copia HEIC, copy, stub de e2e y el panel de texto de solo lectura (`useImageText` + `ImageTextPanel`) que comparten las tres historias. Ninguna historia empieza antes de terminar esta fase.
+
+### Tests fundacionales (escribir primero, deben fallar)
+
+- [ ] T007 [P] Tests unitarios de `shared/constants/image-text.ts` en `test/unit/image-text-constants.spec.ts`: `isImageTextEligible()` acepta `category = 'image'` con extensión `jpg`/`jpeg`/`png`/`heic` y `size_bytes ≤ 5 242 880` (incluye exactamente 5 242 880), rechaza 5 242 881, `webp`, `gif` y categorías no imagen.
+- [ ] T008 [P] Tests unitarios de `server/ai/schemas.ts` en `test/unit/ai-schemas.spec.ts`:
+  - `imageSourceSchema`: `{ fileId: uuid, extension: 'jpg'|'jpeg'|'png'|'heic', sizeBytes: int 1..5 242 880 }`; rechaza uuid inválido, `webp`, 0 y 5 242 881.
+  - `modelImageSchema`: `{ mediaType: 'image/jpeg' | 'image/png', data: Uint8Array no vacía ≤ 5 242 880 B }`; rechaza `image/webp`, datos vacíos y más de 5 242 880 B.
+  - `imageTextOutputSchema`: `{ hasText: boolean, text: string }` con `.trim()` y `max(10 000)`; el refine exige `text` no vacío si `hasText` y vacío si no.
+- [ ] T009 [P] Tests unitarios de `extractImageText` en `test/unit/ai-extract.spec.ts` con `MockLanguageModelV4` de `ai/test` inyectado vía `model`: resultado con texto → `ready`; `hasText: false` → `empty`; JSON que no cumple el esquema o refine → `failed`/`invalid_output`; entrada que no pasa `modelImageSchema` → `failed`/`invalid_input` sin llamar al modelo; `APICallError` 429 → `rate_limited`; otro `APICallError`/5xx → `provider`; aborto por tiempo → `timeout`. Verificar que el mensaje enviado lleva solo la parte `text` (`IMAGE_EXTRACTION_PROMPT`) y la parte `file` con el `mediaType` de la entrada (`'image/jpeg' | 'image/png'`) y `providerOptions.openai.imageDetail = 'high'`, e `instructions = IMAGE_EXTRACTION_INSTRUCTION`.
+- [ ] T010 [P] Tests unitarios de `server/utils/background.ts` en `test/unit/background.spec.ts` con `vi.mock('@vercel/functions')`: `runInBackground(task)` llama a `waitUntil` con una promesa, ejecuta la tarea, y si la tarea rechaza registra solo id y código (nunca el texto ni el mensaje completo) y no propaga el error (la promesa pasada a `waitUntil` resuelve); si `waitUntil` lanza por falta de contexto de petición (fuera de Vercel), la tarea corre igual.
+- [ ] T011 [P] Tests unitarios de `server/utils/image-text.ts` en `test/unit/image-text.spec.ts` (con `test/unit/helpers/fake-db.ts` y storage simulado):
+  - `toImageText()`: `NULL` → `status: 'pending'`; `text` solo en `ready`; `editedBy` con nombre visible. `reading` de más de 90 s → `failed`/`timeout`; de menos → `reading`.
+  - Reclamación atómica (research A5): desde `NULL` o `reading` con `text_started_at` > 90 s; no desde `reading` vigente; con `force` desde `failed`/`ready`/`empty`; incrementa `text_attempts`; limpia `text_edited_by`/`text_edited_at` al volver a leer.
+  - Escritura del resultado condicionada a `text_status = 'reading' AND text_started_at = $claimedAt` (una lectura vencida no pisa una más nueva).
+  - Imagen no apta → `unavailable` sin llamar a la IA; HEIC sin `text_source_key` → `unavailable`; HEIC con copia → descarga `textsrc/<id>.jpg`.
+  - Firma real distinta de la extensión (`matchesSignature`) → `failed`/`invalid_input` sin llamar al modelo (FR-021); tras la firma, al modelo llegan los bytes descargados tal cual con su `mediaType` (`image/jpeg` para JPEG y la copia de una HEIC, `image/png` para PNG).
+  - `readFileImage(fileId)`: reclama la fila de `files` desde `NULL`/`reading` vencida y lee; con una lectura vigente o un estado terminal no hace nada; nunca lanza.
+  - `checkTextSourceCopy()`: copia válida (0 < tamaño ≤ 5 MB y firma JPEG) → `text_source_key`; ausente, vacía, > 5 MB o firma inválida → borra el objeto si existe y marca `unavailable`; nunca lanza.
+- [ ] T012 [P] Tests de componente de `makeTextSourceCopy` en `test/nuxt/heic-copy.spec.ts` con `heic-to` simulado: éxito con calidad 0.85; resultado > 5 MB → reintenta una vez con 0.7; sigue > 5 MB o error → `null`; extensión no `heic` o archivo > 5 MB → `null` sin cargar `heic-to`.
+- [ ] T013 [P] Tests de componente de `ImageTextPanel` y `useImageText` en `test/nuxt/ImageTextPanel.spec.ts` (con `test/nuxt/helpers/api.ts` → `mockApi`): estados `reading` (skeleton + "Leyendo texto…" en `aria-live="polite"`), `ready` (texto con saltos de línea, botón "Copiar texto" → `useClipboard` + toast `messages.imageText.copied`), `empty` (`EmptyState` + "Volver a leer"), `failed` (mensaje según `error` y botón Reintentar → `POST { force: true }`; con `error: 'invalid_input'` muestra "No pudimos leer esta imagen." sin Reintentar), `unavailable` (texto de ayuda, sin botones; variante HEIC), error de red del panel (`ErrorState` con reintento); con `autoRead` y sin `initial` hace `GET` al montar y solo hace `POST` sin `force` si el estado es `pending`, nunca con `reading` ni terminal (incluido `failed`); polling `GET` cada 3 s mientras `reading` que se detiene en un estado terminal; el polling se detiene cuando `GET` devuelve `failed`/`timeout` (lectura vencida según el servidor) y muestra Reintentar; con `initial` terminal no hace `POST` ni `GET`, con `initial` `pending` hace `POST`, con `initial` `reading` solo consulta `GET`; con `compact` trunca el texto a 6 líneas con "Ver todo".
+
+### Implementación fundacional
+
+- [ ] T014 [P] Crear `shared/constants/image-text.ts`: `IMAGE_TEXT_STATUSES = ['reading','ready','empty','failed','unavailable']`, `IMAGE_TEXT_ERRORS = ['timeout','provider','rate_limited','invalid_input','invalid_output']`, `IMAGE_TEXT_EXTENSIONS = ['jpg','jpeg','png','heic']`, `MAX_IMAGE_TEXT_BYTES = 5_242_880`, `MAX_IMAGE_TEXT_LENGTH = 10_000`, `READING_STALE_MS = 90_000`, `TEXT_POLL_INTERVAL_MS = 3000` e `isImageTextEligible({ category?, extension, size })` (la parte del archivo; la condición de la copia HEIC vive en el servidor).
+- [ ] T015 [P] Agregar a `shared/types/api.ts` el DTO `ImageTextStatus = 'pending'|'reading'|'ready'|'empty'|'failed'|'unavailable'` e `ImageText { status; text: string | null (solo en 'ready'); error: 'timeout'|'provider'|'rate_limited'|'invalid_input'|'invalid_output'|null; readAt: string | null; editedAt: string | null; editedBy: string | null }`; `UploadTicket.textSourceUploadUrl?: string` y `GuestUploadTicket.textSourceUploadUrl?: string` (data-model "DTO compartido").
+- [ ] T016 Ampliar `server/db/schema.ts` (data-model "Cambios en tablas"):
+  - Enum `image_text_status: reading | ready | empty | failed | unavailable` (`NULL` = pendiente).
+  - En `files`: `text_status` (nulo), `text_content text` (nulo, "Solo si `ready`; ≤ 10 000 caracteres"), `text_error text` (nulo), `text_source_key text` (nulo), `text_attempts smallint NOT NULL DEFAULT 0`, `text_started_at timestamptz`, `text_read_at timestamptz`, `text_edited_by uuid → profiles.user_id ON DELETE SET NULL`, `text_edited_at timestamptz`.
+  - En `guest_submission_files`: `text_status`, `text_content`, `text_error`, `text_attempts`, `text_started_at`, `text_read_at` y `text_source_key`, con los mismos tipos y sin columnas de edición.
+  - `activity_action` gana `file.text_edit`.
+  - Sin índice en `text_status`.
+- [ ] T017 Ejecutar `bun run db:generate` y añadir a mano en el nuevo `drizzle/0003_*.sql` (como en `0000`): `ALTER TABLE files ADD CONSTRAINT files_text_length CHECK (text_content IS NULL OR char_length(text_content) <= 10000);`, `ALTER TABLE guest_submission_files ADD CONSTRAINT guest_files_text_length CHECK (text_content IS NULL OR char_length(text_content) <= 10000);` y `CREATE INDEX files_text_trgm_idx ON files USING gin (text_content gin_trgm_ops);`. Verificar que `ALTER TYPE activity_action ADD VALUE 'file.text_edit'` queda en su propio statement. Aplicar con `bun run db:migrate` y `bun run db:migrate:test` (solo agregan; nada destructivo).
+- [ ] T018 [P] Crear `server/ai/schemas.ts` con `imageSourceSchema`, `modelImageSchema` (`mediaType: z.enum(['image/jpeg', 'image/png'])`) e `imageTextOutputSchema` (research A3) y sus tipos inferidos (`z.infer`). Importar los límites de `shared/constants/image-text.ts`.
+- [ ] T019 Crear `server/ai/extract-image-text.ts` (research A1) → `extractImageText({ image, model?, abortSignal?, maxRetries? }): Promise<ImageTextResult>`:
+  - Valida `image` con `modelImageSchema` (fallo → `{ status: 'failed', error: 'invalid_input' }`).
+  - `generateText({ model: model ?? openaiClient(useRuntimeConfig())(IMAGE_TEXT_MODEL), instructions: IMAGE_EXTRACTION_INSTRUCTION, output: Output.object({ schema: imageTextOutputSchema }), messages: [{ role: 'user', content: [{ type: 'text', text: IMAGE_EXTRACTION_PROMPT }, { type: 'file', mediaType: image.mediaType ('image/jpeg' | 'image/png'), data, providerOptions: { openai: { imageDetail: 'high' } } }] }], timeout: 30_000, maxRetries: maxRetries ?? 1, abortSignal })`, con un tope duro propio de 45 s combinado mediante `AbortSignal.any`.
+  - Vuelve a aplicar `imageTextOutputSchema.safeParse(result.output)`; `hasText` → `ready` con `text`, si no → `empty`.
+  - Traduce `NoObjectGeneratedError`/`NoOutputGeneratedError` → `invalid_output`, `APICallError` 429 → `rate_limited`, otros `APICallError` → `provider`, aborto/timeout → `timeout`. Nunca lanza. Sin BD ni storage.
+- [ ] T020 [P] Crear `server/utils/background.ts` (auto-importado; research A6) → `runInBackground(task: () => Promise<void>): void`: único `import { waitUntil } from '@vercel/functions'` del proyecto; llama a `waitUntil(task().catch(err => log))` registrando solo un identificador y el código del error (nunca el texto); si `waitUntil` lanza por falta de contexto de petición (dev, tests), la promesa de la tarea sigue corriendo en el proceso. Sin estado en memoria entre peticiones.
+- [ ] T021 Agregar `textSourceKeyFor(fileId)` → `textsrc/<id>.jpg` (junto a `thumbKeyFor`) en `server/utils/uploads.ts`.
+- [ ] T022 Crear `server/utils/image-text.ts` (auto-importado; importa `server/ai/*` explícitamente), genérico sobre `files` y `guest_submission_files`:
+  - `toImageText(row, editorName?, now?)` → DTO `ImageText`; un `reading` con `text_started_at` > `READING_STALE_MS` se devuelve como `failed`/`timeout`.
+  - `claimImageText(table, id, { force })`: `UPDATE … SET text_status = 'reading', text_started_at = now(), text_attempts = text_attempts + 1 [, text_edited_by = NULL, text_edited_at = NULL] WHERE id = $1 AND (text_status IS NULL OR text_status = ANY($allowed) OR (text_status = 'reading' AND text_started_at < now() - interval '90 seconds')) RETURNING …` (research A5).
+  - `readImageText(table, row, opts)`: valida con `imageSourceSchema` (fallo → `unavailable`), resuelve la clave (original o `text_source_key` si es HEIC; HEIC sin copia → `unavailable`), descarga con `readRange(key, 0, size - 1)`, revalida con `matchesSignature` (fallo → `failed`/`invalid_input`), llama a `extractImageText` con los bytes tal cual y su `mediaType` (`image/jpeg` o `image/png`) y guarda con `UPDATE … WHERE id = $1 AND text_status = 'reading' AND text_started_at = $claimedAt` (`text_content` solo en `ready`, `text_error`, `text_read_at = now()`).
+  - `readFileImage(fileId)`: reclama la fila de `files` (desde `NULL` o `reading` vencida) y llama a `readImageText`; si no obtiene la fila, termina sin hacer nada; nunca lanza. La usan la lectura en segundo plano al completar la subida (US1) y el respaldo de `POST /api/files/:id/text`.
+  - `markUnavailable(table, id)`.
+  - `checkTextSourceCopy(table, fileId)`: `head` + `readRange(0, 4095)` + `matchesSignature('jpg', …)`; si es válida guarda `text_source_key`, si no borra el objeto (si existe) y marca `unavailable`. Nunca lanza.
+  - Logs solo con id y código de error, nunca el texto.
+- [ ] T023 Registrar en `test/unit/helpers/nitro.ts` las funciones de `server/utils/image-text.ts` (incluida `readFileImage`), `textSourceKeyFor` y `runInBackground` (`server/utils/background.ts`) en la lista de stubs auto-importados.
+- [ ] T024 [P] Crear `app/utils/heic-copy.ts` → `makeTextSourceCopy(file: File): Promise<Blob | null>`, en el estilo de `app/utils/thumbnail.ts` (contracts/ui): solo si `isImageTextEligible({ extension: 'heic', size })`; `const { heicTo } = await import('heic-to')`; `heicTo({ blob: file, type: 'image/jpeg', quality: 0.85 })`, una vez más con 0.7 si supera 5 MB; cualquier error o resultado > 5 MB → `null`.
+- [ ] T025 [P] Agregar a `app/utils/messages.ts` la sección `imageText` (`reading` "Leyendo texto…", `empty` "No se reconoció texto en esta imagen", `unavailable` "No disponible para este archivo: solo se lee el texto de imágenes JPG, PNG o HEIC de hasta 5 MB.", `unavailableHeic` "…esta foto HEIC se subió sin copia para lectura", `failedRetryable` "No pudimos leer el texto ahora. Inténtalo de nuevo en un momento.", `failedPermanent` "No pudimos leer esta imagen.", `copied`, `saved`, `confirmReread` "Se reemplazará tu corrección", `editedBy(name)`, `searchHint` "Solo buscamos en el texto de las imágenes que ya se leyeron" (no en las que se están leyendo, las no aptas ni las antiguas que nadie ha abierto), `guestNotice` "Leeremos automáticamente el texto de tus imágenes para que el equipo pueda revisarlas."), además de `files.preparing` "Preparando…". Extender `test/unit/messages.spec.ts` si comprueba la forma de `messages`.
+- [ ] T026 [P] Crear el stub de la Responses API en `test/e2e/setup/openai-stub.ts` (research A9): servidor HTTP local que responde a `POST /responses` con un JSON estructurado según el contenido recibido (imagen de `nota.*` → `{ hasText: true, text: <texto fijo de la nota> }`, `paisaje.jpg` → `{ hasText: false, text: "" }`, imagen marcada `falla` → 500) con un retraso de respuesta configurable (variable de entorno o interruptor por prueba que expone el stub) para que las specs puedan observar "Leyendo texto…", y cuenta las llamadas por imagen (las imágenes llegan con los bytes exactos del fixture, así que el stub las distingue por ellos). Levantarlo en `test/e2e/setup/global-setup.ts` en un puerto libre y exportar `NUXT_OPENAI_BASE_URL` (y un `NUXT_OPENAI_APIKEY` ficticio) al servidor de pruebas; cerrarlo en el teardown.
+- [ ] T027 Crear `app/composables/useImageText.ts` (contracts/ui): entrada `endpoint` y `{ initial?, autoRead, editable }`; expone `state: Ref<ImageText | null>`, `loading`, `error` (de red) y `read(force?)`, `copy()` (y deja el lugar de `save(text)` para US3); al montar con `autoRead` parte de `initial` o hace `GET`, y solo hace `POST` sin `force` si el estado es `pending` (respaldo de la lectura en segundo plano); con un estado terminal no hace ninguna petición más; mientras `reading` consulta `GET` cada `TEXT_POLL_INTERVAL_MS` con `useIntervalFn`, pausado con `useDocumentVisibility` y `useOnline` como `usePulse.ts`; `copy()` con `useClipboard` + toast `messages.imageText.copied`. Peticiones con `useApiFetch`/`$fetch` del proyecto y errores con `serverMessage()`.
+- [ ] T028 Crear `app/components/files/ImageTextPanel.vue` (props `endpoint`, `initial?: ImageText | null`, `editable`, `autoRead`, `compact?`): `<section>` con encabezado "Texto de la imagen"; estados de la tabla de contracts/ui (`SkeletonList` de 3 filas en variante `list` con `motion-reduce`, `<p class="whitespace-pre-line">`, `EmptyState` con `lucide:scan-text`, `ErrorState` que emite `retry` → `read(true)` (sin botón Reintentar si `error` es `invalid_input`: "No pudimos leer esta imagen."), texto de ayuda `unavailable`, `ErrorState` de red); región `aria-live="polite"`; botón "Copiar texto"; si `editable`, menú `⋯` visible (`ActionMenu`) con "Volver a leer"; con `compact`, truncar el texto a 6 líneas con un botón "Ver todo" (lo usa `SubmissionCard` en US2); botones `btn` base con `lg:btn-sm`. Sin colores fijos.
+
+**Checkpoint**: `bun run typecheck`, `bun run test:unit` (T007–T011) y `bun run test:nuxt` (T012 y T013, incluido el panel con todos sus estados) en verde. La migración está aplicada en desarrollo y pruebas.
+
+---
+
+## Phase 3: User Story 1 — Texto extraído de las imágenes que sube el equipo (Priority: P1) 🎯 MVP
+
+**Goal**: En cuanto termina de subirse una imagen apta del equipo, su texto se lee en segundo plano y se guarda; al abrir la vista previa el texto ya está (o "Leyendo texto…" unos segundos); se puede copiar, reintentar si falla y volver a leer. Las imágenes que quedaron sin leer se leen al abrirlas. Las HEIC suben su copia JPEG.
+
+**Independent Test**: Un editor sube `nota.jpg` desde el teléfono (la subida termina igual de rápido que siempre), abre su vista previa y ve el texto sin "Skykids", en su orden, o "Leyendo texto…" y el texto en menos de 30 s desde el fin de la subida; lo copia con un botón. Al cerrar y reabrir, el texto aparece al instante (`text_attempts` sigue en 1). Dos imágenes subidas juntas se leen a la vez. `paisaje.jpg` muestra "No se reconoció texto"; `imagen.webp`, `anim.gif` y `grande.jpg` muestran "No disponible…"; con el stub en 500, se ve el error con Reintentar y la descarga sigue funcionando.
+
+### Tests for User Story 1 ⚠️
+
+- [ ] T029 [P] [US1] Tests unitarios de `GET`/`POST /api/files/:id/text` en `test/unit/api-image-text.spec.ts` (vía `installNitro`): 401 sin sesión y 403 con rol sin permiso; 404 si no existe, está en la papelera o no es imagen; `GET` devuelve el DTO; `POST` sin `force` devuelve tal cual `ready`/`empty`/`failed`/`unavailable` sin llamar a la IA, reclama con `readFileImage` y lee en la petición desde `NULL` o `reading` vencida (respaldo), y responde `200 { status: 'reading' }` con una vigente; `POST { force: true }` reclama desde `failed`/`ready`/`empty` y responde `409` sobre `unavailable` o lectura vigente; un fallo de lectura responde `200` con `status: 'failed'` y `error`.
+- [ ] T030 [P] [US1] Tests unitarios de la copia HEIC y la lectura al subir, en `test/unit/api-files.spec.ts` (con `runInBackground` simulado que captura la tarea): `POST /api/uploads` con `withTextSource: true` devuelve `textSourceUploadUrl` (PUT prefirmado a `textsrc/<id>.jpg`, `content-type: image/jpeg`) solo para HEIC apta y lo ignora en otro caso; `complete` llama a `checkTextSourceCopy` para HEIC apta y nunca falla por la copia; `complete` programa `runInBackground(() => readFileImage(fileId))` solo para imágenes aptas (JPEG/PNG apta, HEIC con copia válida; no para `webp`, `gif`, > 5 MB, HEIC sin copia ni archivos que no son imagen) y su respuesta no espera a la tarea (responde antes de que la tarea capturada se resuelva); al esperar la tarea capturada, `readFileImage` se llama con el id; `DELETE /api/uploads/:fileId` y `discardUpload` borran también `textsrc/<id>.jpg`.
+- [ ] T031 [P] [US1] Tests unitarios del ciclo de vida de la copia en `test/unit/api-trash.spec.ts` y `test/unit/api-cron.spec.ts`: `purge`/`purgeAll` pasan `text_source_key` a `deleteMany`; el cron de subidas huérfanas del equipo borra `textsrc/<id>.jpg` derivada del id aunque la columna esté vacía; restaurar de la papelera conserva las columnas `text_*`.
+- [ ] T032 [P] [US1] Tests de componente de la subida con copia en `test/nuxt/useUploader.spec.ts` y `test/nuxt/UploadQueue.spec.ts`: con HEIC, `makeTextSourceCopy` (simulado) se llama junto a `makeThumbnail`, la firma se pide con `withTextSource: true`, la subida del original empieza antes de que termine la conversión y `complete` espera a que se suba la copia a `ticket.textSourceUploadUrl` con `content-type: image/jpeg`; un fallo de la copia no falla la subida; la fila muestra "Preparando…" mientras convierte. En `test/nuxt/pages-files.spec.ts`, la página de vista previa de imagen renderiza el panel de texto (y reserva su espacio) para imágenes y no para otras categorías.
+- [ ] T033 [P] [US1] E2E en `test/e2e/image-text.spec.ts` (contra el stub de T026, a 360 px): escenarios 1, 2, 2c, 4, 5, 6 y 8 del quickstart §4 (subir `nota.jpg` → abrir → texto, esperando el panel y no la respuesta de `complete`, que vuelve antes de la lectura; reabrir sin nueva llamada al stub; `nota.jpg` y `nota.png` subidas juntas → dos llamadas al stub, una por imagen, y ambos textos; `paisaje.jpg` → sin texto; `imagen.webp`/`anim.gif`/`grande.jpg` → no disponible, sin llamada al stub; copiar → toast; stub en 500 → error con Reintentar y la vista previa/descarga funcionan) y el 13 (abrir en dos pestañas mientras la lectura de segundo plano sigue, usando el retraso configurable del stub → una sola llamada al stub). Si `nota.heic` existe, escenario 3 (texto de la copia). Claves de storage bajo `e2e/<runId>/`.
+- [ ] T034 [P] [US1] Ampliar `test/e2e/routes-guard.spec.ts` y `test/unit/endpoint-guards.spec.ts` con `GET`/`POST /api/files/:id/text`: sin sesión → 401 y rol sin permiso (o pendiente de aprobación) → 403.
+
+### Implementation for User Story 1
+
+- [ ] T035 [P] [US1] Crear `server/api/files/[id]/text.get.ts`: `requireRole(event, 'editor')`, `paramId`, archivo visible (`files.status = 'ready'`, no en papelera) y `category = 'image'` o 404; responde `toImageText(row, editorName)`.
+- [ ] T036 [US1] Crear `server/api/files/[id]/text.post.ts` (contracts/api): `requireRole(event, 'editor')`, `paramId`, cuerpo `{ force?: boolean }` validado con un validador propio en `shared/validation/image-text.ts` (`readValid`); 404 si no existe, no es visible o no es imagen; imagen no apta → `markUnavailable` y la devuelve; sin `force` devuelve los terminales tal cual, reclama y lee `NULL`/`reading` vencida en la misma petición con `readFileImage` (respaldo de la lectura en segundo plano), o responde `{ status: 'reading' }`; con `force` reclama desde `failed`/`ready`/`empty` y lee en la petición, y responde `409` sobre `unavailable` o lectura vigente.
+- [ ] T037 [US1] En `server/api/uploads/index.post.ts`, aceptar `withTextSource?: boolean` (ampliar el validador en `shared/validation/files.ts`); si el archivo es HEIC apta (`isImageTextEligible`), firmar `presignPut(textSourceKeyFor(id), 'image/jpeg')` y devolverlo como `textSourceUploadUrl`; en cualquier otro caso ignorarlo.
+- [ ] T038 [US1] En `server/api/uploads/[fileId]/complete.post.ts`, tras completar como hoy: si el archivo es HEIC apta llamar `checkTextSourceCopy('files', fileId)` (copia válida → `text_source_key`; ausente o inválida → `unavailable`); después, si la imagen es apta (JPEG/PNG apta, o HEIC con copia válida), programar `runInBackground(() => readFileImage(fileId))` y responder de inmediato con la misma respuesta de hoy, sin esperar la lectura (FR-001b, FR-004). La subida nunca falla por la copia ni por la lectura (FR-023).
+- [ ] T039 [US1] Borrar `textsrc/<id>.jpg` en `discardUpload` (`server/utils/uploads.ts`) y en `server/api/uploads/[fileId].delete.ts`; en `purge`/`purgeAll` de `server/utils/trash.ts`, devolver también `text_source_key` del CTE y pasarlo a `deleteMany`.
+- [ ] T040 [US1] En `server/api/cron/cleanup.get.ts`, para las subidas huérfanas del equipo borrar también `textsrc/<id>.jpg` derivada del id.
+- [ ] T041 [US1] En `app/composables/useUploader.ts`, si el archivo es una HEIC apta, pedir la firma con `withTextSource: true` sin esperar la conversión, subir el original de inmediato y ejecutar `makeTextSourceCopy(file)` en paralelo; antes de `complete`, subir la copia a `ticket.textSourceUploadUrl` con `content-type: image/jpeg` (reutilizando `app/utils/upload-put.ts`); si la copia es `null` o su PUT falla, llamar a `complete` igual. Exponer un estado `preparing` por fila y mostrarlo en `app/components/upload/UploadQueue.vue` con `messages.files.preparing`.
+- [ ] T042 [US1] En `app/pages/archivos/ver/[fileId].vue`, si `file.category === 'image'`, mostrar `<LazyImageTextPanel :endpoint="`/api/files/${id}/text`" auto-read editable />` en el aside antes de los comentarios: en móvil bajo la vista previa y en `lg:` en la columna lateral. Las HEIC (sin `<img>`) también lo muestran. Reservar el espacio del panel: un contenedor renderizado en SSR con `min-h-*` y el skeleton mientras carga el chunk `Lazy`, para que no desplace los comentarios (CLS ≤ 0.1).
+
+**Checkpoint**: US1 funciona sola. DoD de AGENTS.md: typecheck, `test:unit`, `test:nuxt`, `test:e2e` (image-text + routes-guard) y verificación en navegador a 360 px y ≥ 1280 px, en ambos temas, de los escenarios 1–8 (incluidos 2c y 2d) y 13 del quickstart con OpenAI real.
+
+---
+
+## Phase 4: User Story 2 — Texto extraído de los envíos de invitados (Priority: P2)
+
+**Goal**: Las imágenes aptas de un envío de invitado se leen en segundo plano al confirmar el envío (hasta 4 a la vez, presupuesto de 240 s), sin retrasar la confirmación; el equipo ve el texto en Pendientes; al aprobar pasa al archivo sin volver a leer y al rechazar o caducar se elimina.
+
+**Independent Test**: Un invitado sin cuenta envía `nota.jpg` (y `nota.heic`) desde `/enviar`, ve el aviso de lectura automática y recibe la confirmación igual de rápido que antes. Un editor ve en Pendientes "Leyendo texto…" y, en menos de ~30 s, el texto; aprueba en una carpeta y la vista previa del archivo muestra el mismo texto sin una nueva llamada al stub. Rechazar otro envío elimina sus filas y su copia.
+
+### Tests for User Story 2 ⚠️
+
+- [ ] T043 [P] [US2] Tests unitarios de `readSubmissionImages` en `test/unit/image-text.spec.ts` con temporizadores falsos: solo lee las aptas del envío; nunca más de 4 a la vez; las filas que ningún trabajador ha tomado todavía siguen en `NULL` mientras otras se leen (cada trabajador reclama justo antes de leer); cada lectura con `maxRetries: 1` y `timeout` de 30 s; con el presupuesto de 240 s vencido no inicia más lecturas (quedan en `NULL`) y aborta las en curso (`failed`/`timeout`); `hitRateLimit(null, 'guest-text:<senderKey>', { limit: 20, windowSec: 3600 })` excedido → la imagen queda en `NULL` sin error; nunca lanza (fallos de BD, storage o modelo quedan en la fila); al modelo no llegan nombre, nota ni IP (FR-019).
+- [ ] T044 [P] [US2] Tests unitarios de los endpoints de invitados y Pendientes en `test/unit/api-submissions.spec.ts` (con `runInBackground` simulado que captura la tarea):
+  - `POST /api/public/submissions` con `withTextSource` por archivo → `textSourceUploadUrl` solo para HEIC apta.
+  - `POST /api/public/submissions/:id/complete` valida copias (`checkTextSourceCopy('guest_submission_files', …)`), programa `runInBackground(() => readSubmissionImages(submissionId, { concurrency: 4 }))` y responde antes de que la tarea capturada se resuelva; su respuesta no cambia aunque las lecturas fallen; con un envío sin imágenes aptas no programa nada.
+  - `GET /api/submissions?status=` incluye `text: ImageText | null` por archivo (`null` si no es imagen) sin N+1.
+  - `POST /api/submissions/:id/files/:fileId/text`: 401/403; 404 si el envío o el archivo no existen; 409 si `guest_submissions.status` no es `pending`; mismas reglas de `force` que `/api/files/:id/text`.
+  - `GET /api/submissions/:id/files/:fileId/text`: 401/403, 404, devuelve el DTO también tras aprobar.
+  - `approve` copia `text_status`, `text_content`, `text_error`, `text_attempts`, `text_started_at`, `text_read_at` y `text_source_key` a `files`; una lectura en segundo plano o de red de seguridad que termina después de aprobar actualiza también `files` cuando el id coincide y sigue en `reading` (research A5).
+  - `reject` incluye `text_source_key` en las claves a borrar.
+- [ ] T045 [P] [US2] Tests unitarios del cron de envíos caducados y subidas huérfanas de invitados en `test/unit/api-cron.spec.ts`: borra `text_source_key` y `textsrc/<id>.jpg` derivada del id aunque la columna esté vacía.
+- [ ] T046 [P] [US2] Tests de componente en `test/nuxt/pages-guests.spec.ts` y en un spec nuevo `test/nuxt/useGuestSubmission.spec.ts`: `/enviar` muestra `messages.imageText.guestNotice` junto al selector; el botón Enviar conserva su copy y su estado actuales (no hay espera nueva por la lectura); para cada HEIC apta se envía `withTextSource: true`, la conversión corre en paralelo con la subida del original y la copia se sube a `textSourceUploadUrl` antes de `complete`. En `SubmissionCard`, el panel compacto muestra el `file.text` del listado sin `POST` si es terminal, consulta `GET` cada 3 s si es `reading` (lectura en segundo plano), hace `POST` sin `force` solo si es `pending` (un `failed` espera el Reintentar), trunca a 6 líneas con "Ver todo" y no ofrece edición.
+- [ ] T047 [P] [US2] E2E en `test/e2e/guest-queue.spec.ts` (contra el stub): escenarios 9, 10 y 11 del quickstart (envío de invitado con aviso y confirmación inmediata; en Pendientes, el texto aparece tras la lectura en segundo plano, esperando el panel; aprobación sin nueva llamada al stub; rechazo que elimina el texto); el invitado nunca ve el texto extraído (FR-016).
+- [ ] T048 [P] [US2] Ampliar `test/e2e/routes-guard.spec.ts` y `test/unit/endpoint-guards.spec.ts` con `GET` y `POST /api/submissions/:id/files/:fileId/text`: sin sesión → 401 y rol sin permiso → 403.
+
+### Implementation for User Story 2
+
+- [ ] T049 [US2] Agregar `readSubmissionImages(submissionId, { concurrency: 4, budgetMs?: 240_000 })` a `server/utils/image-text.ts` (research A6): pool mínimo con `Promise` nativas (índice compartido y 4 trabajadores `async`), `AbortSignal.timeout(budgetMs)` compartido combinado con el de cada lectura (30 s) vía `AbortSignal.any`, `maxRetries: 1`, `hitRateLimit` `guest-text:<senderKey>` (20/h) antes de cada lectura; cada trabajador reclama su fila (`claimImageText`) justo antes de leerla, nunca todas al inicio, así las imágenes en cola siguen en `NULL`; las no iniciadas quedan en `NULL`, las abortadas en `failed`/`timeout`; nunca lanza. Al guardar el resultado en `guest_submission_files`, actualizar también `files` si existe una fila con el mismo id en `reading` y el mismo `text_started_at` (aprobado durante la lectura).
+- [ ] T050 [US2] En `server/api/public/submissions/index.post.ts`, aceptar `withTextSource?: boolean` por archivo (ampliar `shared/validation/submissions.ts`) y devolver `textSourceUploadUrl` (PUT prefirmado a `textSourceKeyFor(fileId)`, `image/jpeg`) solo para HEIC apta.
+- [ ] T051 [US2] En `server/api/public/submissions/[id]/complete.post.ts`, tras aceptar o rechazar cada archivo como hoy, llamar `checkTextSourceCopy('guest_submission_files', fileId)` para las HEIC aptas y, si queda alguna imagen apta, programar `runInBackground(() => readSubmissionImages(submissionId, { concurrency: 4 }))`; responder de inmediato con la misma respuesta de hoy, sin esperar las lecturas; ningún fallo de lectura cambia el código ni el cuerpo de la respuesta (FR-004, FR-009).
+- [ ] T052 [US2] En `server/utils/submissions.ts` (`toSubmission`/`listSubmissions`), añadir `text: ImageText | null` a cada `SubmissionFile` (`null` si no es imagen) con las columnas `text_*` del mismo `SELECT`; actualizar `SubmissionFile` en `shared/types/api.ts`.
+- [ ] T053 [US2] Crear `server/api/submissions/[id]/files/[fileId]/text.post.ts` y `text.get.ts` (GET: `requireRole(event, 'editor')`, 404 si el envío o el archivo no existen, responde `toImageText`). Para el POST: `requireRole(event, 'editor')`, `paramId` para ambos, cuerpo `{ force?: boolean }` con el validador de T036; 404 si el envío o el archivo no existen; 409 si `guest_submissions.status` no es `pending`; mismas reglas de reclamación/lectura que `POST /api/files/:id/text` sobre `guest_submission_files`.
+- [ ] T054 [US2] En `server/api/submissions/[id]/approve.post.ts`, ampliar el `INSERT INTO files … SELECT` para copiar `text_status`, `text_content`, `text_error`, `text_attempts`, `text_started_at`, `text_read_at` y `text_source_key` (FR-010: no se vuelve a leer).
+- [ ] T055 [US2] En `server/api/submissions/[id]/reject.post.ts` y en el borrado de envíos caducados y subidas huérfanas de invitados de `server/api/cron/cleanup.get.ts`, incluir `text_source_key` en las claves a borrar y, para subidas nunca completadas, `textsrc/<id>.jpg` derivada del id.
+- [ ] T056 [US2] En `app/composables/useGuestSubmission.ts`, por cada archivo enviar `withTextSource: true` para cada HEIC apta en `POST /api/public/submissions` y ejecutar `makeTextSourceCopy` en paralelo con la subida del original y subir la copia a `textSourceUploadUrl` con `content-type: image/jpeg` tras el original (fallo ignorado). El flujo de `complete` y el estado del botón no cambian.
+- [ ] T057 [US2] En `app/pages/enviar.vue`, mostrar junto al selector de archivos el aviso `messages.imageText.guestNotice` con `text-base-content/70` (FR-011). El botón Enviar conserva su copy y sus estados actuales.
+- [ ] T058 [US2] En `app/components/guests/SubmissionCard.vue`, bajo cada miniatura de imagen, `<LazyImageTextPanel :endpoint="`/api/submissions/${sid}/files/${fid}/text`" :initial="file.text" auto-read :editable="false" compact />`. El comportamiento con `initial` (incluido el polling mientras la lectura en segundo plano sigue en `reading`) y el modo `compact` ya los define el panel fundacional (T027–T028); aquí solo se integra.
+
+**Checkpoint**: US1 y US2 funcionan. DoD de AGENTS.md: typecheck, `test:unit`, `test:nuxt`, `test:e2e` (guest-queue + routes-guard) y verificación en navegador de los escenarios 9–11 del quickstart a 360 px y ≥ 1280 px, en ambos temas.
+
+---
+
+## Phase 5: User Story 3 — Corregir y buscar por el texto extraído (Priority: P3)
+
+**Goal**: Un editor corrige el texto extraído (queda "editado por X" y se registra en Actividad), volver a leer una corrección pide confirmación, y la búsqueda encuentra imágenes por su texto ya leído (incluidas las recién subidas en cuanto termina su lectura en segundo plano).
+
+**Independent Test**: Un editor corrige una palabra del texto de una nota y guarda (toast, insignia "editado", entrada `file.text_edit` en Actividad); al pulsar "Volver a leer" se le pide confirmación; al buscar la palabra corregida en la barra superior encuentra la imagen con la insignia "En el texto"; tras enviarla a la papelera ya no aparece.
+
+### Tests for User Story 3 ⚠️
+
+- [ ] T059 [P] [US3] Tests unitarios del validador en `test/unit/validation-image-text.spec.ts`: el cuerpo de `PATCH` `{ text: string }` acepta 1–10 000 caracteres tras `trim` y rechaza vacío, solo espacios, 10 001 caracteres y tipos no string; `{ force?: boolean }` de T036.
+- [ ] T060 [P] [US3] Tests unitarios de `PATCH /api/files/:id/text` en `test/unit/api-image-text.spec.ts`: 401/403; 404 si no existe o no es visible; 409 si el estado es `reading` o `unavailable`; 422 si la validación falla; éxito → `status: 'ready'`, `editedAt`/`editedBy` llenos, y en el mismo `db.batch` `activityInsert(user, 'file.text_edit', file, { length })` sin el texto; editar desde `failed` y desde `NULL` → `ready` con `text_error = NULL`.
+- [ ] T061 [P] [US3] Tests unitarios de la búsqueda en `test/unit/api-files.spec.ts`: `GET /api/files/search` encuentra por `files.text_content ILIKE $q` con el mismo patrón escapado, devuelve `matchedIn: 'name' | 'text'`, excluye papelera y pendientes, y mantiene filtros, orden y cursor. Tests de `app/utils/activity-labels.ts` para `file.text_edit`.
+- [ ] T062 [P] [US3] Tests de componente en `test/nuxt/ImageTextPanel.spec.ts`: editar (textarea con etiqueta "Texto de la imagen", contador `n / 10 000`, Guardar → `PATCH` + toast `messages.imageText.saved`, Cancelar, foco de vuelta en "Editar"); insignia `editedBy`; "Volver a leer" con `editedAt` no nulo pasa por `useConfirm`/`ConfirmDialog` y solo lee al confirmar. En `test/nuxt/pages-files.spec.ts`: la insignia "En el texto" con `matchedIn === 'text'` y la nota `messages.imageText.searchHint` en el estado vacío con `q` activo.
+- [ ] T063 [P] [US3] E2E en `test/e2e/image-text.spec.ts`: escenarios 7 y 12 del quickstart (editar y confirmación al volver a leer, entrada en Actividad; búsqueda por texto con insignia, incluida una imagen recién subida cuya lectura de segundo plano acaba de terminar, y exclusión tras la papelera). Ampliar `test/e2e/routes-guard.spec.ts` y `test/unit/endpoint-guards.spec.ts` con `PATCH /api/files/:id/text` (sin sesión → 401, rol sin permiso → 403). Ampliar `test/e2e/performance.spec.ts` con la búsqueda por texto: sembrar 5 000 archivos en la rama de pruebas (ampliar `seedFiles` en `test/e2e/setup/fixtures.ts` para aceptar `textContent`) y comprobar que `GET /api/files/search?q=<palabra del texto>` responde en < 2 s (SC-006).
+
+### Implementation for User Story 3
+
+- [ ] T064 [P] [US3] Completar `shared/validation/image-text.ts` con el validador del cuerpo de `PATCH` `{ text: string }` (1–10 000 caracteres tras `trim`, mensaje en español), en el mismo estilo que `shared/validation/comments.ts`.
+- [ ] T065 [US3] Crear `server/api/files/[id]/text.patch.ts` (contracts/api): `requireRole(event, 'editor')`, `paramId`, `readValid`; 404 si no existe o no es visible; 409 si `reading` o `unavailable`; en un mismo `db.batch` `UPDATE files SET text_status = 'ready', text_content, text_error = NULL, text_edited_by, text_edited_at = now()` y `activityInsert(user, 'file.text_edit', file, { length })`; responde `toImageText`.
+- [ ] T066 [P] [US3] Agregar la etiqueta de `file.text_edit` ("corrigió el texto de la imagen") en `app/utils/activity-labels.ts`.
+- [ ] T067 [US3] En `app/composables/useImageText.ts` implementar `save(text)` (`PATCH`, toast `messages.imageText.saved`) y, en `app/components/files/ImageTextPanel.vue`, el modo edición (textarea etiquetado, contador `n / 10 000`, Guardar/Cancelar, foco de vuelta en "Editar"), la insignia `messages.imageText.editedBy(name)` y la confirmación con `useConfirm` → `ConfirmDialog` (`messages.imageText.confirmReread`) antes de "Volver a leer" cuando `editedAt` no es nulo.
+- [ ] T068 [US3] En `server/api/files/search.get.ts`, cambiar la coincidencia a `files.name ILIKE $q OR files.text_content ILIKE $q` sobre el mismo patrón escapado y devolver `matchedIn: 'name' | 'text'` por resultado (sin cambiar filtros, orden ni cursor); añadir `matchedIn` al tipo del resultado en `shared/types/api.ts`.
+- [ ] T069 [US3] En `app/components/files/FileExplorer.vue` (la fila de `FileList.vue` y la tarjeta `FileCard.vue` que usa `FileGrid.vue`), mostrar la insignia `badge` "En el texto" cuando `matchedIn === 'text'` y, con `q` activo, añadir al estado vacío la nota `messages.imageText.searchHint` (solo se busca en el texto de las imágenes que ya se leyeron: no en las que se están leyendo, las no aptas ni las subidas antes de la feature que nadie ha abierto, FR-015).
+
+**Checkpoint**: Las tres historias funcionan. DoD de AGENTS.md: typecheck, `test:unit`, `test:nuxt`, `test:e2e` y verificación en navegador de los escenarios 7 y 12 a 360 px y ≥ 1280 px, en ambos temas.
+
+---
+
+## Phase 6: Polish & Cross-Cutting Concerns
+
+**Purpose**: Presupuestos, cobertura, calidad real del texto y preparación del despliegue.
+
+- [ ] T070 [P] Ejecutar `bun run analyze` y confirmar en `.sonda/` que `heic-to` sigue en un chunk dinámico fuera del JS inicial de toda ruta, que `ImageTextPanel` no rompe los 200 KB gzip por ruta y que `@vercel/functions` solo aparece en el bundle del servidor; anotar el resultado en `specs/002-note-text-extraction/quickstart.md` §6. Medir con Lighthouse (móvil, 4G) el CLS de `/archivos/ver/:id` con una imagen y anotarlo.
+- [ ] T071 [P] Mencionar en `README.md` la licencia LGPL-3.0 de `heic-to` (usada sin modificar, cargada como módulo aparte), según el plan ("Riesgos").
+- [ ] T072 Ejecutar `bun run test:coverage` y cubrir lo que falte hasta el umbral del 92 % (statements, branches, functions, lines) incluyendo `server/ai/**`, `server/utils/image-text.ts`, `server/utils/background.ts` y `shared/constants/image-text.ts`; nunca debilitar un test ni el umbral.
+- [ ] T073 Revisión de accesibilidad del panel y de los cambios de UI (skill `accessibility`): `aria-live`, nombres accesibles, foco visible, navegación con teclado, `motion-reduce` y contraste AA en `cloudy` y `cloudy-light` (sin `text-warning` sobre `base-100` claro).
+- [ ] T074 Ejecutar la batería completa (`bun run typecheck`, `bun run build`, `bun run test:unit`, `bun run test:nuxt`, `bun run test:e2e`, `bun run test:coverage`) y recorrer en navegador todos los escenarios del quickstart §4 a 360 px y ≥ 1280 px, en ambos temas, con datos de desarrollo y OpenAI real; reportar resultados y anotar los datos de QA creados para que la persona los limpie.
+- [ ] T075 Medir la calidad real (SC-002, quickstart §5) con 20 fotos reales sin datos sensibles: ≥ 95 % de palabras correctas, ninguna "Skykids" y las imágenes sin texto marcadas como vacías; registrar también el tiempo desde que termina la subida hasta `ready` de cada foto (objetivo: 90 % por debajo de 30 s, SC-001); anotar en `specs/002-note-text-extraction/quickstart.md` §6. Si no se cumple, ajustar solo `IMAGE_EXTRACTION_INSTRUCTION` en `server/ai/openai.ts` y repetir.
+- [ ] T076 Preparar el despliegue: en Vercel, definir `NUXT_OPENAI_APIKEY`, `NUXT_OPENAI_ORG` y `NUXT_OPENAI_PROJ` por entorno (sin `NUXT_OPENAI_BASE_URL`); aplicar la migración con `bun run db:migrate:prod` (la ejecuta la persona); verificar en la vista previa que `.vercel/output/functions/__nitro.func/.vc-config.json` declara runtime Node (plan, "Riesgos"); comprobar en el despliegue de vista previa que una lectura en segundo plano termina: subir `nota.jpg`, esperar sin abrir la vista previa y confirmar (`GET /api/files/:id/text`) que el texto está en `ready`; confirmar que Fluid Compute está activado en los ajustes del proyecto de Vercel (si no, lo activa la persona); en el despliegue de vista previa, enviar como invitado un envío con varias imágenes y confirmar que todas llegan a `ready` sin abrir Pendientes.
+
+---
+
+## Dependencies & Execution Order
+
+### Phase Dependencies
+
+- **Setup (Phase 1)**: sin dependencias. T001 primero.
+- **Foundational (Phase 2)**: depende de Setup. **Bloquea todas las historias.**
+- **US1 (Phase 3)**: depende de Foundational. Es el MVP.
+- **US2 (Phase 4)**: depende solo de Foundational; su lado servidor y su cliente pueden empezar en paralelo con US1.
+- **US3 (Phase 5)**: depende de Foundational (incluido el panel de solo lectura, T027–T028) y de los endpoints de US1 (T035–T036). La búsqueda (T068–T069) no depende de US1 y puede empezar antes.
+- **Polish (Phase 6)**: depende de las historias que se vayan a liberar.
+
+### Dependencias clave dentro de las fases
+
+- T004 → T010, T020 (dependencia instalada antes de `background.ts`).
+- T014 → T007, T018, T022, T024 (constantes compartidas).
+- T016 → T017 → T022 (esquema y migración antes de la orquestación).
+- T018 → T019 → T022 (esquemas → llamada al modelo → orquestación).
+- T020 → T022 (segundo plano antes de la orquestación); T020 → T038, T051.
+- T021 → T022, T037, T039, T050.
+- T022 → T023 → tests de endpoints (T029, T030, T044, T060).
+- T036 (validador `{ force }`) → T053, T064.
+- T014, T015, T025 → T027 → T028 → T042, T058, T067 (el panel es fundacional).
+- T049 → T051.
+
+### Parallel Opportunities
+
+- Setup: T003, T004, T005, T006 en paralelo tras T001–T002.
+- Foundational: T007–T013 (tests) en paralelo; T014, T015, T018, T020, T024, T025, T026 en paralelo; T027 → T028 al final (no son [P]).
+- US1: T029–T034 (tests) en paralelo; T035 en paralelo con T037–T040.
+- US2: T043–T048 (tests) en paralelo; servidor (T049–T055) en paralelo con cliente (T056–T058) una vez existan los tipos.
+- US3: T059–T063 en paralelo; T064 y T066 en paralelo; T068–T069 en paralelo con T065–T067.
+
+---
+
+## Parallel Example: User Story 1
+
+```text
+# Tests de US1 a la vez (todos fallan primero):
+T029 test/unit/api-image-text.spec.ts
+T030 test/unit/api-files.spec.ts (copia HEIC y lectura en segundo plano al completar)
+T031 test/unit/api-trash.spec.ts + api-cron.spec.ts
+T032 test/nuxt/useUploader.spec.ts + UploadQueue.spec.ts
+T033 test/e2e/image-text.spec.ts
+T034 test/e2e/routes-guard.spec.ts
+
+# Implementación en dos frentes:
+Servidor: T035 text.get.ts → T036 text.post.ts · T037 → T038 complete (runInBackground) · T039–T040 purga y cron
+Cliente:  T041 useUploader · T042 vista previa (usa el `ImageTextPanel` fundacional, T028)
+```
+
+## Parallel Example: User Story 2
+
+```text
+Servidor: T049 readSubmissionImages → T051 complete (runInBackground) · T050 · T052 · T053 · T054 · T055
+Cliente:  T056 useGuestSubmission → T057 enviar.vue · T058 SubmissionCard
+```
+
+## Parallel Example: User Story 3
+
+```text
+Corrección: T064 validador → T065 text.patch.ts · T066 etiqueta · T067 panel en modo edición
+Búsqueda:   T068 search.get.ts → T069 FileExplorer
+```
+
+---
+
+## Implementation Strategy
+
+### MVP First (User Story 1 Only)
+
+1. Phase 1: Setup.
+2. Phase 2: Foundational (bloquea todo).
+3. Phase 3: US1.
+4. **Parar y validar**: Independent Test de US1 con OpenAI real, DoD completo.
+5. Se puede liberar: el equipo ya tiene el texto de sus notas leído en cuanto termina la subida.
+
+### Incremental Delivery
+
+1. Setup + Foundational → base lista.
+2. US1 → validar → liberar (MVP).
+3. US2 → validar → liberar: los envíos de invitados llegan leídos a Pendientes.
+4. US3 → validar → liberar: corrección manual y búsqueda por texto.
+5. Polish → presupuestos, cobertura, SC-002 y despliegue.
+
+### Notes
+
+- Commits con Conventional Commits por tarea o grupo lógico (`feat(image-text): …`, `test(image-text): …`).
+- Nada destructivo lo ejecuta un agente: las migraciones solo agregan; cualquier limpieza de datos de QA se entrega como comando a la persona.
+- Cada fase termina con la definición de hecho de AGENTS.md; los pasos omitidos se reportan con su motivo.

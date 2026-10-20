@@ -9,8 +9,9 @@
 Cloudy lee el texto de las imágenes JPEG/JPG, PNG y HEIC de hasta 5 MB. Así el equipo deja de transcribir a
 mano las notas adhesivas y las peticiones de oración.
 
-**Cuándo se lee**:
-- **Imágenes del equipo**: la primera vez que alguien abre su vista previa.
+**Cuándo se lee** (siempre en segundo plano, sin retrasar ninguna respuesta):
+- **Imágenes del equipo**: en cuanto termina la subida. Al abrir la vista previa el texto ya está, o se ve
+  "Leyendo texto…" hasta que termine. Una imagen que quedó sin leer se lee al abrirla, como respaldo.
 - **Imágenes de invitados**: al recibir el envío, para que el texto ya esté en Pendientes.
 
 El texto se guarda con el archivo y se puede copiar, corregir, volver a leer y buscar.
@@ -18,13 +19,16 @@ El texto se guarda con el archivo y se puede copiar, corregir, volver a leer y b
 **Enfoque técnico**:
 - **IA**: AI SDK v7 (`generateText` + `Output.object`) con OpenAI **gpt-4o**, aislado en `server/ai/`. La entrada
   y la salida se validan con **Zod**.
-- **Imagen**: el servidor descarga la imagen de Neon Object Storage (≤ 5 MB). Las HEIC se convierten a JPEG
-  **en el navegador al subir** con `heic-to`, que solo funciona en navegador; esa copia se sube con PUT prefirmado,
-  como las miniaturas, y es la que se lee.
+- **Segundo plano**: `waitUntil` de `@vercel/functions`, encapsulado en `server/utils/background.ts`
+  (`runInBackground`), porque `event.waitUntil` de Nitro no está conectado en el preset de Vercel para Node.
+- **Imagen**: el servidor descarga la imagen de Neon Object Storage (≤ 5 MB) y envía los bytes al modelo tal
+  como están guardados, sin procesarlos. Las HEIC se convierten a JPEG **en el navegador al subir** con
+  `heic-to`, que solo funciona en el navegador; esa copia se sube con PUT prefirmado, como las miniaturas, y es
+  la que se lee.
 - **Estado**: el texto vive en columnas `text_*` de `files` y `guest_submission_files`, así que hereda papelera,
   aprobación, rechazo y caducidad sin código extra. Una reclamación atómica evita lecturas duplicadas.
-- **Invitados**: la lectura ocurre **dentro de la petición que confirma el envío**, con 4 lecturas a la vez y un
-  tope de 40 s, sin bibliotecas de segundo plano. Lo que quede pendiente se lee al abrir Pendientes.
+- **Invitados**: la confirmación responde de inmediato; la lectura corre en segundo plano con 4 lecturas a la
+  vez y un presupuesto total de 240 s. Lo que quede pendiente se lee al abrir Pendientes.
 - **Búsqueda**: se extiende con un índice trigram sobre el texto.
 
 ## Technical Context
@@ -34,8 +38,8 @@ El texto se guarda con el archivo y se puede copiar, corregir, volver a leer y b
 **Primary Dependencies**:
 - **Ya declaradas por el usuario**: `ai@^7.0.145`, `@ai-sdk/openai@^4.0.97`, `zod@^4.6.7`, `heic-to@^1.6.6`
   (solo navegador, carga bajo demanda).
-- **A agregar**: ninguna. Por directiva del usuario, no se agrega ninguna biblioteca de segundo plano o de
-  concurrencia (como `@vercel/functions`).
+- **A agregar** (justificada en Complexity Tracking): `@vercel/functions` (`waitUntil`, solo desde
+  `server/utils/background.ts`).
 - **Reutilizadas**: `storage.ts` (`head`, `readRange`), `file-signature.ts`, `rate-limit.ts`, `activity.ts`,
   `session.ts` (`requireRole`), `validation.ts`, `useApiFetch`, `useToast`, `useConfirm`, `useClipboard`,
   `useIntervalFn`, y los componentes `SkeletonList`, `EmptyState`, `ErrorState` y `ConfirmDialog`.
@@ -59,19 +63,27 @@ se mide a mano según el quickstart §5.
 - Búsqueda < 2 s con 5 000 archivos (SC-006).
 - Panel cargado con `Lazy*` y `heic-to` (~3 MB) con `import()` dinámico solo al elegir una HEIC: sin impacto en
   el JS inicial de ninguna ruta (presupuesto de 200 KB, verificado con `bun run analyze`).
-- Confirmación de un envío de invitado: como máximo 40 s extra (típico 5–15 s con 1–3 fotos).
+- La subida del equipo y la confirmación de un envío de invitado no tardan más: la lectura se programa tras
+  responder y nunca se espera (SC-004).
 
 **Constraints**:
-- **Lectura**: máximo 45 s por lectura del equipo (`timeout` 30 s + 1 reintento con un tope duro); en el envío
-  de invitados, 30 s por lectura sin reintento y un tope total de 40 s. El estado `reading` vence a los 90 s.
-- **Sin segundo plano**: toda lectura termina dentro de la petición que la inicia.
-- **Duración en Vercel**: el máximo por defecto es 300 s, así que no se toca `maxDuration`.
+- **Lectura**: máximo 45 s por lectura (`timeout` 30 s + 1 reintento con un tope duro). Las lecturas de un
+  envío de invitado comparten además un presupuesto total de 240 s. El estado `reading` vence a los 90 s, lo que
+  cubre también una tarea de segundo plano que la plataforma detuvo.
+- **Segundo plano**: solo con `runInBackground` (`server/utils/background.ts`), único módulo que importa
+  `@vercel/functions`. Una tarea no guarda estado en memoria entre peticiones: la reclamación y el resultado
+  viven en Postgres. Fuera de Vercel (dev, tests) `waitUntil` no tiene contexto de petición y la promesa corre
+  igual en el proceso de desarrollo; los tests unitarios simulan `runInBackground`.
+- **Duración en Vercel**: el trabajo en segundo plano está limitado por la duración máxima de la función (300 s
+  con fluid compute); el presupuesto de 240 s queda por debajo, así que no se toca `maxDuration`. El presupuesto
+  de 240 s y las lecturas de 45 s requieren **Fluid Compute** de Vercel (300 s de duración máxima, activado por
+  defecto en proyectos nuevos).
 - **Privacidad**: al proveedor solo se envían bytes de imagen (FR-019), nunca una URL prefirmada.
 - **Secretos**: `NUXT_OPENAI_*` solo en `runtimeConfig` del servidor.
 
 **Scale/Scope**:
 - Unos cientos de imágenes al mes; `guest-text` limitado a 20 lecturas/h por remitente.
-- 4 endpoints nuevos y unos 10 modificados (subidas, envíos, aprobación, rechazo, búsqueda, cron).
+- 5 endpoints nuevos y unos 10 modificados (subidas, envíos, aprobación, rechazo, búsqueda, cron).
 - En cliente: 1 composable y 1 util nuevos, 2 composables y 4 pantallas tocadas.
 - 3 historias.
 
@@ -89,8 +101,8 @@ Evaluado contra la constitución **v1.0.0**.
 | **IV. Calidad de código** | ✅ | Ver el detalle bajo la tabla. |
 | **V. Pruebas** | ✅ | Ver el detalle bajo la tabla. |
 | **VI. Consistencia de UX** | ✅ | Seis estados mapeados a `SkeletonList`, `EmptyState`, `ErrorState` y contenido (contracts/ui). Toasts al copiar y guardar; `ConfirmDialog` antes de reemplazar una corrección. Copy en `messages.imageText`; `serverMessage()` para los errores HTTP. Icono lucide `scan-text`; `aria-live` y foco gestionado. |
-| **Restricciones técnicas** | ✅ | Sin estado en memoria: la reclamación vive en Postgres y el limitador también. Migración Drizzle con SQL manual para CHECK e índice. Secretos `NUXT_OPENAI_*`. Al proveedor no van datos del invitado. |
-| **Flujo y gates** | ✅ | Rama `002-note-text-extraction` ya creada. Conventional Commits. DoD de AGENTS.md por fase (typecheck → tests → navegador). |
+| **Restricciones técnicas** | ✅ | Sin estado en memoria: la reclamación y el limitador viven en Postgres, y las tareas en segundo plano (`waitUntil`) no comparten nada entre peticiones; solo alargan la vida de la invocación dentro de su duración máxima. Migración Drizzle con SQL manual para CHECK e índice. Secretos `NUXT_OPENAI_*`. Al proveedor no van datos del invitado. |
+| **Flujo y gates** | ✅ | Rama `002-note-text-extraction` (se crea en T001). Conventional Commits. DoD de AGENTS.md por fase (typecheck → tests → navegador). |
 
 **Detalle de los principios I, II, IV y V**:
 
@@ -99,6 +111,8 @@ Evaluado contra la constitución **v1.0.0**.
     Pendientes y su endpoint solo pide por id.
   - Panel `Lazy*`; `heic-to` en un chunk dinámico que solo se descarga al elegir una HEIC.
   - La copia JPEG sube directo al bucket con PUT prefirmado, sin pasar por el servidor.
+  - La lectura nunca retrasa una respuesta: `complete` (equipo e invitados) programa la lectura con
+    `runInBackground` y responde como hoy.
   - ⚠ El servidor lee hasta 5 MB del bucket para enviarlos al modelo. No es un binario del usuario a través del
     cuerpo HTTP; está justificado en Complexity Tracking.
 - **II. Funcional y efectivo**:
@@ -108,11 +122,14 @@ Evaluado contra la constitución **v1.0.0**.
   - Las columnas en la fila evitan huérfanos; la copia `textsrc/<id>.jpg` se borra en los mismos puntos que la
     miniatura (data-model).
   - Una lectura fallida nunca hace fallar subir, enviar ni aprobar (FR-004); una conversión HEIC fallida nunca
-    impide la subida (FR-023).
-  - Sin dependencias nuevas: las ya instaladas por el usuario se justifican abajo.
+    impide la subida (FR-023). Una tarea de segundo plano que no termina deja la fila en `reading`, que vence a
+    los 90 s y se muestra como error con Reintentar: nunca queda "leyendo" para siempre.
+  - Una dependencia nueva (`@vercel/functions`) y las ya instaladas por el usuario se justifican abajo.
 - **IV. Calidad de código**:
   - `server/ai/` es la única frontera con el proveedor de IA (research A10), y `server/utils/image-text.ts` la
     única orquestación.
+  - `server/utils/background.ts` es el único módulo que importa `@vercel/functions`, con la misma regla que
+    auth y storage.
   - Las reglas compartidas viven en `shared/constants/image-text.ts`.
   - `requireRole` en cada endpoint.
   - Zod limitado al flujo de IA (A3), sin `any`.
@@ -120,16 +137,21 @@ Evaluado contra la constitución **v1.0.0**.
 - **V. Pruebas**:
   - Unit para:
     - los esquemas y `extractImageText` (válido, sin texto, salida inválida, timeout, 429);
-    - la reclamación y las transiciones, y el pool con tope de 40 s (con temporizadores falsos);
-    - la validación de la copia en `complete`;
-    - los endpoints vía `installNitro`, que se amplía con `image-text`.
+    - `runInBackground` (ejecuta la tarea, registra y traga errores sin el texto; `@vercel/functions` simulado
+      con `vi.mock`);
+    - la reclamación y las transiciones, y el pool de invitados con presupuesto de 240 s (con temporizadores
+      falsos);
+    - la validación de la copia en `complete` y que `complete` programa la lectura sin esperarla
+      (`runInBackground` simulado);
+    - los endpoints vía `installNitro`, que se amplía con `image-text` y `background`.
   - Componente: `ImageTextPanel` en sus 6 estados; `makeTextSourceCopy` con `heic-to` simulado (éxito, > 5 MB →
     segunda calidad, error → `null`) y `useUploader` subiendo la copia.
-  - e2e por historia y por ruta nueva (sin sesión y rol incorrecto) contra el stub.
+  - e2e por historia y por ruta nueva (sin sesión y rol incorrecto) contra el stub. Como `complete` responde
+    antes de leer, las specs esperan el texto en el panel (que consulta mientras dura `reading`).
   - Cobertura ≥ 92 % incluyendo `server/ai/**`.
 
-**Resultado**: **PASS**. La única tensión con un principio (I, la lectura de ≤ 5 MB en el servidor) y las
-dependencias que instaló el usuario están justificadas en Complexity Tracking.
+**Resultado**: **PASS**. La única tensión con un principio (I, la lectura de ≤ 5 MB en el servidor), la
+dependencia nueva y las que instaló el usuario están justificadas en Complexity Tracking.
 
 ## Project Structure
 
@@ -158,14 +180,16 @@ server/
 │   ├── schemas.ts                       # Zod: imageSourceSchema · modelImageSchema · imageTextOutputSchema
 │   └── extract-image-text.ts            # extractImageText(): validar → modelo → validar → ImageTextResult
 ├── utils/image-text.ts                  # elegibilidad, reclamación, descarga, guardado, toImageText(),
-│                                        # readSubmissionImages() (pool de 4, tope 40 s), checkTextSourceCopy()
+│                                        # readFileImage(), readSubmissionImages() (pool de 4, presupuesto 240 s),
+│                                        # checkTextSourceCopy()
+├── utils/background.ts                  # runInBackground(): único import de @vercel/functions (waitUntil)
 ├── utils/uploads.ts · trash.ts          # textSourceKeyFor(id); borrar la copia en descarte y purga
 ├── db/schema.ts                         # enum image_text_status, columnas text_* (+ text_source_key), 'file.text_edit'
 ├── api/files/[id]/text.get.ts · text.post.ts · text.patch.ts
-├── api/submissions/[id]/files/[fileId]/text.post.ts
-├── api/uploads/index.post.ts · [fileId]/complete.post.ts   # + withTextSource / validar copia
+├── api/submissions/[id]/files/[fileId]/text.get.ts · text.post.ts
+├── api/uploads/index.post.ts · [fileId]/complete.post.ts   # + withTextSource / validar copia / runInBackground(readFileImage)
 ├── api/public/submissions/index.post.ts                    # + withTextSource por archivo
-├── api/public/submissions/[id]/complete.post.ts            # + validar copias + await readSubmissionImages()
+├── api/public/submissions/[id]/complete.post.ts            # + validar copias + runInBackground(readSubmissionImages)
 ├── api/submissions/[id]/approve.post.ts · reject.post.ts   # + copiar text_* / borrar copia
 ├── api/cron/cleanup.get.ts                                 # + borrar copias caducadas y huérfanas
 ├── api/submissions/index.get.ts (o utils/submissions.ts)  # + text en SubmissionFile
@@ -186,7 +210,7 @@ app/
 
 drizzle/000N_*.sql                       # generada + SQL manual (CHECK, índice trigram)
 test/
-├── unit/   ai-schemas · ai-extract · image-text · api-image-text · api-uploads · api-submissions · api-search · cron
+├── unit/   ai-schemas · ai-extract · background · image-text · api-image-text · api-uploads · api-submissions · api-search · cron
 ├── nuxt/   ImageTextPanel · heic-copy · UploadQueue (copia)
 ├── e2e/    image-text (US1, US3) · guest-queue (US2) · routes-guard (rutas nuevas)
 │   └── setup/openai-stub.ts             # stub de la Responses API (puerto local)
@@ -199,8 +223,10 @@ test/
   La conversión HEIC no vive aquí porque es de navegador (`app/utils/heic-copy.ts`).
   No es auto-importado, así que se importa explícitamente desde `server/utils/image-text.ts`, la única
   orquestación auto-importada que usan los endpoints.
+- **`server/utils/background.ts`**: un módulo para la dependencia externa (`@vercel/functions`), como `auth.ts`
+  y `storage.ts`.
 - **`shared/`**: solo recibe reglas y tipos que ve el cliente.
-- **Pruebas**: `test/unit/helpers/nitro.ts` se amplía con el nuevo util.
+- **Pruebas**: `test/unit/helpers/nitro.ts` se amplía con los nuevos utils.
 
 ## Cambios a la base existente
 
@@ -217,22 +243,25 @@ test/
 4. `AGENTS.md`:
    - Agregar el área "IA" a la tabla Stack (AI SDK v7 + OpenAI gpt-4o, en `server/ai/`).
    - Agregar `NUXT_OPENAI_*` a la lista de variables.
-   - Agregar el gotcha de `event.waitUntil`, que no está conectado en Vercel Node: el trabajo termina dentro de
-     la petición y no se usan bibliotecas de segundo plano.
+   - Agregar el gotcha "`event.waitUntil` de Nitro no está conectado en Vercel Node: el trabajo en segundo
+     plano usa `waitUntil` de `@vercel/functions`, solo a través de `server/utils/background.ts`".
    - Agregar el gotcha de que `heic-to` solo funciona en navegador y se carga con `import()` dinámico.
-   - Agregar la regla "Neon Auth, storage **e IA** solo a través de sus módulos".
+   - Agregar la regla "Neon Auth, storage, IA **y segundo plano** solo a través de sus módulos".
    - Marcar 002 como feature activa.
-5. `test/unit/helpers/nitro.ts`: registrar las funciones de `image-text.ts` en la lista de stubs.
+5. `package.json`: `bun add @vercel/functions`.
+6. `test/unit/helpers/nitro.ts`: registrar las funciones de `image-text.ts` y `runInBackground` en la lista de
+   stubs.
 
 ## Riesgos y mitigaciones
 
 | Riesgo | Mitigación |
 |--------|-----------|
-| El tope de 40 s deja imágenes de invitado sin leer | Quedan en `NULL` o `failed`/`timeout`; la tarjeta de Pendientes las vuelve a pedir (A6) |
-| El invitado cierra la página durante la espera de `complete` | El servidor termina la petición igual (el envío ya quedó completo antes de leer); el invitado puede no ver su confirmación, pero el envío llega a Pendientes |
+| El presupuesto de 240 s deja imágenes de invitado sin leer | Quedan en `NULL` o `failed`/`timeout`; la tarjeta de Pendientes lee las `pending` y las `failed` esperan el Reintentar del usuario (A6) |
+| La plataforma detiene una tarea de segundo plano (duración máxima, error de la invocación) | La fila queda en `reading` y vence a los 90 s: la UI la muestra como error con Reintentar y la siguiente reclamación la toma; el panel y la tarjeta de Pendientes leen las `pending` (A6) |
 | `heic-to` pesa ~3 MB y la decodificación es lenta en teléfonos modestos | Chunk dinámico solo al elegir una HEIC; estado "Preparando…" en la cola; si falla, la foto se sube igual, sin copia (`unavailable`) |
 | Licencia LGPL-3.0 de `heic-to` | Se usa sin modificar, como módulo cargado aparte; se menciona en el README del proyecto |
 | OpenAI cambia o ignora el formato estricto | Segunda pasada de `safeParse` con Zod; si falla → `failed`/`invalid_output`, nunca se muestra (SC-007) |
+| Un lote grande de fotos del equipo programa una lectura simultánea por archivo y OpenAI puede responder 429 (`rate_limited`) | `maxRetries: 1` con el retroceso del SDK y, si falla, Reintentar manual; sin tope de concurrencia por ahora (unos cientos de imágenes al mes) |
 | Costo por abuso de invitados | `guest-text` con 20/h por remitente, más los límites de envíos ya existentes |
 | Texto sensible (peticiones de oración) | Mismos permisos que el archivo (FR-016); no se guarda en la actividad (solo la longitud); no se registra en logs (solo id y código de error) |
 | La build con `bun --bun` fija el runtime `bun1.x` en Vercel | Verificar que `.vercel/output/functions/__nitro.func/.vc-config.json` diga Node en la vista previa |
@@ -243,8 +272,8 @@ test/
 |---------------------|----------------------|-----------------------------------------|
 | Servicio externo OpenAI + `ai` + `@ai-sdk/openai` | La spec exige leer texto manuscrito; no hay OCR local capaz de manuscritos con esta calidad. El usuario fijó el proveedor, el modelo y el SDK | OCR local (`tesseract.js`, ~10 MB de WASM) no lee bien letra a mano ni omite el logotipo |
 | `zod` | Directiva explícita del usuario para la entrada y la salida del flujo de IA. Además `Output.object` necesita un esquema que produzca JSON Schema | Los validadores propios de `shared/validation` no generan JSON Schema; se mantienen para HTTP |
-| `heic-to` (instalada por el usuario, solo navegador, ~3 MB, LGPL-3.0) | El modelo no acepta HEIC, que es el formato por defecto de las fotos de iPhone; el usuario eligió esta biblioteca | Convertir en el servidor: `heic-to` no corre en Node y `sharp` no decodifica HEVC. Mitigación del peso: `import()` dinámico solo al elegir una HEIC |
-| Lectura de invitados dentro de `complete` (hasta 40 s más) | Leer "al recibir" sin bibliotecas de segundo plano, por directiva del usuario; `event.waitUntil` de Nitro no está conectado en Vercel Node | `@vercel/functions` (prohibida por el usuario); leer solo al abrir Pendientes (descartado por el usuario); cola o cron externo (otro servicio) |
+| `heic-to` (instalada por el usuario, solo navegador, ~3 MB, LGPL-3.0) | El modelo no acepta HEIC, que es el formato por defecto de las fotos de iPhone; el usuario eligió esta biblioteca | Convertir en el servidor: `heic-to` no corre en Node y el servidor no procesa imágenes (research A4). Mitigación del peso: `import()` dinámico solo al elegir una HEIC |
+| `@vercel/functions` (`waitUntil`), solo desde `server/utils/background.ts` | Leer al subir (equipo) y al recibir (invitados) sin retrasar ninguna respuesta; `event.waitUntil` de Nitro no está conectado en Vercel Node | Leer dentro de la petición: retrasa la confirmación del invitado hasta 40 s y deja al equipo sin texto hasta abrir cada imagen. Cron: Vercel Hobby no permite cada minuto y la latencia no cumple SC-001. Cola externa: otro servicio (Constitución II) |
 | Lectura servidor → bucket de ≤ 5 MB (Constitución I) | El modelo necesita los bytes; con bytes se revalida la firma | Una URL prefirmada para OpenAI expone el objeto privado a un tercero |
 
 ## Siguientes pasos

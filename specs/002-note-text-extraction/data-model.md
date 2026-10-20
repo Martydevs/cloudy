@@ -27,6 +27,7 @@ image_text_status: reading | ready | empty | failed | unavailable
   feature no necesitan backfill (FR-001b).
 - Los archivos que no son imágenes también quedan en `NULL`, pero la UI no muestra panel para ellos
   (`category <> 'image'`).
+- `text_status` es independiente de `files.status` (`upload_status`: `uploading`/`ready`) y de `guest_submissions.status` (`pending`…). En código y tests se nombra siempre la columna completa.
 
 ## Cambios en tablas
 
@@ -39,7 +40,7 @@ image_text_status: reading | ready | empty | failed | unavailable
 | `text_error` | `text` | sí | Código interno: `timeout`, `provider`, `rate_limited`, `invalid_input`, `invalid_output` |
 | `text_source_key` | `text` | sí | Solo HEIC: clave de la copia JPEG `textsrc/<id>.jpg` que subió el navegador (research A4). Se borra del bucket junto con el archivo |
 | `text_attempts` | `smallint` | no, default 0 | Se incrementa en cada reclamación |
-| `text_started_at` | `timestamptz` | sí | Momento de la reclamación; una lectura con más de 90 s se puede volver a reclamar (FR-007) |
+| `text_started_at` | `timestamptz` | sí | Momento de la reclamación; una lectura con más de 90 s se puede volver a reclamar (FR-007), incluida una tarea de segundo plano que la plataforma detuvo |
 | `text_read_at` | `timestamptz` | sí | Última lectura terminada |
 | `text_edited_by` | `uuid` → `profiles.user_id` ON DELETE SET NULL | sí | FR-014 |
 | `text_edited_at` | `timestamptz` | sí | FR-014; la UI muestra "editado" si no es nulo |
@@ -92,14 +93,15 @@ No se indexa `text_status`: solo se consulta por `id`, que es la clave primaria.
 | Desde | Acción | Hacia | Quién |
 |-------|--------|-------|-------|
 | — (subida HEIC sin copia válida) | completar la subida | `unavailable` | sistema |
-| `NULL` (no apta) | abrir o recibir | `unavailable` | sistema |
-| `NULL`, `reading` vencida | abrir (equipo) o recibir (invitado) | `reading` | sistema |
+| `NULL` (no apta) | completar la subida, recibir o abrir | `unavailable` | sistema |
+| `NULL` | completar la subida (equipo, en segundo plano) o recibir el envío (invitado, en segundo plano, hasta 4 a la vez) | `reading` | sistema |
+| `NULL` | abrir la vista previa o la tarjeta de Pendientes (respaldo: imagen sin leer) | `reading` | sistema |
 | `failed` | Reintentar | `reading` | admin/editor |
 | `ready`, `empty` | Volver a leer (con confirmación si `text_edited_at` no es nulo) | `reading` | admin/editor |
 | `reading` | resultado válido con texto | `ready` | sistema |
 | `reading` | `hasText: false` | `empty` | sistema |
 | `reading` | error, timeout o salida inválida | `failed` | sistema |
-| `ready`, `empty` | editar y guardar | `ready` (+ `text_edited_*`) | admin/editor |
+| `NULL`, `ready`, `empty`, `failed` | editar y guardar | `ready` (+ `text_edited_*`, `text_error = NULL`) | admin/editor |
 
 Al **volver a leer**, se limpian `text_edited_by` y `text_edited_at` porque la corrección manual se reemplaza.
 `unavailable` es terminal: no ofrece reintento, porque la elegibilidad depende del archivo y no cambia.
@@ -118,6 +120,9 @@ interface ImageText {
 }
 ```
 
+- Una fila en `reading` con `text_started_at` de más de 90 s se devuelve como `status: 'failed'`, `error: 'timeout'`
+  (FR-007), tanto si la lectura venció en una petición como si la tarea de segundo plano fue detenida. La fila no
+  cambia: la siguiente reclamación la toma por la regla de lectura vencida.
 - `SubmissionFile` gana `text: ImageText | null` (`null` si no es imagen).
 - `FileItem` no cambia: el texto se pide aparte para no inflar listados.
 - Los resultados de búsqueda ganan `matchedIn: 'name' | 'text'`.

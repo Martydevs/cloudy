@@ -13,39 +13,55 @@
 ### Session 2026-10-19
 
 - Q: ¿Qué imágenes se procesan? → A: Toda imagen apta para lectura (ver la aclaración de formatos y tamaño), sin que quien sube tenga que marcarla como nota.
-- Q: ¿Cuándo se pide la lectura del texto? → A: Las imágenes de invitados se leen al recibir el envío (el equipo ve el texto al revisar en Pendientes); las imágenes del equipo se leen la primera vez que alguien abre su vista previa. El resultado se guarda y se reutiliza en las siguientes aperturas.
+- Q: ¿Cuándo se pide la lectura del texto? → A: Las imágenes de invitados se leen al recibir el envío (el equipo ve el texto al revisar en Pendientes); las imágenes del equipo se leen la primera vez que alguien abre su vista previa. El resultado se guarda y se reutiliza en las siguientes aperturas. *(Reemplazada en la revisión de arquitectura.)*
 - Q: ¿Qué forma tiene la respuesta del servicio de lectura? → A: Un resultado estructurado (si hay texto y cuál es), validado contra un esquema Zod; no se interpreta una cadena especial como "[texto no reconocido]".
 - Q: ¿Qué pasa con HEIC (fotos de iPhone), que el servicio no lee directamente? → A: Se convierten a JPEG antes de leerlas; dónde se convierten se fija en la aclaración sobre la biblioteca de conversión.
 - Q: ¿Se mantiene la búsqueda por texto extraído aunque las imágenes del equipo se lean al abrirse? → A: Sí; la búsqueda solo encuentra por su texto las imágenes ya leídas, y la interfaz lo indica.
 - Directiva del usuario: dentro del flujo de extracción, la entrada (imagen, tipo, tamaño, archivo) y la salida del servicio se validan con esquemas Zod.
 - Q: ¿Los formatos JPEG/JPG/PNG/HEIC y el máximo de 5 MB limitan solo la lectura del texto o también lo que Cloudy acepta al subir? → A: Solo la lectura del texto: se leen únicamente imágenes JPEG/JPG, PNG o HEIC de hasta 5 MB (tamaño del archivo original). Cloudy sigue aceptando al subir todos los formatos y hasta 100 MB, como define la feature 001; WEBP, GIF e imágenes de más de 5 MB quedan como "No disponible para este archivo".
-- Directiva del usuario: la conversión HEIC usa la biblioteca `heic-to` (ya instalada) y no se agrega ninguna biblioteca de procesos en segundo plano o concurrentes (como `@vercel/functions`).
+- Directiva del usuario: la conversión HEIC usa la biblioteca `heic-to` (ya instalada) y no se agrega ninguna biblioteca de procesos en segundo plano o concurrentes (como `@vercel/functions`). *(Reemplazada en la revisión de arquitectura.)*
 - Q: `heic-to` solo funciona en el navegador; ¿dónde se convierte una HEIC a JPEG para leer su texto? → A: Al subir: el navegador de quien sube (equipo o invitado) convierte la HEIC y sube una copia JPEG junto al original, como ya se hace con las miniaturas; la lectura usa esa copia. Las HEIC subidas antes de esta feature, sin copia, quedan como "No disponible para este archivo".
-- Q: Sin una biblioteca de segundo plano, ¿cómo se leen las imágenes de invitados "al recibir el envío"? → A: Dentro de la misma petición de envío: el servidor lee hasta 4 imágenes a la vez antes de confirmar, con un tope total de unos 40 s; lo que quede sin leer o falle se lee cuando un revisor abre el envío en Pendientes.
+- Q: Sin una biblioteca de segundo plano, ¿cómo se leen las imágenes de invitados "al recibir el envío"? → A: Dentro de la misma petición de envío: el servidor lee hasta 4 imágenes a la vez antes de confirmar, con un tope total de unos 40 s; lo que quede sin leer o falle se lee cuando un revisor abre el envío en Pendientes. *(Reemplazada en la revisión de arquitectura.)*
+
+### Session 2026-10-19 (revisión de arquitectura)
+
+- Decisión del usuario: la lectura ocurre **en segundo plano** con `waitUntil` de `@vercel/functions`, que se
+  agrega como dependencia y se usa solo a través de un módulo propio (`server/utils/background.ts`). Queda sin
+  efecto la directiva anterior de no agregar bibliotecas de segundo plano.
+- Q: ¿Cuándo se leen las imágenes del equipo? → A: **Al terminar de subirse**, en segundo plano, sin retrasar la
+  respuesta de la subida. Al abrir la vista previa el texto ya está, o se ve "Leyendo texto…" hasta que termine.
+  Si una imagen quedó sin leer (subida antes de esta feature o lectura que nunca empezó), se lee al abrirla.
+- Q: ¿La confirmación del invitado espera a las lecturas? → A: No. El envío se confirma igual de rápido que
+  antes y las lecturas corren en segundo plano (hasta 4 a la vez); lo que no se lea se lee cuando un revisor
+  abre el envío en Pendientes.
+- Q: ¿Se mantiene la conversión HEIC en el navegador? → A: Sí, con `heic-to`, que solo funciona en el navegador.
+  El servidor no procesa imágenes: envía al servicio de lectura los bytes tal como están guardados (el original
+  JPEG/PNG o la copia JPEG de una HEIC).
 
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Texto extraído de las imágenes que sube el equipo (Priority: P1)
 
 Un editor o administrador sube a Cloudy la foto de una nota adhesiva (por ejemplo, las notas que deja el
-grupo de Skykids o una petición de oración escrita a mano). La primera vez que alguien del equipo abre la
-vista previa de esa imagen, la app lee su texto y lo muestra debajo o al lado de la imagen; desde entonces
-el texto queda guardado y aparece al instante. El equipo puede copiarlo y ve claramente si se está leyendo,
-si no se reconoció texto o si falló.
+grupo de Skykids o una petición de oración escrita a mano). En cuanto termina de subirse, la app lee su texto
+en segundo plano y lo guarda; al abrir la vista previa, el texto aparece debajo o al lado de la imagen (o
+"Leyendo texto…" durante unos segundos si la lectura aún no terminó). El equipo puede copiarlo y ve claramente
+si se está leyendo, si no se reconoció texto o si falló.
 
 **Why this priority**: es el núcleo de la feature. El equipo deja de transcribir notas a mano para usarlas
 en presentaciones, listas de oración o anuncios; sin esta historia no hay valor.
 
-**Independent Test**: un editor sube la foto de una nota adhesiva legible desde su teléfono, abre su vista
-previa, ve "Leyendo texto…" y, en menos de 30 segundos, el texto de la nota sin el logotipo de Skykids, en
-el orden original; lo copia con un botón. Al cerrar y volver a abrir la vista previa, el texto aparece al
-instante.
+**Independent Test**: un editor sube la foto de una nota adhesiva legible desde su teléfono; la subida termina
+igual de rápido que siempre. Abre su vista previa y ve el texto de la nota sin el logotipo de Skykids, en el
+orden original (o "Leyendo texto…" y el texto en menos de 30 segundos desde que terminó la subida); lo copia
+con un botón. Al cerrar y volver a abrir la vista previa, el texto aparece al instante.
 
 **Acceptance Scenarios**:
 
-1. **Given** una imagen del equipo cuyo texto aún no se ha leído, **When** un editor abre su vista previa,
-   **Then** ve "Leyendo texto…" y, sin recargar la página, el texto transcrito tal como está escrito, con sus
-   saltos de línea y nombres, sin el logotipo ni la palabra "Skykids" ni elementos decorativos.
+1. **Given** una imagen apta que un editor acaba de subir, **When** termina la subida, **Then** la app lee su
+   texto sin que el editor espere; al abrir la vista previa ve el texto transcrito tal como está escrito, con
+   sus saltos de línea y nombres, sin el logotipo ni la palabra "Skykids" ni elementos decorativos, o
+   "Leyendo texto…" que se reemplaza por el texto sin recargar la página.
 2. **Given** una imagen cuyo texto ya se leyó, **When** cualquier miembro del equipo abre su vista previa,
    **Then** el texto guardado aparece al instante, sin volver a leer la imagen.
 3. **Given** una imagen sin texto legible (por ejemplo, una foto del templo), **When** termina la lectura,
@@ -104,7 +120,8 @@ palabra en la búsqueda global encuentra la imagen.
    confirmación porque se reemplazará su corrección.
 3. **Given** imágenes con texto ya leído, **When** un usuario busca una palabra que aparece en el texto,
    **Then** los resultados incluyen esas imágenes e indican que la coincidencia está en su texto; las
-   imágenes del equipo que nadie ha abierto todavía no aparecen por su texto, y la búsqueda lo indica.
+   imágenes cuyo texto aún no se ha leído (se están leyendo, no son aptas o se subieron antes de esta feature
+   y nadie las ha abierto) no aparecen por su texto, y la búsqueda lo indica.
 4. **Given** una imagen en la papelera, **When** se busca una palabra de su texto, **Then** no aparece en los
    resultados.
 
@@ -118,8 +135,11 @@ palabra en la búsqueda global encuentra la imagen.
 - Fotos HEIC de iPhone: al subirlas, el navegador genera una copia JPEG que es la que se lee. Si la conversión
   falla en el navegador, o la HEIC se subió antes de esta feature y no tiene copia, la subida se completa igual y
   la imagen queda como "No disponible para este archivo".
-- Envío de invitado con muchas imágenes o servicio lento: el invitado recibe su confirmación como máximo unos
-  40 s después; las imágenes que no alcanzaron a leerse se leen cuando un revisor abre el envío.
+- Envío de invitado con muchas imágenes o servicio lento: el invitado recibe su confirmación de inmediato; las
+  lecturas siguen en segundo plano y las imágenes que no alcanzaron a leerse se leen cuando un revisor abre el
+  envío.
+- La plataforma detiene una lectura en segundo plano (por ejemplo, al agotar el tiempo máximo de la función):
+  pasados 90 s la imagen se muestra como error con el botón "Reintentar", igual que una lectura vencida.
 - Imágenes WEBP o GIF, o de más de 5 MB: se suben y se ven con normalidad (la subida nunca falla por ello),
   no se leen y su sección de texto indica "No disponible para este archivo", sin botón de reintentar.
 - Imagen de exactamente 5 MB: se lee; el límite incluye los 5 MB.
@@ -146,9 +166,10 @@ palabra en la búsqueda global encuentra la imagen.
   de hasta 5 MB) subida por el equipo o recibida en envíos de invitados, sin que quien sube tenga que marcarla.
   Las demás imágenes (WEBP, GIF o de más de 5 MB) MUST quedar como "no disponible"; estos límites no cambian
   los formatos ni el tamaño que Cloudy acepta al subir.
-- **FR-001b**: Una imagen del equipo MUST leerse la primera vez que un administrador o editor abre su vista
-  previa; el texto se guarda y las aperturas siguientes lo muestran sin volver a leer la imagen. Las imágenes
-  subidas antes de esta feature siguen la misma regla, salvo las HEIC, que no tienen copia JPEG (FR-023).
+- **FR-001b**: Una imagen del equipo MUST leerse en segundo plano en cuanto termina de subirse, sin retrasar la
+  subida; el texto se guarda y cada apertura de la vista previa lo muestra sin volver a leer la imagen. Si al
+  abrir la vista previa la imagen sigue sin leer (subida antes de esta feature o lectura que nunca empezó), MUST
+  leerse en ese momento; las HEIC antiguas sin copia JPEG quedan como "no disponible" (FR-023).
 - **FR-023**: Al subir una imagen HEIC apta (equipo o invitado), el navegador MUST generar una copia JPEG de hasta
   5 MB y subirla junto al original; la lectura usa esa copia. Una HEIC sin copia MUST quedar como "no
   disponible", y un fallo de la conversión MUST NOT impedir la subida del original.
@@ -158,9 +179,9 @@ palabra en la búsqueda global encuentra la imagen.
 - **FR-003**: Cuando el resultado estructurado indique que no hay texto legible, el sistema MUST registrarlo
   como "sin texto reconocido" y no mostrar texto inventado.
 - **FR-004**: La lectura MUST NOT hacer fallar la subida, la apertura de la vista previa, el envío de un
-  invitado, la aprobación o el rechazo, ni retrasar la subida del equipo, la aprobación o el rechazo. La vista
-  previa muestra "Leyendo texto…" de inmediato. El envío de un invitado espera a sus lecturas como máximo unos
-  40 s (FR-009).
+  invitado, la aprobación o el rechazo, y ningún flujo MUST esperar a la lectura: ni la subida del equipo, ni la
+  confirmación del envío de un invitado, ni la aprobación o el rechazo. La vista previa muestra "Leyendo
+  texto…" de inmediato mientras una lectura sigue en curso.
 - **FR-005**: Cada imagen MUST tener un estado de extracción visible: pendiente (aún no leída), leyendo,
   listo, sin texto, error o no disponible; un fallo MUST indicar qué puede hacer el usuario a continuación.
 - **FR-006**: Administradores y editores MUST poder reintentar una extracción en error y volver a leer
@@ -178,9 +199,9 @@ palabra en la búsqueda global encuentra la imagen.
 
 **Envíos de invitados**
 
-- **FR-009**: Las imágenes aptas de un envío de invitado MUST leerse al confirmar el envío, dentro de la misma
-  petición, con hasta 4 lecturas a la vez y un tope total de unos 40 s, para que el equipo vea su texto al revisarlo
-  en Pendientes. Las que no alcancen a leerse o fallen MUST leerse cuando un revisor abra el envío.
+- **FR-009**: Las imágenes aptas de un envío de invitado MUST leerse en segundo plano en cuanto se recibe el
+  envío, con hasta 4 lecturas a la vez y sin retrasar la confirmación al invitado, para que el equipo vea su texto
+  al revisarlo en Pendientes. Las que no alcancen a leerse o fallen MUST leerse cuando un revisor abra el envío.
 - **FR-010**: Al aprobar un envío, el texto extraído MUST acompañar al archivo sin volver a procesarlo; al
   rechazarse o caducar, el texto MUST eliminarse definitivamente junto con los archivos.
 - **FR-011**: La página pública MUST informar brevemente a los invitados que el texto de sus imágenes se lee de
@@ -194,9 +215,10 @@ palabra en la búsqueda global encuentra la imagen.
   confirmación.
 - **FR-014**: Administradores y editores MUST poder editar el texto extraído (hasta 10,000 caracteres); el
   sistema MUST registrar que fue editado, quién y cuándo.
-- **FR-015**: La búsqueda del disco MUST encontrar imágenes por palabras de su texto ya extraído, excluyendo lo
-  que está en la papelera y lo pendiente de aprobación, e indicar que solo se buscan por su texto las imágenes
-  ya leídas.
+- **FR-015**: La búsqueda del disco MUST encontrar imágenes por palabras de su texto ya extraído (incluidas las
+  recién subidas en cuanto termina su lectura en segundo plano), excluyendo lo que está en la papelera y lo
+  pendiente de aprobación, e indicar que solo se buscan por su texto las imágenes cuyo texto ya se leyó (no las
+  que se están leyendo, las no aptas ni las subidas antes de esta feature que nadie ha abierto).
 
 **Privacidad, permisos y consistencia**
 
@@ -213,8 +235,8 @@ palabra en la búsqueda global encuentra la imagen.
 ### Key Entities *(include if feature involves data)*
 
 - **Texto extraído**: transcripción del texto de una imagen. Pertenece a un único archivo (aprobado o de un envío
-  de invitado pendiente). Se crea al recibir un envío de invitado o la primera vez que se abre una imagen del
-  equipo. Contiene el texto, el estado (pendiente, leyendo, listo, sin texto, error, no disponible), número de
+  de invitado pendiente). Se crea al terminar la subida de una imagen del equipo o al recibir un envío de
+  invitado (y, como respaldo, al abrir una imagen que quedó sin leer). Contiene el texto, el estado (pendiente, leyendo, listo, sin texto, error, no disponible), número de
   intentos, fecha de la última lectura, motivo del último error y, si se corrigió a mano, quién y cuándo.
 - **Archivo** (existente): gana una relación opcional con su texto extraído; solo las imágenes la tienen. Las
   imágenes HEIC subidas con esta feature guardan además la referencia a su copia JPEG, que se elimina junto con el
@@ -226,14 +248,15 @@ palabra en la búsqueda global encuentra la imagen.
 
 ### Measurable Outcomes
 
-- **SC-001**: El 90 % de las imágenes aptas para lectura muestran su texto en menos de 30 segundos desde que se abre por primera vez
-  su vista previa (equipo) o desde que llega el envío (invitados).
+- **SC-001**: El 90 % de las imágenes aptas para lectura tienen su texto listo en menos de 30 segundos desde
+  que termina su subida (equipo) o desde que llega el envío (invitados).
 - **SC-002**: En un conjunto de prueba de 20 fotos de notas adhesivas y peticiones de oración legibles, al menos
   el 95 % de las palabras se transcriben correctamente y ninguna incluye el logotipo o la palabra "Skykids".
 - **SC-003**: El 100 % de las imágenes sin texto se marcan como "sin texto reconocido", sin texto inventado.
 - **SC-004**: Ninguna subida, apertura de vista previa, envío de invitado ni aprobación falla por causa de la
-  extracción, incluso con el servicio de lectura caído; las subidas del equipo y las aprobaciones no tardan más, y
-  la confirmación de un envío de invitado tarda como máximo 40 s más.
+  extracción, incluso con el servicio de lectura caído; ningún flujo tarda más por la lectura: ni las subidas
+  del equipo (en las HEIC, la copia JPEG se prepara en paralelo con la subida del original), ni la
+  confirmación de un envío de invitado, ni las aprobaciones.
 - **SC-005**: Un editor transcribe una petición de oración a una lista o presentación en menos de 15 segundos
   (abrir vista previa y copiar), frente a varios minutos a mano.
 - **SC-006**: Buscar una palabra presente en el texto de una imagen ya leída la devuelve en los resultados en
@@ -251,11 +274,12 @@ palabra en la búsqueda global encuentra la imagen.
 - Solo se procesan imágenes JPEG/JPG, PNG y HEIC de hasta 5 MB; las fotos de notas desde el celular suelen
   estar dentro de ese tamaño. Las notas en texto (TXT, MD, DOCX) y los PDF no entran en esta feature.
 - El texto extraído no se envía a los invitados ni se publica fuera de Cloudy.
-- Leer las imágenes del equipo solo al abrirlas limita el costo a las imágenes que alguien realmente consulta;
-  el volumen esperado es de unos cientos de imágenes al mes, y el límite de FR-008 acota el de invitados.
+- Toda imagen apta que sube el equipo se lee, no solo las que alguien consulta: el volumen esperado es de unos
+  cientos de imágenes al mes, un costo asumible a cambio de tener el texto listo al abrir y de poder buscar por
+  él desde el principio; el límite de FR-008 acota el costo de los invitados.
 - Las imágenes ya subidas antes de esta feature se leen cuando alguien las abre (FR-001b), excepto las HEIC, que
   quedan como "no disponible" por no tener copia JPEG.
-- La espera adicional de hasta 40 s al enviar sigue dentro del objetivo de la feature 001 de que un invitado
-  complete su envío desde el teléfono en menos de 1 minuto para envíos típicos (1–3 fotos).
+- La confirmación del envío de un invitado no cambia de duración, así que el objetivo de la feature 001 (envío
+  desde el teléfono en menos de 1 minuto) se mantiene sin ajustes.
 - La lectura debe funcionar en el entorno sin estado de la plataforma de despliegue; el "sin recargar" de
   FR-012 usa el mismo mecanismo de actualización periódica que ya usa Pendientes.
