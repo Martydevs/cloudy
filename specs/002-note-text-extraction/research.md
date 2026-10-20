@@ -61,7 +61,7 @@ forma recomendada. El resultado estructurado elimina la cadena centinela `[texto
   depende de que el proveedor pueda alcanzarlo.
 - Para HEIC se descarga la **copia JPEG** que subió el navegador (A4), no el original.
 - Con bytes, el mismo `matchesSignature` del flujo de subida vuelve a verificar el contenido real antes de
-  enviarlo (FR-021).
+  enviarlo (FR-021); si no coincide con la extensión, la imagen queda `unavailable` (formato no apto).
 - Tras la firma, los bytes se validan con `modelImageSchema` (A3) y van al modelo tal cual: el servidor no
   procesa imágenes.
 - 5 MB caben con holgura en memoria de una función.
@@ -80,7 +80,7 @@ validadores propios de `shared/validation/*` siguen validando las peticiones HTT
 
 | Esquema | Valida | Fallo → |
 |---------|--------|---------|
-| `imageSourceSchema` | `{ fileId: uuid, extension: 'jpg'\|'jpeg'\|'png'\|'heic', sizeBytes: int 1..5 242 880 }`, antes de descargar | `unavailable` (formato o tamaño) |
+| `imageSourceSchema` | `{ fileId: uuid, extension: 'jpg'\|'jpeg'\|'png'\|'heic', sizeBytes: int 1..5 242 880 }`, antes de descargar | `unavailable` (formato o tamaño); otro fallo → `failed` (`invalid_input`) |
 | `modelImageSchema` | `{ mediaType: 'image/jpeg' \| 'image/png', data: Uint8Array no vacía ≤ 5 242 880 B }`, sobre los bytes descargados (el original JPEG/PNG o la copia JPEG de una HEIC) | `failed` (`invalid_input`) |
 | `imageTextOutputSchema` | `{ hasText: boolean, text: string }` con `.trim()`, `max(10 000)`; un refine exige `text` no vacío si `hasText` y vacío si no | `failed` (`invalid_output`) |
 
@@ -192,14 +192,16 @@ módulo que importa `@vercel/functions`, con la misma regla de encapsulación qu
   tras aceptar los archivos, llama a `runInBackground(() => readSubmissionImages(submissionId, { concurrency: 4 }))`.
   - **Pool**: un pool mínimo con `Promise` nativas (un índice compartido y 4 "trabajadores" `async` que toman la
     siguiente imagen), sin bibliotecas.
-  - **Por lectura**: `timeout` 30 s y `maxRetries: 1` (A1), más `hitRateLimit` de `guest-text:<senderKey>` (A7);
+  - **Por lectura**: los mismos tiempos que fuera del pool (A1/A11: principal 20 s sin reintento si hay respaldo;
+    último candidato 30 s + 1 reintento; tope de 45 s), más `hitRateLimit` de `guest-text:<senderKey>` (A7);
     si se excede, la imagen queda en `NULL`.
   - **Presupuesto global**: las promesas de `waitUntil` comparten el plazo de la invocación y la plataforma las
     cancela al vencer, así que el presupuesto sale del plazo real y no de una constante:
     `budgetMs = min(240_000, remainingMs() - 15_000)`. `remainingMs()` es de `server/utils/background.ts` y envuelve
     `getDeadline()` de `@vercel/functions`, que devuelve `undefined` fuera de Vercel (entonces se usa 240 s). Se
     calcula al empezar la tarea, cuando ya transcurrió el tiempo del handler. Un `AbortSignal.timeout(budgetMs)`
-    compartido se combina con el de cada lectura mediante `AbortSignal.any`. Al vencer no se inician más lecturas;
+    compartido se pasa como `abortSignal` a `extractImageText`, que lo combina con su propio tope de 45 s; el
+    pool no añade un tope por lectura. Al vencer no se inician más lecturas;
     las que estaban en curso se abortan y quedan `failed` (`timeout`), con 15 s de margen para escribir el
     resultado. Si `budgetMs <= 0` no se lee nada y todo queda en `NULL`. El presupuesto se ajusta solo si cambia
     `maxDuration` (hoy 300 s) o la plataforma recorta el plazo.
@@ -212,7 +214,9 @@ módulo que importa `@vercel/functions`, con la misma regla de encapsulación qu
     `maxRetries: 1`). Si **todos** están abiertos, el pool deja de iniciar lecturas y las imágenes restantes quedan
     en `NULL` (se leen al abrir Pendientes); las que ya estaban en curso terminan. Cada apertura se registra una
     vez, sin texto: `breaker open openai (<código>)`. El orden de cada trabajador es: presupuesto, cortacircuito,
-    `hitRateLimit`, reclamar y leer. `readFileImage` (equipo) no usa cortacircuito: cada lectura es una
+    reclamar, `hitRateLimit` y leer. El límite se consulta tras reclamar para no gastar cupo en una fila que ya
+    tomó otro lector; si se excede, `releaseImageText` devuelve la fila a `NULL` (condicionado a su
+    `text_started_at`) y resta el intento. `readFileImage` (equipo) no usa cortacircuito: cada lectura es una
     invocación independiente.
   - **Reclamación por trabajador**: cada trabajador reclama su fila (`claimImageText`) justo antes de leerla,
     nunca todas al inicio, de modo que las imágenes en cola siguen en `NULL` (`pending`).
@@ -253,8 +257,8 @@ módulo que importa `@vercel/functions`, con la misma regla de encapsulación qu
 ## A7. Límite de costo de invitados (FR-008)
 
 **Decisión**: `hitRateLimit(null, \`guest-text:${senderKey}\`, { limit: 20, windowSec: 3600 })` antes de cada
-lectura del envío en segundo plano. Al exceder el límite, la imagen queda sin evaluar (`null`) sin lanzar error, y se
-leerá cuando un revisor abra el envío (A6).
+lectura del envío en segundo plano, justo después de reclamar la fila (A6). Al exceder el límite, la fila vuelve a
+sin evaluar (`null`) sin lanzar error, y se leerá cuando un revisor abra el envío (A6).
 
 **Justificación**: reutiliza el limitador en Postgres que ya existe. Los envíos ya están limitados a 5 por hora
 con 20 archivos cada uno; este tope evita que un solo remitente genere 100 lecturas por hora.

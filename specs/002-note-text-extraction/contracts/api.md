@@ -110,9 +110,10 @@ La respuesta y su latencia no cambian: responde de inmediato y la lectura sigue 
    `/api/uploads/:id/complete`: si es válida guarda `text_source_key`; si no, marca `unavailable`.
 2. **Lectura**: programa `runInBackground(() => readSubmissionImages(submissionId, { concurrency: 4 }))`, que
    lee las imágenes **aptas** del envío después de responder (FR-009, research A6).
-   - **Pool**: 4 lecturas a la vez; cada una con `timeout` 30 s y `maxRetries: 1`.
-   - **Límite**: cada lectura pasa primero por `hitRateLimit(null, 'guest-text:<senderKey>', 20/h)`. Si se
-     excede, la imagen queda en `NULL`.
+   - **Pool**: 4 lecturas a la vez; cada una con los tiempos de `extractImageText` (research A11: principal 20 s
+     sin reintento si hay respaldo, último candidato 30 s + 1 reintento, tope de 45 s), sin tope propio por lectura.
+   - **Límite**: tras reclamar la fila, cada lectura pasa por `hitRateLimit(null, 'guest-text:<senderKey>', 20/h)`.
+     Si se excede, la fila vuelve a `NULL` sin contar el intento.
    - **Presupuesto**: `AbortSignal.timeout(min(240 s, plazo real de la función - 15 s))` compartido; al vencer no
      se inician más lecturas: las no iniciadas quedan en `NULL` y las abortadas en `failed`/`timeout`. Se leerán
      cuando un revisor abra el envío.

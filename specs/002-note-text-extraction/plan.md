@@ -102,7 +102,7 @@ se mide a mano según el quickstart §5.
 
 *GATE: Must pass before Phase 0 research. Re-check after Phase 1 design.*
 
-Evaluado contra la constitución **v1.0.0**.
+Evaluado contra la constitución **v1.0.1** (la 1.0.1 aclara el principio IV: la frontera de IA en `server/ai/` cumple).
 
 | Principio | Pre-diseño | Post-diseño: cómo se cumple |
 |-----------|------------|-----------------------------|
@@ -112,7 +112,7 @@ Evaluado contra la constitución **v1.0.0**.
 | **IV. Calidad de código** | ✅ | Ver el detalle bajo la tabla. |
 | **V. Pruebas** | ✅ | Ver el detalle bajo la tabla. |
 | **VI. Consistencia de UX** | ✅ | Seis estados mapeados a `SkeletonList`, `EmptyState`, `ErrorState` y contenido (contracts/ui). Toasts al copiar y guardar; `ConfirmDialog` antes de reemplazar una corrección. Copy en `messages.imageText`; `serverMessage()` para los errores HTTP. Icono lucide `scan-text`; `aria-live` y foco gestionado. |
-| **Restricciones técnicas** | ✅ | Sin estado en memoria: la reclamación y el limitador viven en Postgres, y las tareas en segundo plano (`waitUntil`) no comparten nada entre peticiones; solo alargan la vida de la invocación dentro de su duración máxima. Migración Drizzle con SQL manual para CHECK e índice. Secretos `NUXT_OPENAI_*` y `NUXT_GOOGLE_APIKEY`. Al proveedor (OpenAI o Google) no van datos del invitado. |
+| **Restricciones técnicas** | ✅ | Sin estado en memoria: la reclamación y el limitador viven en Postgres, y las tareas en segundo plano (`waitUntil`) no comparten nada entre peticiones; solo alargan la vida de la invocación dentro de su duración máxima. Migración Drizzle con SQL manual para CHECK e índice. Secretos `NUXT_OPENAI_*` y `NUXT_GOOGLE_APIKEY`. Al proveedor (OpenAI o Google) no van datos del invitado. **Privacidad**: el texto extraído de una imagen de invitado es contenido del archivo que el invitado ya envió (como la imagen misma), no un dato personal nuevo del invitado; no se guarda nada más que su nombre y nota, y se elimina con el archivo al rechazar o caducar (FR-010). |
 | **Flujo y gates** | ✅ | Rama `002-note-text-extraction` (se crea en T001). Conventional Commits. DoD de AGENTS.md por fase (typecheck → tests → navegador). |
 
 **Detalle de los principios I, II, IV y V**:
@@ -225,8 +225,9 @@ app/
 
 drizzle/000N_*.sql                       # generada + SQL manual (CHECK, índice trigram)
 test/
-├── unit/   ai-schemas · ai-extract · background · image-text · api-image-text · api-uploads · api-submissions · api-search · cron
-├── nuxt/   ImageTextPanel · heic-copy · UploadQueue (copia)
+├── unit/   ai-schemas · ai-extract · ai-errors · ai-provider · background · image-text · image-text-constants ·
+│           api-image-text · api-files (subidas y búsqueda) · api-trash · api-submissions · api-cron · validation-image-text
+├── nuxt/   ImageTextPanel · heic-copy · useUploader · UploadQueue (copia) · useGuestSubmission · pages-files · pages-guests
 ├── e2e/    image-text (US1, US3) · guest-queue (US2) · routes-guard (rutas nuevas)
 │   └── setup/openai-stub.ts             # stub de la Responses API (puerto local); Gemini no tiene stub e2e
 └── fixtures/files/  nota.jpg · nota.png · nota.heic · paisaje.jpg · grande.jpg

@@ -137,7 +137,7 @@ palabra en la búsqueda global encuentra la imagen.
   la imagen queda como "No disponible para este archivo".
 - Envío de invitado con muchas imágenes o servicio lento: el invitado recibe su confirmación de inmediato; las
   lecturas siguen en segundo plano y las imágenes que no alcanzaron a leerse se leen cuando un revisor abre el
-  envío.
+  envío; las que fallaron muestran "Reintentar".
 - La plataforma detiene una lectura en segundo plano (por ejemplo, al agotar el tiempo máximo de la función):
   pasados 90 s la imagen se muestra como error con el botón "Reintentar", igual que una lectura vencida.
 - Imágenes WEBP o GIF, o de más de 5 MB: se suben y se ven con normalidad (la subida nunca falla por ello),
@@ -191,8 +191,10 @@ palabra en la búsqueda global encuentra la imagen.
   ya limita los envíos, para evitar abusos que generen costos.
 - **FR-021**: Antes de leer una imagen, el sistema MUST validar contra un esquema definido que la entrada es
   válida (archivo existente al que el usuario tiene acceso, tipo JPEG/JPG, PNG o HEIC según su contenido real y
-  tamaño original de hasta 5 MB); una entrada inválida no se envía al servicio: un formato o tamaño no apto queda
-  como "no disponible" y cualquier otro fallo de validación como "error".
+  tamaño original de hasta 5 MB); una entrada inválida no se envía al servicio: un formato o tamaño no apto
+  (incluido un archivo cuyo contenido real no coincide con su extensión) queda como "no disponible" y cualquier
+  otro fallo de validación como "error", con un mensaje que indica qué hacer (por ejemplo, volver a subirla en JPG
+  o PNG).
 - **FR-022**: El servicio de lectura MUST devolver un resultado estructurado (si hay texto y el texto) que el
   sistema valida contra un esquema definido antes de guardarlo; un resultado que no cumpla el esquema se
   registra como "error" y nunca se muestra.
@@ -201,7 +203,8 @@ palabra en la búsqueda global encuentra la imagen.
 
 - **FR-009**: Las imágenes aptas de un envío de invitado MUST leerse en segundo plano en cuanto se recibe el
   envío, con hasta 4 lecturas a la vez y sin retrasar la confirmación al invitado, para que el equipo vea su texto
-  al revisarlo en Pendientes. Las que no alcancen a leerse o fallen MUST leerse cuando un revisor abra el envío.
+  al revisarlo en Pendientes. Las que no alcancen a leerse (pendientes) MUST leerse cuando un revisor abra el
+  envío; las que fallen MUST mostrar su error con la opción de reintentar (FR-006), sin reintentarse solas.
 - **FR-010**: Al aprobar un envío, el texto extraído MUST acompañar al archivo sin volver a procesarlo; al
   rechazarse o caducar, el texto MUST eliminarse definitivamente junto con los archivos.
 - **FR-011**: La página pública MUST informar brevemente a los invitados que el texto de sus imágenes se lee de
