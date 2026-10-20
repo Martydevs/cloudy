@@ -3,8 +3,8 @@
 **Fase 0** del plan · 2026-10-19 · Spec: [spec.md](./spec.md)
 
 Cada sección resuelve una incógnita con el formato *Decisión / Justificación / Alternativas*. Las versiones y
-APIs se verificaron leyendo los paquetes instalados (`ai@7.0.145`, `@ai-sdk/openai@4.0.97`, `zod@4.6.7`) y la
-documentación de OpenAI y Vercel.
+APIs se verificaron leyendo los paquetes instalados (`ai@7.0.145`, `@ai-sdk/openai@4.0.97`,
+`@ai-sdk/google@4.0.101`, `zod@4.6.7`) y la documentación de OpenAI, Google y Vercel.
 
 ---
 
@@ -12,25 +12,33 @@ documentación de OpenAI y Vercel.
 
 **Decisión**: `generateText` con `output: Output.object({ schema })` y lectura de `result.output`.
 
-- **Modelo**: `openaiClient(config)('gpt-4o')`. En `@ai-sdk/openai` v4 la llamada por defecto usa la
-  **Responses API**, y `strictJsonSchema` viene activado por defecto, así que OpenAI garantiza el formato.
+- **Modelo**: `extractImageText` recorre en orden los candidatos de `resolveImageTextCandidates(config)` (A11):
+  - **Principal**, OpenAI: `openaiClient(config)('gpt-4o')`. En `@ai-sdk/openai` v4 la llamada por defecto usa
+    la **Responses API**, y `strictJsonSchema` viene activado por defecto, así que OpenAI garantiza el formato.
+  - **Respaldo**, Google: `googleClient(config)('gemini-3.5-flash-lite')`. `@ai-sdk/google` convierte el esquema de
+    `Output.object` en el esquema de respuesta de Gemini (`structuredOutputs` activo por defecto), así que la
+    llamada, el prompt y el esquema son los mismos.
 - **Instrucciones**: la opción es `instructions`, porque `system` quedó como alias obsoleto. Recibe
   `IMAGE_EXTRACTION_INSTRUCTION`.
 - **Mensaje**: un `user` con dos partes:
   - `{ type: 'text', text: IMAGE_EXTRACTION_PROMPT }`.
   - `{ type: 'file', mediaType: 'image/jpeg' | 'image/png', data: Uint8Array, providerOptions: { openai: { imageDetail: 'high' } } }`.
     Los bytes se envían tal como están guardados: el original JPEG/PNG o la copia JPEG de una HEIC.
+    Las `providerOptions` se leen por clave de proveedor: Gemini ignora `openai.imageDetail`, y su resolución se pide en
+    la llamada (A11).
 
   La parte `{ type: 'image' }` está obsoleta en v7.
 - **Límites**:
-  - `timeout: 30_000` ms y `maxRetries: 1`, en todos los caminos (equipo al subir o al abrir, invitados en
+  - Sin respaldo disponible: `timeout: 30_000` ms y `maxRetries: 1`. Con respaldo: el principal usa
+    `timeout: 20_000` y `maxRetries: 0` para fallar rápido y pasar al respaldo, y el último candidato conserva
+    `timeout: 30_000` y `maxRetries: 1`. Igual en todos los caminos (equipo al subir o al abrir, invitados en
     segundo plano, Reintentar y Volver a leer).
-  - Un `abortSignal` propio con un tope total de 45 s, que cubre FR-007. El pool de invitados le combina además
-    su presupuesto global de 240 s (A6).
+  - Un `abortSignal` propio con un tope total de 45 s **para todos los intentos juntos**, que cubre FR-007. El pool de invitados le combina además
+    su presupuesto global (A6).
 - **Errores**: `NoObjectGeneratedError.isInstance(e)` cuando la respuesta no se puede leer o no cumple el
   esquema. `NoOutputGeneratedError.isInstance(e)` cuando la ejecución no terminó en `stop`. `APICallError` del
-  proveedor cubre timeout, 429, saldo agotado y 5xx. Todo se traduce a `failed` con un código interno
-  (A5), nunca a texto.
+  proveedor (OpenAI o Google) cubre timeout, 429, saldo o cuota agotados y 5xx. Todo se traduce a `failed` con un código interno
+  (A5), nunca a texto; cuáles de esos errores activan el respaldo está en A11.
 
 **Justificación**: `generateObject` está marcado como `@deprecated` en v7, y `generateText` + `Output` es la
 forma recomendada. El resultado estructurado elimina la cadena centinela `[texto no reconocido]`
@@ -39,6 +47,8 @@ forma recomendada. El resultado estructurado elimina la cadena centinela `[texto
 **Alternativas**:
 - `openai.chat('gpt-4o')` (Chat Completions): funciona igual, pero no es la opción por defecto ni la
   recomendada.
+- `generateObject` o la API nativa de Gemini (`@google/genai`): descartadas; `generateText` + `Output.object`
+  funciona igual con ambos adaptadores y no añade dependencias.
 - Texto libre con un centinela: lo rechazó el usuario en la clarificación.
 
 ## A2. Imagen como bytes, no como URL prefirmada
@@ -47,8 +57,8 @@ forma recomendada. El resultado estructurado elimina la cadena centinela `[texto
 `server/utils/storage.ts` y envía los bytes al modelo.
 
 **Justificación**:
-- Una URL prefirmada abriría a un tercero un enlace a un objeto privado; además caduca y depende de que OpenAI
-  pueda alcanzarlo.
+- Una URL prefirmada abriría a un tercero (OpenAI o Google) un enlace a un objeto privado; además caduca y
+  depende de que el proveedor pueda alcanzarlo.
 - Para HEIC se descarga la **copia JPEG** que subió el navegador (A4), no el original.
 - Con bytes, el mismo `matchesSignature` del flujo de subida vuelve a verificar el contenido real antes de
   enviarlo (FR-021).
@@ -56,8 +66,8 @@ forma recomendada. El resultado estructurado elimina la cadena centinela `[texto
   procesa imágenes.
 - 5 MB caben con holgura en memoria de una función.
 
-**Alternativas**: URL prefirmada (descartada por privacidad); Files API de OpenAI (otra subida y
-otro ciclo de vida que limpiar, sin beneficio).
+**Alternativas**: URL prefirmada (descartada por privacidad); Files API de OpenAI o de Google (otra subida
+y otro ciclo de vida que limpiar, sin beneficio).
 
 > Constitución I prohíbe que los binarios **del usuario** pasen por funciones (límite de 4.5 MB del cuerpo).
 > Aquí el binario no viaja en la petición ni en la respuesta HTTP: es una lectura servidor → almacenamiento de
@@ -75,7 +85,7 @@ validadores propios de `shared/validation/*` siguen validando las peticiones HTT
 | `imageTextOutputSchema` | `{ hasText: boolean, text: string }` con `.trim()`, `max(10 000)`; un refine exige `text` no vacío si `hasText` y vacío si no | `failed` (`invalid_output`) |
 
 - `imageTextOutputSchema` se pasa a `Output.object` y además se vuelve a aplicar con `safeParse` sobre
-  `result.output`. Las reglas que el JSON Schema estricto de OpenAI no expresa (el `refine` y el `trim`) solo
+  `result.output`. Las reglas que el JSON Schema estricto del proveedor (OpenAI o Gemini) no expresa (el `refine` y el `trim`) solo
   se garantizan con esa segunda pasada.
 - `hasText: false` → estado `empty` ("sin texto reconocido", FR-003).
 - El límite de 5 MB se compara contra el tamaño **original** del archivo (clarificación). La copia JPEG de una
@@ -152,7 +162,7 @@ reading con text_started_at > 90 s ── se puede reclamar de nuevo
 - **Escritura del resultado**: `UPDATE … WHERE id = $1 AND text_status = 'reading' AND text_started_at = $claimedAt`.
   Así una lectura vencida que termina tarde no pisa una más nueva.
 - **Códigos de error** (`text_error`, solo para registro y para el copy del mensaje): `timeout`, `provider`,
-  `rate_limited`, `invalid_input`, `invalid_output`.
+  `rate_limited`, `quota_exceeded`, `invalid_input`, `invalid_output`.
 
 **Justificación**: el driver `neon-http` no tiene transacciones interactivas (R4 de la feature 001). Un
 `UPDATE … RETURNING` condicional es atómico y no necesita bloqueo. El tope de 90 s es mayor que los 45 s de la
@@ -184,9 +194,26 @@ módulo que importa `@vercel/functions`, con la misma regla de encapsulación qu
     siguiente imagen), sin bibliotecas.
   - **Por lectura**: `timeout` 30 s y `maxRetries: 1` (A1), más `hitRateLimit` de `guest-text:<senderKey>` (A7);
     si se excede, la imagen queda en `NULL`.
-  - **Presupuesto global**: un `AbortSignal.timeout(240_000)` compartido, combinado con el de cada lectura mediante
-    `AbortSignal.any`. Al vencer no se inician más lecturas; las que estaban en curso se abortan y quedan
-    `failed` (`timeout`). 240 s queda con margen bajo los 300 s de duración máxima de la función.
+  - **Presupuesto global**: las promesas de `waitUntil` comparten el plazo de la invocación y la plataforma las
+    cancela al vencer, así que el presupuesto sale del plazo real y no de una constante:
+    `budgetMs = min(240_000, remainingMs() - 15_000)`. `remainingMs()` es de `server/utils/background.ts` y envuelve
+    `getDeadline()` de `@vercel/functions`, que devuelve `undefined` fuera de Vercel (entonces se usa 240 s). Se
+    calcula al empezar la tarea, cuando ya transcurrió el tiempo del handler. Un `AbortSignal.timeout(budgetMs)`
+    compartido se combina con el de cada lectura mediante `AbortSignal.any`. Al vencer no se inician más lecturas;
+    las que estaban en curso se abortan y quedan `failed` (`timeout`), con 15 s de margen para escribir el
+    resultado. Si `budgetMs <= 0` no se lee nada y todo queda en `NULL`. El presupuesto se ajusta solo si cambia
+    `maxDuration` (hoy 300 s) o la plataforma recorta el plazo.
+  - **Cortacircuito por ejecución**: cada llamada a `readSubmissionImages` crea su propio `createProviderBreaker()`
+    (variable local: no se comparte entre invocaciones ni sobrevive a la tarea, así que no es estado de servidor)
+    y lo pasa a `extractImageText({ breaker })`. Un proveedor se abre con un error **persistente**
+    (`quota_exceeded`, 401, 403, 404 o clave ausente: no se arregla en segundos) o tras **3 fallos transitorios
+    seguidos** (red, timeout, 429, 5xx); un éxito reinicia la cuenta. Los candidatos abiertos se omiten en las
+    lecturas siguientes de la ejecución; si queda uno solo, pasa a ser el último candidato (`timeout` 30 s,
+    `maxRetries: 1`). Si **todos** están abiertos, el pool deja de iniciar lecturas y las imágenes restantes quedan
+    en `NULL` (se leen al abrir Pendientes); las que ya estaban en curso terminan. Cada apertura se registra una
+    vez, sin texto: `breaker open openai (<código>)`. El orden de cada trabajador es: presupuesto, cortacircuito,
+    `hitRateLimit`, reclamar y leer. `readFileImage` (equipo) no usa cortacircuito: cada lectura es una
+    invocación independiente.
   - **Reclamación por trabajador**: cada trabajador reclama su fila (`claimImageText`) justo antes de leerla,
     nunca todas al inicio, de modo que las imágenes en cola siguen en `NULL` (`pending`).
   - **Imágenes no iniciadas**: quedan en `NULL`.
@@ -195,7 +222,7 @@ módulo que importa `@vercel/functions`, con la misma regla de encapsulación qu
   llama a `POST /api/submissions/:id/files/:fileId/text` sin `force` y consulta
   `GET /api/submissions/:id/files/:fileId/text` mientras dure `reading`. Una imagen `failed` (incluida una
   lectura vencida, que llega como `failed`/`timeout`) espera el Reintentar del usuario (`force: true`); nada
-  reintenta solo. Cubre el presupuesto de 240 s y el límite de FR-008.
+  reintenta solo. Cubre el presupuesto de tiempo, el cortacircuito y el límite de FR-008.
   - Si un revisor abre Pendientes mientras el pool aún tiene imágenes en cola, la tarjeta lee esas imágenes
     `pending` directamente, fuera del pool y del límite de invitados; la reclamación atómica evita lecturas
     dobles y se acepta porque es una acción del revisor.
@@ -245,10 +272,10 @@ con 20 archivos cada uno; este tope evita que un solo remitente genere 100 lectu
 **Alternativas**: `tsvector` con diccionario en español. Ofrece mejor ranking, pero no encuentra fragmentos de
 palabras ni nombres propios mal escritos, y añade otra columna y otro trigger.
 
-## A9. Pruebas sin llamar a OpenAI
+## A9. Pruebas sin llamar al proveedor de IA
 
 **Decisión**:
-- **Unitarias**: `MockLanguageModelV4` de `ai/test`, inyectado en `extractImageText({ …, model })`. Devuelve
+- **Unitarias**: `MockLanguageModelV4` de `ai/test`, inyectado como candidato en `extractImageText({ …, candidates })`. Devuelve
   texto JSON válido, inválido o un error lanzado. `runInBackground` se simula en los tests de endpoints
   (captura la tarea y se espera de forma explícita, para afirmar que la respuesta no la espera); el test de
   `background.ts` simula `@vercel/functions` con `vi.mock`.
@@ -261,7 +288,13 @@ palabras ni nombres propios mal escritos, y añade otra columna y otro trigger.
     sino el texto en el panel (que consulta mientras dura `reading`) o consultan `GET …/text` hasta un estado
     terminal. El stub cuenta una llamada por imagen y admite un retraso de respuesta configurable para poder
     observar "Leyendo texto…" de forma determinista.
-- **Calidad real (SC-002)**: no corre en CI. Es un paso manual del quickstart con 20 fotos reales.
+- **Respaldo (Gemini)**: en e2e el stub es el único candidato. `.env.test` deja `NUXT_GOOGLE_APIKEY` vacía, así
+  que `resolveImageTextCandidates` omite a Gemini y un 500 del stub termina en `failed` sin llamar a Google. No
+  se simula la API REST de Gemini. En unit se prueban `resolveImageTextCandidates` (claves presentes, ausentes
+  y en blanco) y el respaldo de `extractImageText` (qué errores lo activan y cuáles no, orden, intentos y
+  tiempos), con un `MockLanguageModelV4` por candidato.
+- **Calidad real (SC-002)**: no corre en CI. Es un paso manual del quickstart con 20 fotos reales, con OpenAI
+  y, aparte, forzando el respaldo (clave de OpenAI vacía).
 
 **Justificación**: los e2e no deben depender de un servicio de pago ni de su latencia. `baseURL` es una opción
 estándar de `createOpenAI`, así que no hace falta código de prueba en producción.
@@ -273,9 +306,12 @@ estándar de `createOpenAI`, así que no hace falta código de prueba en producc
 
 | Archivo | Responsabilidad |
 |---------|-----------------|
-| `server/ai/openai.ts` (existente) | Cliente `openaiClient(config)`, constante `IMAGE_TEXT_MODEL = 'gpt-4o'`, `IMAGE_EXTRACTION_INSTRUCTION` y `IMAGE_EXTRACTION_PROMPT` |
+| `server/ai/openai.ts` (existente) | Cliente `openaiClient(config)`, constante `OPENAI_DEFAULT_MODEL = 'gpt-4o'`, `IMAGE_EXTRACTION_INSTRUCTION` y `IMAGE_EXTRACTION_PROMPT` (definidos una sola vez, aquí) |
+| `server/ai/gemini.ts` (existente) | Cliente `googleClient(config)`, constante `GEMINI_DEFAULT_MODEL = 'gemini-3.5-flash-lite'`; reexporta la instrucción y el prompt de `openai.ts` |
+| `server/ai/provider.ts` | `resolveImageTextCandidates(config)`: lista ordenada [OpenAI, Gemini] con solo los que tienen clave, cada uno con su modelo y `providerOptions` (A11), y `createProviderBreaker()`, el cortacircuito por ejecución del pool (A6) |
+| `server/ai/errors.ts` | `classifyProviderError(error)`: función pura que traduce un error del SDK a `{ code, fallback, persistent }` (A11). Sin red ni estado |
 | `server/ai/schemas.ts` | Esquemas Zod de A3 y sus tipos inferidos |
-| `server/ai/extract-image-text.ts` | `extractImageText({ image, model? })`: valida, llama al modelo, valida la salida y devuelve `ImageTextResult` (`ready`/`empty`/`failed` con código). Sin BD ni storage |
+| `server/ai/extract-image-text.ts` | `extractImageText({ image, candidates? })`: valida, llama al principal y, si procede, al respaldo (A11), valida la salida y devuelve `ImageTextResult` (`ready`/`empty`/`failed` con código). Sin BD ni storage |
 | `server/utils/image-text.ts` | Orquestación auto-importada: elegibilidad, reclamación (A5), descarga (original o copia JPEG), guardado, `readFileImage(fileId)` (reclamar + leer una imagen del equipo, usada por el segundo plano y por el respaldo del endpoint), pool de lecturas del envío (A6), validación de la copia al completar (A4) y mapeo a DTO. Es lo que usan los endpoints |
 | `server/utils/background.ts` | `runInBackground(task)`: único módulo que importa `@vercel/functions` (`waitUntil`); registra solo id y código de error (A6) |
 | `app/utils/heic-copy.ts` (cliente) | `makeTextSourceCopy(file)`: carga `heic-to` bajo demanda y genera la copia JPEG (A4). No conoce al proveedor de IA |
@@ -290,3 +326,89 @@ Cambios en `openai.ts`, el archivo que el usuario ya preparó:
 
 `shared/` solo recibe lo que ve el cliente: `IMAGE_TEXT_STATUSES`, las extensiones aptas, `MAX_IMAGE_TEXT_BYTES`,
 `MAX_IMAGE_TEXT_LENGTH`, `isImageTextEligible()` y el DTO `ImageText`.
+
+## A11. Proveedor principal y respaldo: OpenAI → Gemini (pedido del usuario)
+
+**Decisión**: OpenAI (`gpt-4o`) es el proveedor principal y Google (`gemini-3.5-flash-lite`) el respaldo. No hay
+variable para elegir proveedor: el orden es fijo y el respaldo se activa solo.
+Cubre errores comunes (red, tiempo), propios del proveedor (clave, modelo, sobrecarga, bloqueo) y de uso (exceso de
+peticiones, saldo o cuota agotados).
+
+- `server/ai/provider.ts` → `resolveImageTextCandidates(config)`: lista ordenada de
+  `ImageTextCandidate { provider: 'openai' | 'google', model, providerOptions? }` con **solo los proveedores que
+  tienen clave** (`config.openaiApikey` y `config.googleApikey` no vacías tras `trim()`). Un proveedor sin clave se
+  omite sin llamarlo: ese es el caso "no hay clave".
+- `extractImageText` recorre los candidatos en orden hasta obtener una respuesta o agotarlos. Si no se inyecta
+  `candidates` (los tests sí lo hacen), usa `resolveImageTextCandidates(useRuntimeConfig())`.
+- Sin candidatos → `failed`/`provider`, sin llamar a nadie.
+
+**Qué activa el respaldo**: cualquier fallo **del proveedor**; no el contenido que el modelo devolvió ni el tiempo
+del llamador. La clasificación vive en `server/ai/errors.ts` → `classifyProviderError(error): { code, fallback, persistent }`,
+una función pura que lee `APICallError` (`statusCode`, `data` / `responseBody`), desenrolla `RetryError.lastError` y
+mira `NoObjectGeneratedError.finishReason`. Se pasa al siguiente candidato solo si queda uno.
+`persistent` es `true` para `quota_exceeded`, 401, 403, 404 y clave ausente (no se arreglan en segundos) y lo usa el
+cortacircuito del pool (A6).
+
+| Fallo | Ejemplos propios de cada proveedor | ¿Respaldo? | Código |
+|-------|------------------------------------|------------|--------|
+| Red y conexión | `APICallError` sin `statusCode`, `fetch failed`, DNS, conexión reiniciada, TLS | Sí | `provider` |
+| Timeout del propio intento | `timeout` del SDK | Sí | `timeout` |
+| Exceso de peticiones | OpenAI 429 `rate_limit_exceeded` (peticiones o tokens por minuto); Gemini 429 `RESOURCE_EXHAUSTED` | Sí | `rate_limited` |
+| Saldo o cuota agotados | OpenAI 429 `insufficient_quota` y `billing_hard_limit_reached`; 402; Gemini `FAILED_PRECONDITION` (facturación o capa gratuita sin habilitar) | Sí | `quota_exceeded` |
+| Clave o permisos | 401 `invalid_api_key`; 403 (permiso, región no soportada); Gemini 400 `API_KEY_INVALID`, `PERMISSION_DENIED`; `LoadAPIKeyError` | Sí | `provider` |
+| Modelo no disponible o sobrecargado | 404 `model_not_found` / `NOT_FOUND`; 500, 502, 503 `UNAVAILABLE`, 504, 529 | Sí | `provider` |
+| Petición rechazada por el proveedor | Otros 4xx (400 `INVALID_ARGUMENT`, 413, 422): otro proveedor puede aceptarla | Sí | `provider` |
+| Bloqueo por política del proveedor | `NoObjectGeneratedError` / `NoOutputGeneratedError` con `finishReason: 'content-filter'` (Gemini `SAFETY`, `PROHIBITED_CONTENT`; rechazo de OpenAI) | Sí | `provider` |
+| Error no reconocido | Excepción inesperada del SDK (se asume fallo del proveedor) | Sí | `provider` |
+| Respuesta ilegible o fuera del esquema | `NoObjectGeneratedError` con otra razón de fin, o salida que no pasa Zod | No: el modelo respondió; no es un fallo del servicio (A3) | `invalid_output` |
+| Aborto del llamador, presupuesto del pool o tope de 45 s | `abortSignal` | No: no queda tiempo | `timeout` |
+
+- Gemini no distingue de forma fiable entre límite por minuto y cuota agotada (ambos llegan como
+  `RESOURCE_EXHAUSTED`), así que su 429 se clasifica como `rate_limited`. `quota_exceeded` solo se asigna cuando el
+  cuerpo lo dice sin ambigüedad (OpenAI `insufficient_quota` / `billing_hard_limit_reached`, 402, Gemini
+  `FAILED_PRECONDITION`). Ambos códigos activan el respaldo; la diferencia solo cambia el mensaje y el registro.
+- El principal falla rápido: con respaldo no reintenta (`maxRetries: 0`), así que un 429, un saldo agotado o una
+  caída pasan al respaldo de inmediato. Como no hay estado compartido entre invocaciones, fuera de un envío de invitados
+  cada imagen intenta OpenAI primero; esos fallos responden al instante, así que el costo es una llamada rechazada
+  por imagen. Dentro de un envío, el cortacircuito por ejecución (A6) evita repetirla.
+- Si todos los candidatos fallan, el resultado lleva el código del **último** intento, salvo que alguno haya sido
+  `quota_exceeded`: ese prevalece, porque es el que pide acción de una persona. Con un solo candidato el
+  comportamiento es el de antes (`timeout` 30 s, `maxRetries: 1`).
+
+**Resultado y registro**: `ImageTextResult` gana `usedProvider?: 'openai' | 'google'`, solo para tests y registro;
+no se persiste ni viaja al cliente, así que el DTO `ImageText` y la base de datos no cambian (salvo el código
+nuevo `quota_exceeded`) y la interfaz no dice qué proveedor leyó. El registro anota, solo con códigos y sin texto,
+`fallback openai→google (<código>)`; `quota_exceeded` y la clave rechazada se registran como error (no como aviso)
+para que un administrador recargue el saldo o cambie la clave.
+
+| | Principal | Respaldo |
+|---|---|---|
+| Proveedor | OpenAI (`@ai-sdk/openai@4.0.97`) | Google (`@ai-sdk/google@4.0.101`, `createGoogleGenerativeAI`) |
+| Cliente | `openaiClient(config)` | `googleClient(config)` |
+| Modelo | `OPENAI_DEFAULT_MODEL = 'gpt-4o'` | `GEMINI_DEFAULT_MODEL = 'gemini-3.5-flash-lite'` |
+| Clave | `NUXT_OPENAI_APIKEY` (+ `_ORG`, `_PROJ`) | `NUXT_GOOGLE_APIKEY` (vacía = sin respaldo) |
+| Detalle de imagen | `providerOptions: { openai: { imageDetail: 'high' } }` en la parte de imagen (siempre presente; Gemini la ignora) | `providerOptions: { google: { mediaResolution: 'MEDIA_RESOLUTION_HIGH' } }` en la llamada (lo aporta el candidato) |
+| Salida estructurada | `strictJsonSchema` (Responses API) | `structuredOutputs` activo por defecto |
+| Base URL de pruebas | `NUXT_OPENAI_BASE_URL` (stub e2e) | no aplica: sin stub e2e |
+
+**Lo que NO cambia** (es genérico del AI SDK): `generateText` + `Output.object`, `imageTextOutputSchema` y su
+segunda pasada con `safeParse`, bytes en lugar de URL, el tope de 45 s, el mapeo de errores (A5) y el prompt
+(`IMAGE_EXTRACTION_INSTRUCTION`/`PROMPT`, definidos una sola vez y reexportados por `gemini.ts`).
+
+**Justificación**: el cliente y la clave de Gemini ya están en el proyecto (`server/ai/gemini.ts`,
+`NUXT_GOOGLE_APIKEY`), así que no hay dependencias ni servicios nuevos más allá de Complexity Tracking. El
+respaldo cubre errores comunes (red, tiempo), propios del proveedor (clave, modelo, sobrecarga, bloqueo) y de uso
+(exceso de peticiones, saldo o cuota agotados), sin intervención y sin desplegar código.
+
+**Alternativas**:
+- Elegir el proveedor con una variable (`NUXT_AI_PROVIDER`): descartado por el usuario a favor del respaldo.
+- Gemini como único proveedor: descartado por el usuario.
+- Reintentar solo con OpenAI (`maxRetries`): no cubre la falta de clave ni una caída sostenida.
+- Respaldo también ante salida inválida: descartado; el modelo respondió y cambiarlo duplicaría costo sin
+  evidencia de que mejore (puede revisarse si SC-007 lo pide).
+
+**Riesgos conocidos**:
+- `gemini-3.5-flash-lite` es un modelo ligero; su lectura de letra a mano puede ser inferior a la de `gpt-4o`.
+  SC-002 se mide con OpenAI y, aparte, forzando el respaldo (quickstart §5, tasks T075).
+- El respaldo envía los bytes de la imagen a un segundo tercero (FR-019 sigue cumpliéndose: solo bytes) y solo
+  cuando OpenAI no está disponible.

@@ -36,7 +36,7 @@ Es la única lógica de cliente del panel.
 | `reading` o carga inicial | `SkeletonList` de 3 filas en variante `list` y el texto "Leyendo texto…" en una región `aria-live="polite"`; tras subir, normalmente dura unos segundos |
 | `ready` | El texto en `<p class="whitespace-pre-line">`, que conserva los saltos de línea (FR-002). Botón **Copiar texto**. Si `editable`: botón **Editar** y **Volver a leer** en un menú `⋯` visible. Insignia "editado por X" si aplica |
 | `empty` | `EmptyState` con el icono `scan-text` y "No se reconoció texto en esta imagen", más **Volver a leer** |
-| `failed` | `ErrorState` con el mensaje según `error` (`timeout`/`provider`/`rate_limited` → "No pudimos leer el texto ahora. Inténtalo de nuevo en un momento."; `invalid_input` → "No pudimos leer esta imagen." **sin** Reintentar, porque repetir no puede funcionar; `invalid_output` → mismo copy con Reintentar), que emite `retry` → `read(true)` |
+| `failed` | `ErrorState` con el mensaje según `error` (`timeout`/`provider`/`rate_limited` → "No pudimos leer el texto ahora. Inténtalo de nuevo en un momento."; `quota_exceeded` → "El servicio de lectura alcanzó su límite de uso. Avisa a un administrador e inténtalo más tarde.", con Reintentar; `invalid_input` → "No pudimos leer esta imagen." **sin** Reintentar, porque repetir no puede funcionar; `invalid_output` → mismo copy con Reintentar), que emite `retry` → `read(true)` |
 | `unavailable` | Texto de ayuda "No disponible para este archivo: solo se lee el texto de imágenes JPG, PNG o HEIC de hasta 5 MB." (para HEIC sin copia: "…esta foto HEIC se subió sin copia para lectura"), sin botones |
 | error de red del propio panel | `ErrorState` con reintento de la petición |
 
@@ -74,7 +74,7 @@ Es la única lógica de cliente del panel.
 ## Copy (`app/utils/messages.ts`)
 
 La sección nueva `imageText` lleva:
-- `reading`, `empty`, `unavailable`, `failedRetryable`, `failedPermanent`.
+- `reading`, `empty`, `unavailable`, `failedRetryable`, `failedQuota`, `failedPermanent`.
 - `copied`, `saved`, `confirmReread`, `editedBy(name)`.
 - `searchHint` ("Solo buscamos en el texto de las imágenes que ya se leyeron"), `guestNotice`.
 - Además, en la sección `files`, `preparing`.

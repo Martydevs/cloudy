@@ -113,8 +113,11 @@ La respuesta y su latencia no cambian: responde de inmediato y la lectura sigue 
    - **Pool**: 4 lecturas a la vez; cada una con `timeout` 30 s y `maxRetries: 1`.
    - **Límite**: cada lectura pasa primero por `hitRateLimit(null, 'guest-text:<senderKey>', 20/h)`. Si se
      excede, la imagen queda en `NULL`.
-   - **Presupuesto**: `AbortSignal.timeout(240_000)` compartido; al vencer no se inician más lecturas: las no
-     iniciadas quedan en `NULL` y las abortadas en `failed`/`timeout`. Se leerán cuando un revisor abra el envío.
+   - **Presupuesto**: `AbortSignal.timeout(min(240 s, plazo real de la función - 15 s))` compartido; al vencer no
+     se inician más lecturas: las no iniciadas quedan en `NULL` y las abortadas en `failed`/`timeout`. Se leerán
+     cuando un revisor abra el envío.
+   - **Cortacircuito**: un proveedor caído deja de usarse durante esa ejecución; si ambos lo están, las imágenes
+     restantes quedan en `NULL` (research A6).
    - **Errores**: `readSubmissionImages` nunca lanza; ningún fallo de lectura cambia el código ni el cuerpo de
      la respuesta (FR-004).
 
@@ -167,5 +170,9 @@ borra además `textsrc/<id>.jpg` (data-model, ciclo de vida). La purga de papele
 
 ## Configuración
 
-`runtimeConfig.openaiBaseUrl` (`NUXT_OPENAI_BASE_URL`) es opcional. Vacío significa la URL de OpenAI. Solo los
-e2e lo usan, para apuntar al stub (research A9).
+- Proveedor de IA (research A11): OpenAI es el principal y Gemini el respaldo; no hay variable para elegir. Un
+  proveedor sin clave (`NUXT_OPENAI_APIKEY` o `NUXT_GOOGLE_APIKEY` vacías) se omite. Los endpoints y sus
+  respuestas son los mismos con cualquiera de los dos: el DTO `ImageText` no dice quién leyó. Si ninguno está
+  disponible o ambos fallan, la lectura termina en `failed` con Reintentar.
+- `runtimeConfig.openaiBaseUrl` (`NUXT_OPENAI_BASE_URL`) es opcional. Vacío significa la URL de OpenAI. Solo los
+  e2e lo usan, para apuntar al stub (research A9). No existe un equivalente para Google.

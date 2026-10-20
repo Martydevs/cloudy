@@ -37,7 +37,7 @@ image_text_status: reading | ready | empty | failed | unavailable
 |---------|------|------|-------|
 | `text_status` | `image_text_status` | sí | `NULL` = pendiente |
 | `text_content` | `text` | sí | Solo si `ready`; ≤ 10 000 caracteres (CHECK) |
-| `text_error` | `text` | sí | Código interno: `timeout`, `provider`, `rate_limited`, `invalid_input`, `invalid_output` |
+| `text_error` | `text` | sí | Código interno: `timeout`, `provider`, `rate_limited`, `quota_exceeded`, `invalid_input`, `invalid_output` |
 | `text_source_key` | `text` | sí | Solo HEIC: clave de la copia JPEG `textsrc/<id>.jpg` que subió el navegador (research A4). Se borra del bucket junto con el archivo |
 | `text_attempts` | `smallint` | no, default 0 | Se incrementa en cada reclamación |
 | `text_started_at` | `timestamptz` | sí | Momento de la reclamación; una lectura con más de 90 s se puede volver a reclamar (FR-007), incluida una tarea de segundo plano que la plataforma detuvo |
@@ -113,7 +113,7 @@ type ImageTextStatus = 'pending' | 'reading' | 'ready' | 'empty' | 'failed' | 'u
 interface ImageText {
   status: ImageTextStatus        // NULL de la BD → 'pending'
   text: string | null            // solo en 'ready'
-  error: 'timeout' | 'provider' | 'rate_limited' | 'invalid_input' | 'invalid_output' | null
+  error: 'timeout' | 'provider' | 'rate_limited' | 'quota_exceeded' | 'invalid_input' | 'invalid_output' | null
   readAt: string | null
   editedAt: string | null
   editedBy: string | null        // nombre visible
