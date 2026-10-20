@@ -40,8 +40,15 @@ Es la única lógica de cliente del panel.
 | `unavailable` | Texto de ayuda "No disponible para este archivo: solo se lee el texto de imágenes JPG, PNG o HEIC de hasta 5 MB." (para HEIC sin copia: "…esta foto HEIC se subió sin copia para lectura"), sin botones |
 | error de red del propio panel | `ErrorState` con reintento de la petición |
 
-- **Edición**: un `textarea` con etiqueta "Texto de la imagen", contador `n / 10 000`, botones **Guardar** y
-  **Cancelar**. Al guardar muestra el toast `messages.imageText.saved`.
+- **Edición**: el panel alterna entre la vista de lectura y `<ImageTextEditor>` (abajo); al guardar o cancelar
+  devuelve el foco a **Editar**. El toast `messages.imageText.saved` lo muestra `useImageText.save()`.
+
+### `app/components/files/ImageTextEditor.vue` (US3)
+
+Componente pequeño de una sola responsabilidad (Constitución IV): solo el modo edición, sin peticiones.
+- **Props / eventos**: `modelValue: string`; emite `save(text)` y `cancel`.
+- **Contenido**: un `textarea` con etiqueta "Texto de la imagen", contador `n / 10 000` (`MAX_IMAGE_TEXT_LENGTH`
+  de `shared/`), botones **Guardar** y **Cancelar**; Guardar se desactiva si el texto queda vacío tras `trim`.
 - **Volver a leer con corrección manual**: si `editedAt` no es nulo, primero pasa por `useConfirm` →
   `ConfirmDialog` ("Se reemplazará tu corrección").
 - **Botones**: de tamaño `btn` base, con `lg:btn-sm` solo en escritorio (Constitución III).
@@ -54,6 +61,9 @@ Es la única lógica de cliente del panel.
 - **Carga**: `heic-to` con `import()` dinámico, en un chunk aparte que no entra en el JS inicial de ninguna ruta.
 - **Conversión**: JPEG con calidad 0.85; si pesa más de 5 MB, una vez más con 0.7.
 - **Errores**: cualquier error → `null`.
+- **Subida**: `uploadTextSourceCopy(file, url): Promise<void>` convierte con `makeTextSourceCopy` y hace el PUT con
+  `app/utils/upload-put.ts` (`content-type: image/jpeg`); nunca rechaza. Es la única implementación: la usan
+  `useUploader` y `useGuestSubmission` (DRY).
 
 ### Subida con copia JPEG
 

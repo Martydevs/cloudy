@@ -84,7 +84,7 @@ No se indexa `text_status`: solo se consulta por `id`, que es la clave primaria.
 |-------|-------|
 | Apta para lectura: `category = 'image'`, extensión `jpg`/`jpeg`/`png`/`heic` y `size_bytes ≤ 5 242 880`; además, si es `heic`, `text_source_key` no nulo | `shared/constants/image-text.ts` → `isImageTextEligible()` (la parte del archivo, usada también por el cliente para decidir si genera la copia) + `server/utils/image-text.ts` (la copia) |
 | Copia JPEG de una HEIC: 0 < tamaño ≤ 5 242 880 y firma JPEG | Al completar la subida (equipo e invitado), con `head` + `matchesSignature('jpg', …)` |
-| Entrada y salida del modelo | Zod, `server/ai/schemas.ts` (research A3) |
+| Entrada y salida del modelo | Zod, `server/ai/image-text/schemas.ts` (research A3) |
 | Edición manual: 1–10 000 caracteres tras `trim` | `shared/validation/image-text.ts` (validador propio, como el resto de los cuerpos HTTP) + CHECK |
 | Solo admin y editor leen, reintentan o editan | `requireRole(event, 'editor')` en cada endpoint |
 

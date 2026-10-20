@@ -52,6 +52,7 @@ bun run storage:setup    # bucket CORS, development · storage:setup:test · sto
 app/        pages · layouts (auth, public, dashboard) · components · composables · middleware · utils
 shared/     rules used by BOTH client and server: validation, permissions, file constants, API types
 server/     db/schema.ts · utils/ (db, auth, session, storage, …) · middleware/ · api/ · routes/api/auth
+            ai/ (providers/, one folder per AI use case, index.ts = only public API; imported as #server/ai)
 test/       unit/ · nuxt/ · e2e/
 specs/      Spec Kit feature docs
 ```
@@ -167,6 +168,9 @@ Never print or commit their values.
 - Nitro's `event.waitUntil` is not wired on Vercel Node: background work uses `waitUntil` from
   `@vercel/functions`, only through `server/utils/background.ts`.
 - `heic-to` only works in the browser: load it with a dynamic `import()` (`app/utils/heic-copy.ts`).
+- Nitro auto-imports everything under `server/utils/**`, subfolders included. Code that must stay behind a boundary
+  (the AI layer) lives outside it in `server/ai/` and is imported explicitly as `#server/ai`, only from
+  `server/utils/image-text.ts`; `test/unit/architecture.spec.ts` enforces it.
 - `scripts/storage-setup*` accepts an optional `CORS_EXTRA_ORIGINS` (comma-separated `https://` origins, or
   `http://localhost:*`) to add a preview alias without dropping the site domain.
 

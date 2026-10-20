@@ -137,8 +137,8 @@ Evaluado contra la constitución **v1.0.1** (la 1.0.1 aclara el principio IV: la
     los 90 s y se muestra como error con Reintentar: nunca queda "leyendo" para siempre.
   - Una dependencia nueva (`@vercel/functions`) y las ya instaladas por el usuario se justifican abajo.
 - **IV. Calidad de código**:
-  - `server/ai/` es la única frontera con el proveedor de IA (research A10), y `server/utils/image-text.ts` la
-    única orquestación.
+  - `server/ai/` es la única frontera con el proveedor de IA (research A10), con `index.ts` como única
+    superficie pública, y `server/utils/image-text.ts` la única orquestación (ver "Organización por capas").
   - `server/utils/background.ts` es el único módulo que importa `@vercel/functions`, con la misma regla que
     auth y storage.
   - Las reglas compartidas viven en `shared/constants/image-text.ts`.
@@ -187,17 +187,26 @@ specs/002-note-text-extraction/
 
 ```text
 server/
-├── ai/                                  # frontera única con el proveedor de IA
-│   ├── openai.ts                        # (existente) cliente + OPENAI_DEFAULT_MODEL + instrucción/prompt ajustados
-│   ├── gemini.ts                        # (existente) cliente Google + GEMINI_DEFAULT_MODEL; reexporta instrucción/prompt
-│   ├── provider.ts                      # resolveImageTextCandidates(config): [OpenAI, Gemini] con clave · createProviderBreaker()
-│   ├── errors.ts                        # classifyProviderError(): código de error y si activa el respaldo
-│   ├── schemas.ts                       # Zod: imageSourceSchema · modelImageSchema · imageTextOutputSchema
-│   └── extract-image-text.ts            # extractImageText(): validar → principal (→ respaldo) → validar → ImageTextResult
-├── utils/image-text.ts                  # elegibilidad, reclamación, descarga, guardado, toImageText(),
-│                                        # readFileImage(), readSubmissionImages() (pool de 4, presupuesto ≤ 240 s, cortacircuito),
+├── ai/                                  # capa de IA: NO auto-importada; solo se importa como `#server/ai`
+│   ├── index.ts                         # única superficie pública: extractImageText, createProviderBreaker,
+│   │                                    # resolveImageTextCandidates, imageSourceSchema y los tipos
+│   ├── providers/                       # infraestructura reutilizable por cualquier caso de uso de IA
+│   │   ├── openai.ts                    # (movido desde ai/openai.ts) openaiClient(config) + OPENAI_DEFAULT_MODEL
+│   │   ├── google.ts                    # (movido desde ai/gemini.ts) googleClient(config) + GEMINI_DEFAULT_MODEL
+│   │   └── candidates.ts                # resolveImageTextCandidates(config): [OpenAI, Gemini] con clave
+│   ├── image-text/                      # el caso de uso de esta feature
+│   │   ├── prompt.ts                    # IMAGE_EXTRACTION_INSTRUCTION + IMAGE_EXTRACTION_PROMPT (una sola fuente)
+│   │   ├── schemas.ts                   # Zod: imageSourceSchema · modelImageSchema · imageTextOutputSchema
+│   │   └── extract.ts                   # extractImageText(): validar → principal (→ respaldo) → validar → ImageTextResult
+│   ├── errors.ts                        # classifyProviderError(): código, si activa el respaldo y si es persistente
+│   └── breaker.ts                       # createProviderBreaker(): cortacircuito local a una ejecución
+├── utils/image-text.ts                  # capa de aplicación (la usan los endpoints): toImageText(), readImageText(),
+│                                        # readFileImage(), requestImageTextRead() (lógica común de los dos POST),
+│                                        # readSubmissionImages() (pool de 4, presupuesto ≤ 240 s, cortacircuito),
 │                                        # checkTextSourceCopy()
-├── utils/background.ts                  # runInBackground(): único import de @vercel/functions (waitUntil)
+├── utils/image-text-store.ts            # capa de persistencia: solo SQL sobre las columnas text_* de files |
+│                                        # guest_submission_files (claim, save, release, markUnavailable)
+├── utils/background.ts                  # runInBackground() · remainingMs(): único import de @vercel/functions
 ├── utils/uploads.ts · trash.ts          # textSourceKeyFor(id); borrar la copia en descarte y purga
 ├── db/schema.ts                         # enum image_text_status, columnas text_* (+ text_source_key), 'file.text_edit'
 ├── api/files/[id]/text.get.ts · text.post.ts · text.patch.ts
@@ -217,17 +226,20 @@ shared/
 
 app/
 ├── composables/useImageText.ts · useUploader.ts · useGuestSubmission.ts   # + copia JPEG de HEIC
-├── utils/heic-copy.ts                   # makeTextSourceCopy(): import('heic-to') bajo demanda
-├── components/files/ImageTextPanel.vue
+├── utils/heic-copy.ts                   # makeTextSourceCopy() + uploadTextSourceCopy(): import('heic-to') bajo demanda;
+│                                        # lo reutilizan useUploader y useGuestSubmission
+├── components/files/ImageTextPanel.vue  # estados, copiar, reintentar, volver a leer
+├── components/files/ImageTextEditor.vue # modo edición (US3): textarea, contador, Guardar/Cancelar
 ├── pages/archivos/ver/[fileId].vue · enviar.vue
 ├── components/guests/SubmissionCard.vue · files/FileExplorer.vue
 └── utils/messages.ts                    # sección imageText
 
 drizzle/000N_*.sql                       # generada + SQL manual (CHECK, índice trigram)
 test/
-├── unit/   ai-schemas · ai-extract · ai-errors · ai-provider · background · image-text · image-text-constants ·
-│           api-image-text · api-files (subidas y búsqueda) · api-trash · api-submissions · api-cron · validation-image-text
-├── nuxt/   ImageTextPanel · heic-copy · useUploader · UploadQueue (copia) · useGuestSubmission · pages-files · pages-guests
+├── unit/   ai-schemas · ai-extract · ai-errors · ai-provider · ai-breaker · background · image-text · image-text-store ·
+│           image-text-constants · api-image-text · api-files (subidas y búsqueda) · api-trash · api-submissions ·
+│           api-cron · validation-image-text · architecture (reglas de capas)
+├── nuxt/   ImageTextPanel · ImageTextEditor · heic-copy · useUploader · UploadQueue (copia) · useGuestSubmission · pages-files · pages-guests
 ├── e2e/    image-text (US1, US3) · guest-queue (US2) · routes-guard (rutas nuevas)
 │   └── setup/openai-stub.ts             # stub de la Responses API (puerto local); Gemini no tiene stub e2e
 └── fixtures/files/  nota.jpg · nota.png · nota.heic · paisaje.jpg · grande.jpg
@@ -235,27 +247,66 @@ test/
 
 **Structure Decision**: Es el mismo proyecto Nuxt de la feature 001.
 
-- **`server/ai/`**: agrupa todo lo que conoce al proveedor (cliente, prompts, esquemas y llamada).
-  La conversión HEIC no vive aquí porque es de navegador (`app/utils/heic-copy.ts`).
-  No es auto-importado, así que se importa explícitamente desde `server/utils/image-text.ts`, la única
-  orquestación auto-importada que usan los endpoints.
+- **`server/ai/`**: agrupa todo lo que conoce al proveedor (clientes, prompt, esquemas y llamada). Vive **fuera**
+  de `server/utils/` a propósito: Nitro 2 auto-importa `server/utils/**/*`, subcarpetas incluidas
+  ([nitro v2, `resolvers/imports.ts`](https://github.com/nitrojs/nitro/blob/v2/src/core/config/resolvers/imports.ts)),
+  así que dentro de `utils/` sus funciones quedarían disponibles en todos los endpoints. Fuera, solo se importa
+  explícitamente con el alias `#server/ai` (Nuxt ≥ 4.3; el proyecto usa 4.6.1) y solo desde
+  `server/utils/image-text.ts` (Constitución IV, v1.0.1). La conversión HEIC no vive aquí porque es de navegador.
 - **`server/utils/background.ts`**: un módulo para la dependencia externa (`@vercel/functions`), como `auth.ts`
   y `storage.ts`.
 - **`shared/`**: solo recibe reglas y tipos que ve el cliente.
 - **Pruebas**: `test/unit/helpers/nitro.ts` se amplía con los nuevos utils.
 
+### Organización por capas (responsabilidad, DRY y KISS)
+
+| Capa | Archivos | Hace | No hace |
+|------|----------|------|---------|
+| UI | `ImageTextPanel.vue`, `ImageTextEditor.vue` | Pinta los estados y emite acciones | Peticiones, reglas de negocio |
+| Estado del cliente | `useImageText.ts` | GET/POST/PATCH, polling, copiar, toasts | Decidir elegibilidad (la lee de `shared/`) |
+| Utilidad de navegador | `app/utils/heic-copy.ts` | Convertir HEIC a JPEG y subir la copia con PUT prefirmado | Saber de IA o de la BD |
+| Reglas compartidas | `shared/constants/image-text.ts`, `shared/validation/image-text.ts`, `shared/types/api.ts` | Estados, límites, `isImageTextEligible`, validador del PATCH, DTO | Código de servidor o de Vue |
+| HTTP | `server/api/**/text.*.ts` y los endpoints modificados | `requireRole`, `paramId`/`readValid`, visibilidad del recurso (404/409) y una llamada a la capa de aplicación | SQL de `text_*`, IA, storage |
+| Aplicación | `server/utils/image-text.ts` | Orquesta: elegibilidad → reclamar → descargar → firma → IA → guardar; pool de invitados; `requestImageTextRead` | SQL directo (usa el store), detalles del proveedor |
+| Persistencia | `server/utils/image-text-store.ts` | UPDATE condicionados sobre `text_*`, genéricos por tabla | IA, storage, HTTP |
+| IA | `server/ai/**` | Clientes, prompt, Zod, llamada, clasificación de errores, respaldo, cortacircuito | BD, storage, h3 |
+| Infraestructura | `storage.ts`, `background.ts`, `uploads.ts` | S3, `waitUntil`, claves de objetos | Reglas de la feature |
+
+**Dirección de las dependencias** (nunca al revés): UI → composable → HTTP → aplicación → { persistencia, IA,
+storage, background } → `shared/`. `server/ai/` solo importa `shared/constants/image-text.ts`, el AI SDK y
+`useRuntimeConfig`; ningún endpoint importa `#server/ai` ni llama al store directamente (lo revisa T077).
+
+**DRY**:
+- Un solo prompt e instrucción (`image-text/prompt.ts`) para los dos proveedores; ya no hay reexport de `gemini.ts`.
+- Un solo store y una sola tubería de lectura, genéricos sobre `files` y `guest_submission_files`
+  (`ImageTextTarget = { table, id }`).
+- `requestImageTextRead(target, { force })` concentra las reglas de `force`, terminales y `409` que comparten
+  `POST /api/files/:id/text` y `POST /api/submissions/:id/files/:fileId/text`; cada endpoint solo resuelve su recurso.
+- `isImageTextEligible` (shared) decide en cliente y servidor; `textSourceKeyFor` es la única fuente de la clave.
+- `uploadTextSourceCopy` (heic-copy) lo usan `useUploader` y `useGuestSubmission`.
+- Los tiempos (20 s, 30 s, 45 s) son constantes con nombre al inicio de `image-text/extract.ts`.
+
+**KISS**:
+- Funciones y objetos literales; sin clases, contenedores de inyección ni capas de "repositorio" genéricas.
+- El pool de invitados es un bucle con 4 trabajadores `async` dentro de `image-text.ts`; el cortacircuito es un
+  cierre local. Se separan en otro archivo solo si un segundo caso de uso los necesita.
+- `providers/` se separa porque es infraestructura reutilizable; `image-text/` porque es un caso de uso. Un caso
+  de uso nuevo de IA será una carpeta hermana, sin tocar los proveedores.
+
 ## Cambios a la base existente
 
-1. `server/ai/openai.ts`:
+1. `server/ai/openai.ts` → **mover** a `server/ai/providers/openai.ts` (con `git mv`, para conservar el historial):
    - `import type { RuntimeConfig }`.
    - `baseURL: config.openaiBaseUrl || undefined`.
    - Se conserva la constante existente `OPENAI_DEFAULT_MODEL = 'gpt-4o'` (no se crea `IMAGE_TEXT_MODEL`).
-   - Renombrar `IMAGE_EXRTACTION_PROMPT` → `IMAGE_EXTRACTION_PROMPT`.
+   - `IMAGE_EXTRACTION_INSTRUCTION` y el prompt salen de este archivo a `server/ai/image-text/prompt.ts`, donde
+     `IMAGE_EXRTACTION_PROMPT` se renombra a `IMAGE_EXTRACTION_PROMPT`.
    - Ajustar las dos últimas reglas de la instrucción a una imagen por llamada y a `hasText`/`text` (research
-     A10). El resto del texto del usuario se conserva.
-1b. `server/ai/gemini.ts` (ya existe, con `googleClient(config)` y `GEMINI_DEFAULT_MODEL = 'gemini-3.5-flash-lite'`):
-   - Actualizar el reexport al nombre corregido `IMAGE_EXTRACTION_PROMPT` (mismo prompt e instrucción que OpenAI).
-   - Nuevo `server/ai/provider.ts` con `resolveImageTextCandidates(config)`: devuelve, en orden, los candidatos que
+     A10). El resto del texto del usuario se conserva literalmente.
+1b. `server/ai/gemini.ts` → **mover** a `server/ai/providers/google.ts` (con `googleClient(config)` y
+   `GEMINI_DEFAULT_MODEL = 'gemini-3.5-flash-lite'`, sin cambios):
+   - Se elimina el reexport de la instrucción y el prompt: ambos proveedores los leen de `image-text/prompt.ts`.
+   - Nuevo `server/ai/providers/candidates.ts` con `resolveImageTextCandidates(config)`: devuelve, en orden, los candidatos que
      tienen clave (`openaiApikey` y `googleApikey` no vacías): `{ provider: 'openai', model:
      openaiClient(config)(OPENAI_DEFAULT_MODEL) }` y `{ provider: 'google', model:
      googleClient(config)(GEMINI_DEFAULT_MODEL), providerOptions: { google: { mediaResolution:
@@ -280,8 +331,8 @@ test/
    - Agregar la regla "Neon Auth, storage, IA **y segundo plano** solo a través de sus módulos".
    - Marcar 002 como feature activa.
 5. `package.json`: `bun add @vercel/functions`.
-6. `test/unit/helpers/nitro.ts`: registrar las funciones de `image-text.ts` y `runInBackground` en la lista de
-   stubs.
+6. `test/unit/helpers/nitro.ts`: registrar las funciones de `image-text.ts`, `image-text-store.ts` y
+   `runInBackground` en la lista de stubs.
 
 ## Riesgos y mitigaciones
 
