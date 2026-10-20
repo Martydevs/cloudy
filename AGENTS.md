@@ -7,7 +7,7 @@ send material from a public page into an approval queue that the team reviews li
 **Governance**: `.specify/memory/constitution.md` (v1.0.0) is the source of truth and overrides this
 file. Keep this guide aligned with it whenever the constitution is amended.
 
-**Active feature**: `specs/001-shared-media-drive/`. Read `spec.md` (what), `plan.md` + `research.md`
+**Active feature**: `specs/002-note-text-extraction/` (builds on `specs/001-shared-media-drive/`). Read `spec.md` (what), `plan.md` + `research.md`
 (how), `data-model.md` and `contracts/` (interfaces) before changing related code.
 
 ## Stack
@@ -21,6 +21,7 @@ file. Keep this guide aligned with it whenever the constitution is amended.
 | UI | Tailwind CSS 4 + daisyUI 5 (themes `cloudy` dark default, `cloudy-light`) · `@nuxt/icon` with **lucide** only · `@nuxt/fonts` (DM Sans) · `@nuxt/image` |
 | Utilities | `@vueuse/nuxt` (auto-imported) |
 | Tests | Vitest projects `unit` / `nuxt` / `e2e` · `@nuxt/test-utils` · `playwright-core` (Chromium) |
+| AI | AI SDK v7 (`generateText` + `Output.object`) · OpenAI `gpt-4o` as main provider, Google `gemini-3.5-flash-lite` as fallback · isolated in `server/ai/` |
 | Deploy | Vercel (Nitro `vercel` preset, SSR, Vercel Cron) |
 
 Do not add dependencies or external services without a justification in the feature plan's
@@ -89,8 +90,8 @@ hover. Check every screen at 360 px and ≥ 1280 px.
 **IV. Code quality** — `<script setup lang="ts">`, Composition API, small single-purpose components,
 logic in composables. No `any` without a justifying comment. Shared rules live once in `shared/`.
 Every endpoint validates input and calls the session/role guard server-side — hiding UI is not
-authorization. Neon Auth and storage are accessed **only** through `server/utils/auth.ts` and
-`server/utils/storage.ts`. No demo code, dead code or secrets. Typecheck and build must pass.
+authorization. Neon Auth, storage, AI and background work are accessed **only** through `server/utils/auth.ts`,
+`server/utils/storage.ts`, `server/ai/` (via `server/utils/image-text.ts`) and `server/utils/background.ts`. No demo code, dead code or secrets. Typecheck and build must pass.
 
 **V. Testing** — Unit tests for pure logic and business rules; component tests for stateful/role-
 dependent components; e2e for every user story and every protected route (no session + wrong role).
@@ -142,6 +143,8 @@ files: set the same names per environment in the project settings.
 `NUXT_DATABASE_URL`, `NUXT_NEON_AUTH_BASE_URL`,
 `NUXT_NEON_AUTH_COOKIE_SECRET`, `NUXT_AWS_ENDPOINT_URL_S3`, `NUXT_AWS_ACCESS_KEY_ID`,
 `NUXT_AWS_SECRET_ACCESS_KEY`, `NUXT_AWS_REGION`, `NUXT_S3_BUCKET`, `NUXT_PUBLIC_SITE_URL`,
+`NUXT_OPENAI_APIKEY`, `NUXT_OPENAI_ORG`, `NUXT_OPENAI_PROJ`, `NUXT_OPENAI_BASE_URL` (empty = OpenAI; e2e only),
+`NUXT_GOOGLE_APIKEY` (fallback provider; empty = no fallback),
 `CRON_SECRET`, `NUXT_RATE_LIMIT_SALT`. `NUXT_NEON_JWKS_URL` is present but intentionally unused in v1.
 Never print or commit their values.
 
@@ -158,6 +161,12 @@ Never print or commit their values.
   429); never call the auth API directly from a spec.
 - The Neon auth client *throws* its own normalized codes (`bad_jwt`, `invalid_credentials`, …), not Better
   Auth's; `useAuthClient` maps what pages need (e.g. a used reset link → `INVALID_TOKEN`).
+- AI: OpenAI is the main provider and Gemini the fallback (no key, or any provider failure: network, timeout,
+  rate limit, exhausted balance/quota, invalid key or model). `NUXT_GOOGLE_APIKEY` stays empty in `.env.test` so
+  e2e never call Gemini.
+- Nitro's `event.waitUntil` is not wired on Vercel Node: background work uses `waitUntil` from
+  `@vercel/functions`, only through `server/utils/background.ts`.
+- `heic-to` only works in the browser: load it with a dynamic `import()` (`app/utils/heic-copy.ts`).
 - `scripts/storage-setup*` accepts an optional `CORS_EXTRA_ORIGINS` (comma-separated `https://` origins, or
   `http://localhost:*`) to add a preview alias without dropping the site domain.
 

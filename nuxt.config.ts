@@ -26,6 +26,8 @@ export default defineNuxtConfig({
     openaiApikey: '',
     openaiOrg: '',
     openaiProj: '',
+    // Vacío = API de OpenAI; solo los e2e lo apuntan a un stub local (research A9).
+    openaiBaseUrl: '',
     googleApikey: '',
     neonAuthBaseUrl: '',
     neonAuthCookieSecret: '',

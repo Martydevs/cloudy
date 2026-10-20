@@ -24,6 +24,8 @@ export default defineConfig({
           // La caché de módulos de Vitest 5 guarda la entrada virtual de @nuxt/test-utils y en la
           // siguiente corrida rompe sus imports relativos ("Failed to resolve ./error.js").
           fsModuleCache: false,
+          // Arrancar Nuxt en el entorno tarda ~8-12 s en esta máquina: con el 10 s por defecto el `beforeAll` falla al azar.
+          hookTimeout: 60000,
           include: ['test/nuxt/**/*.{test,spec}.ts'],
           environment: 'nuxt',
           environmentOptions: {
