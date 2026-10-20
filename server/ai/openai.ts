@@ -12,6 +12,8 @@ export const openaiClient = (config: RuntimeConfig) => {
   })
 }
 
+export const OPENAI_DEFAULT_MODEL = "gpt-4o"
+
 // PASS THIS AS INSTRUCTION OF THE TEXT GENERATION FUNCTION
 
 export const IMAGE_EXTRACTION_INSTRUCTION = `

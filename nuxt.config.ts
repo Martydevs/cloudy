@@ -26,6 +26,7 @@ export default defineNuxtConfig({
     openaiApikey: '',
     openaiOrg: '',
     openaiProj: '',
+    googleApikey: '',
     neonAuthBaseUrl: '',
     neonAuthCookieSecret: '',
     awsEndpointUrlS3: '',
