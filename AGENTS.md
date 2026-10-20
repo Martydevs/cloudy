@@ -4,7 +4,7 @@ Cloudy is the internal media drive for a Christian church's multimedia & audio p
 members (admins and editors) upload, organize, preview, comment on and recover media files. Guests
 send material from a public page into an approval queue that the team reviews live.
 
-**Governance**: `.specify/memory/constitution.md` (v1.0.0) is the source of truth and overrides this
+**Governance**: `.specify/memory/constitution.md` (v1.0.1) is the source of truth and overrides this
 file. Keep this guide aligned with it whenever the constitution is amended.
 
 **Active feature**: `specs/002-note-text-extraction/` (builds on `specs/001-shared-media-drive/`). Read `spec.md` (what), `plan.md` + `research.md`

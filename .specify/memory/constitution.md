@@ -1,5 +1,14 @@
 <!--
-Sync Impact Report
+Sync Impact Report (1.0.1, 2026-10-20)
+- Version change: 1.0.0 → 1.0.1 (PATCH: clarification, no change in obligations)
+- Modified principles: IV. Calidad de código: the "single wrapper module" rule now names IA and background
+  work and allows a dedicated folder (e.g. `server/ai/`) when it is reached only through one
+  `server/utils/` module. Matches existing practice in AGENTS.md and specs/002-note-text-extraction.
+- Added/removed sections: none
+- Templates checked: ✅ plan/spec/tasks templates need no change
+- Follow-up: AGENTS.md already describes this boundary; no migration plan needed
+
+Sync Impact Report (1.0.0)
 - Version change: (unratified template) → 1.0.0
 - Modified principles (template placeholders → new titles):
   - [PRINCIPLE_1_NAME] → I. Rendimiento medible
@@ -89,8 +98,10 @@ El código MUST ser legible, tipado y seguro por defecto.
   en `shared/` y usarse en cliente y servidor.
 - Todo endpoint MUST validar su entrada y verificar sesión y rol en el servidor; ocultar la UI
   no cuenta como autorización.
-- Los servicios externos o en beta (auth, almacenamiento) MUST encapsularse en un único módulo de
-  `server/utils/` que sea la única frontera con el proveedor.
+- Los servicios externos o en beta (auth, almacenamiento, IA, segundo plano) MUST encapsularse en una
+  única frontera con el proveedor: un módulo de `server/utils/` o, si el proveedor necesita varios
+  archivos, una carpeta dedicada (p. ej. `server/ai/`) a la que los endpoints solo acceden a través de
+  un único módulo de `server/utils/`.
 - Prohibido dejar código de demostración, código muerto o secretos en el repositorio.
 - La verificación de tipos (`nuxt typecheck`) y el build MUST pasar sin errores.
 
@@ -185,4 +196,4 @@ se sienta confiable.
   operativa para agentes y personas vive en `AGENTS.md`, que MUST mantenerse alineado con esta
   constitución.
 
-**Version**: 1.0.0 | **Ratified**: 2026-10-14 | **Last Amended**: 2026-10-14
+**Version**: 1.0.1 | **Ratified**: 2026-10-14 | **Last Amended**: 2026-10-20
