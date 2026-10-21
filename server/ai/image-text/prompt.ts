@@ -1,21 +1,6 @@
-import { createOpenAI } from "@ai-sdk/openai"
-import { RuntimeConfig } from 'nuxt/schema'
-
-// AI PROVIDER DECLARATION FOR MAIN USE CASE, IMAGE CONTENT EXTRACTION
-
-// OPENAI CLIENT
-export const openaiClient = (config: RuntimeConfig) => {
-  return createOpenAI({
-    apiKey: config.openaiApikey,
-    organization: config.openaiOrg,
-    project: config.openaiProj
-  })
-}
-
-export const OPENAI_DEFAULT_MODEL = "gpt-4o"
+// INSTRUCTION AND PROMPT FOR IMAGE CONTENT EXTRACTION, SHARED BY EVERY PROVIDER (research A10)
 
 // PASS THIS AS INSTRUCTION OF THE TEXT GENERATION FUNCTION
-
 export const IMAGE_EXTRACTION_INSTRUCTION = `
 Extract the legible text from each image, exactly as written. Images can contain any kind of text (photos, screenshots, documents, handwritten or digital notes), but are often sticky notes or prayer requests that carry the Skykids logo.
 
@@ -24,10 +9,10 @@ Rules:
 - Omit the Skykids logo and the word "Skykids" wherever it appears, along with decorative elements (stickers, borders, icons, watermarks).
 - Do not interpret, correct, summarize, translate, or add anything. Keep the original language.
 - Skip illegible or ambiguous text.
-- With multiple images, transcribe each in order, separated by a blank line.
-- If no legible text remains, return exactly: [texto no reconocido]
+- If the image holds several notes, transcribe each in order, separated by a blank line.
+- Answer with the object { hasText, text }: hasText true and the transcription in text; if no legible text remains, hasText false and text "".
 
 Output only the transcription, with no preamble or comments.`
 
 // PASS THIS AS PROMPT OF THE TEXT GENERATION FUNCTION
-export const IMAGE_EXRTACTION_PROMPT = "Extract the content of the following images"
+export const IMAGE_EXTRACTION_PROMPT = "Extract the content of the following image"
