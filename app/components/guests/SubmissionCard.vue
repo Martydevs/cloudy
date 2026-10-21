@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { Submission } from '#shared/types/api'
 import { daysLeft } from '#shared/retention'
+import { getExtension } from '#shared/constants/files'
 
 const props = defineProps<{ submission: Submission, busy?: boolean }>()
 const emit = defineEmits<{ approve: [folderId: string | null], reject: [reason: string] }>()
@@ -13,6 +14,12 @@ const reason = ref('')
 const rejectDialog = useTemplateRef<HTMLDialogElement>('rejectDialog')
 const rejectTitleId = useId()
 const reasonId = useId()
+
+/**
+ * Imágenes con su texto leído (feature 002), solo mientras el envío está pendiente: al aprobarlo el texto
+ * pasa al archivo y al rechazarlo se elimina. El resto de archivos no tiene panel.
+ */
+const images = computed(() => props.submission.status === 'pending' ? props.submission.files.filter(f => f.category === 'image') : [])
 
 const left = computed(() => daysLeft(props.submission.expiresAt))
 const expiry = computed(() => left.value === 0 ? 'caduca hoy' : left.value === 1 ? 'caduca en 1 día' : `caduca en ${left.value} días`)
@@ -65,6 +72,21 @@ function confirmReject() {
           <span class="text-xs text-base-content/70">{{ formatBytes(file.size) }}</span>
         </li>
       </ul>
+
+      <!-- Texto de cada imagen (feature 002): solo lectura. -->
+      <div v-if="images.length" class="flex flex-col gap-2">
+        <LazyImageTextPanel
+          v-for="file in images"
+          :key="file.id"
+          :endpoint="`/api/submissions/${submission.id}/files/${file.id}/text`"
+          :initial="file.text"
+          :title="`Texto de «${file.name}»`"
+          :heic="getExtension(file.name) === 'heic'"
+          auto-read
+          :editable="false"
+          compact
+        />
+      </div>
 
       <div v-if="submission.status === 'pending'" class="card-actions justify-end">
         <button type="button" class="btn" :disabled="busy" @click="openReject">

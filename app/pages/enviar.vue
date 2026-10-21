@@ -91,6 +91,10 @@ function another() {
       <div class="flex flex-col gap-3">
         <DropZone v-if="submission.items.value.length < MAX_GUEST_FILES && !busy" @files="submission.add" />
         <p class="text-sm text-base-content/70">Hasta {{ MAX_GUEST_FILES }} archivos por envío.</p>
+        <p class="flex items-start gap-2 text-sm text-base-content/70">
+          <Icon name="lucide:scan-text" class="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+          {{ messages.imageText.guestNotice }}
+        </p>
         <UploadQueue v-if="submission.items.value.length" :items="submission.items.value" @cancel="submission.remove" />
       </div>
 

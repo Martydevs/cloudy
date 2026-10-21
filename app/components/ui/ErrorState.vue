@@ -1,6 +1,7 @@
 <script setup lang="ts">
-withDefaults(defineProps<{ message?: string }>(), {
+withDefaults(defineProps<{ message?: string, retryable?: boolean }>(), {
   message: messages.load.generic,
+  retryable: true,
 })
 const emit = defineEmits<{ retry: [] }>()
 </script>
@@ -9,7 +10,7 @@ const emit = defineEmits<{ retry: [] }>()
   <div role="alert" class="alert alert-error alert-soft flex flex-col items-start gap-3 sm:flex-row sm:items-center">
     <Icon name="lucide:circle-alert" class="size-6 shrink-0" aria-hidden="true" />
     <span class="flex-1">{{ message }}</span>
-    <button type="button" class="btn" @click="emit('retry')">
+    <button v-if="retryable" type="button" class="btn" @click="emit('retry')">
       <Icon name="lucide:refresh-cw" class="size-4" aria-hidden="true" />
       Reintentar
     </button>

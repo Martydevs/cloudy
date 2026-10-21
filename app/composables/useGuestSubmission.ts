@@ -1,5 +1,7 @@
 // Envío de un invitado (FR-016): validar en local → presignar el lote → PUT de 3 en 3 → un solo `complete`.
-import { MAX_GUEST_FILES } from '#shared/constants/files'
+import { getExtension, MAX_GUEST_FILES } from '#shared/constants/files'
+import { isImageTextEligible } from '#shared/constants/image-text'
+import type { GuestUploadTicket } from '#shared/types/api'
 import { checkUploadFile } from '#shared/validation/files'
 import type { UploadItem } from '~/composables/useUploader'
 
@@ -10,13 +12,11 @@ export interface SubmissionResult {
   rejected: number
 }
 
-interface GuestTicket {
-  fileId: string
-  uploadUrl: string
-  headers: Record<string, string>
-}
-
 const CONCURRENCY = 3
+
+/** HEIC apta: sube además su copia JPEG para leer el texto (feature 002, research A4). */
+const wantsTextSource = (file: File | undefined) =>
+  !!file && getExtension(file.name) === 'heic' && isImageTextEligible({ extension: 'heic', size: file.size })
 
 export function useGuestSubmission() {
   const items = ref<UploadItem[]>([])
@@ -59,13 +59,26 @@ export function useGuestSubmission() {
     status.value = 'submitting'
     error.value = ''
     try {
-      const ticket = await $fetch<{ submissionId: string, uploads: GuestTicket[] }>('/api/public/submissions', {
+      const ticket = await $fetch<{ submissionId: string, uploads: GuestUploadTicket[] }>('/api/public/submissions', {
         method: 'POST',
         body: {
           senderName: form.senderName,
           note: form.note || undefined,
-          files: queued.map(item => ({ name: item.name, size: item.size, mimeType: sources.get(item.id)?.type ?? '' })),
+          files: queued.map(item => ({
+            name: item.name,
+            size: item.size,
+            mimeType: sources.get(item.id)?.type ?? '',
+            withTextSource: wantsTextSource(sources.get(item.id)),
+          })),
         },
+      })
+
+      // Las copias JPEG de las HEIC se convierten y suben en paralelo con los originales; nunca rechazan.
+      const textSources = queued.flatMap((item, index) => {
+        const url = ticket.uploads[index]?.textSourceUploadUrl
+        if (!url) return []
+        patch(item.id, { preparing: true })
+        return [uploadTextSourceCopy(sources.get(item.id)!, url).finally(() => patch(item.id, { preparing: false }))]
       })
 
       // Las subidas van de 3 en 3; `uploads` llega en el mismo orden que `files`.
@@ -83,6 +96,7 @@ export function useGuestSubmission() {
         }
       }
       await Promise.all(Array.from({ length: Math.min(CONCURRENCY, queued.length) }, worker))
+      await Promise.all(textSources)
 
       const outcome = await $fetch<{ status: 'pending' } & SubmissionResult>(`/api/public/submissions/${ticket.submissionId}/complete`, { method: 'POST' })
       for (const item of queued) patch(item.id, { status: 'done', progress: 100 })

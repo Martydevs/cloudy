@@ -51,6 +51,7 @@ function onFolder(key: string, folder: FolderItem) {
         <span class="flex items-center gap-2">
           <span class="truncate font-medium" :title="file.name">{{ file.name }}</span>
           <span v-if="file.origin === 'guest'" class="badge badge-secondary badge-sm">invitado</span>
+          <span v-if="file.matchedIn === 'text'" class="badge badge-primary badge-sm shrink-0">En el texto</span>
           <CommentCount :count="file.commentCount" class="text-xs text-base-content/70" />
         </span>
         <span class="truncate text-xs text-base-content/70">

@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { mockNuxtImport, mountSuspended } from '@nuxt/test-utils/runtime'
 import { setResponseStatus } from 'h3'
 import { nextTick } from 'vue'
-import type { Me, Submission } from '#shared/types/api'
+import type { ImageText, Me, Submission } from '#shared/types/api'
 import { MAX_GUEST_FILES } from '#shared/constants/files'
 import AppToast from '~/components/app/AppToast.vue'
 import DropZone from '~/components/upload/DropZone.vue'
@@ -27,12 +27,15 @@ const file = (name: string, type = 'image/jpeg', size = 1000) => {
   Object.defineProperty(f, 'size', { value: size })
   return f
 }
+const imageText = (changes: Partial<ImageText> = {}): ImageText => ({
+  status: 'ready', text: 'Oremos por Ana', error: null, readAt: null, editedAt: null, editedBy: null, ...changes,
+})
 const submission = (changes: Partial<Submission> = {}): Submission => ({
   id: 's1', senderName: 'Eva', note: 'Fotos del domingo', status: 'pending', createdAt: new Date().toISOString(),
   expiresAt: new Date(Date.now() + 5 * 86_400_000).toISOString(),
   files: [
-    { id: 'f1', name: 'foto.jpg', category: 'image', size: 2048, previewUrl: '/api/submissions/s1/files/f1/content' },
-    { id: 'f2', name: 'audio.mp3', category: 'audio', size: 4096, previewUrl: '/api/submissions/s1/files/f2/content' },
+    { id: 'f1', name: 'foto.jpg', category: 'image', size: 2048, previewUrl: '/api/submissions/s1/files/f1/content', text: imageText() },
+    { id: 'f2', name: 'audio.mp3', category: 'audio', size: 4096, previewUrl: '/api/submissions/s1/files/f2/content', text: null },
   ],
   ...changes,
 })
@@ -102,7 +105,7 @@ describe('/enviar', () => {
     await wrapper.get('form').trigger('submit')
     await flush(20)
     const post = calls.find(c => c.url === '/api/public/submissions')
-    expect(post?.body).toEqual({ senderName: 'Eva', note: 'Fotos', files: [{ name: 'foto.jpg', size: 1000, mimeType: 'image/jpeg' }, { name: 'imagen.png', size: 1000, mimeType: 'image/png' }] })
+    expect(post?.body).toEqual({ senderName: 'Eva', note: 'Fotos', files: [{ name: 'foto.jpg', size: 1000, mimeType: 'image/jpeg', withTextSource: false }, { name: 'imagen.png', size: 1000, mimeType: 'image/png', withTextSource: false }] })
     expect(sent).toEqual(['https://s3.test/g1', 'https://s3.test/g2'])
     expect(calls.some(c => c.url === '/api/public/submissions/sub1/complete')).toBe(true)
     expect(wrapper.text()).toContain('¡Gracias! Recibimos tu envío')
@@ -190,6 +193,64 @@ describe('SubmissionCard', () => {
     const today = await mountSuspended(SubmissionCard, { props: { submission: submission({ expiresAt: new Date(Date.now() - 1000).toISOString(), files: [submission().files[0]!] }) } })
     expect(today.text()).toContain('caduca hoy')
     expect(today.text()).toContain('1 archivo')
+  })
+})
+
+describe('texto de las imágenes de invitados (feature 002)', () => {
+  const TEXT = '/api/submissions/s1/files/f1/text'
+  const textCalls = () => calls.filter(c => c.url === TEXT)
+  const withText = (text: ImageText) => submission({ files: [{ ...submission().files[0]!, text }] })
+
+  it('/enviar avisa de la lectura automática junto al selector; el botón Enviar no cambia', async () => {
+    const wrapper = await mountSuspended(EnviarPage)
+    expect(wrapper.text()).toContain(messages.imageText.guestNotice)
+    expect(button(wrapper, 'Enviar').attributes('disabled')).toBeUndefined()
+  })
+
+  it('la tarjeta muestra el texto del listado sin peticiones, truncado con Ver todo y sin edición', async () => {
+    const long = Array.from({ length: 9 }, (_, i) => `Línea ${i + 1}`).join('\n')
+    const wrapper = await mountSuspended(SubmissionCard, { props: { submission: withText(imageText({ text: long })) } })
+    await vi.waitFor(() => expect(wrapper.text()).toContain('Línea 1'))
+    expect(wrapper.get('[aria-labelledby] p.whitespace-pre-line').classes()).toContain('line-clamp-6')
+    expect(buttonsWithText(wrapper, 'Ver todo')).toHaveLength(1)
+    expect(wrapper.find('button[aria-label="Más acciones del texto"]').exists()).toBe(false)
+    expect(wrapper.text()).toContain('Texto de «foto.jpg»')
+    await flush()
+    expect(textCalls()).toHaveLength(0)
+  })
+
+  it('pendiente → lectura de respaldo sin force; failed espera Reintentar', async () => {
+    mockApi('POST', TEXT, imageText())
+    const pending = await mountSuspended(SubmissionCard, { props: { submission: withText(imageText({ status: 'pending', text: null })) } })
+    await vi.waitFor(() => expect(pending.text()).toContain('Oremos por Ana'))
+    expect(textCalls().map(c => [c.method, c.body])).toEqual([['POST', { force: false }]])
+
+    resetCalls()
+    const failed = await mountSuspended(SubmissionCard, { props: { submission: withText(imageText({ status: 'failed', text: null, error: 'timeout' })) } })
+    await vi.waitFor(() => expect(buttonsWithText(failed, 'Reintentar')).toHaveLength(1))
+    expect(textCalls()).toHaveLength(0)
+    await button(failed, 'Reintentar').trigger('click')
+    await flush()
+    expect(textCalls().map(c => [c.method, c.body])).toEqual([['POST', { force: true }]])
+  })
+
+  it('reading → consulta GET cada 3 s hasta un estado terminal', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] })
+    mockApi('GET', TEXT, imageText())
+    const wrapper = await mountSuspended(SubmissionCard, { props: { submission: withText(imageText({ status: 'reading', text: null })) } })
+    await vi.waitFor(() => expect(wrapper.text()).toContain('Leyendo texto…'))
+    vi.advanceTimersByTime(3000)
+    await flush()
+    await vi.waitFor(() => expect(wrapper.text()).toContain('Oremos por Ana'))
+    expect(textCalls().map(c => c.method)).toEqual(['GET'])
+    vi.useRealTimers()
+  })
+
+  it('un envío ya revisado no muestra paneles de texto ni lee nada', async () => {
+    const wrapper = await mountSuspended(SubmissionCard, { props: { submission: { ...withText(imageText({ status: 'pending', text: null })), status: 'approved' } } })
+    await flush()
+    expect(wrapper.text()).not.toContain('Texto de «foto.jpg»')
+    expect(textCalls()).toHaveLength(0)
   })
 })
 

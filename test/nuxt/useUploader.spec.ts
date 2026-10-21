@@ -7,6 +7,11 @@ type Behavior = 'ok' | 'network' | 'hang' | 403
 /** XHR falso: reporta progreso y termina según `behaviors[url]` (por defecto bien). */
 const behaviors = new Map<string, Behavior>()
 const sent: string[] = []
+const headersByUrl = new Map<string, Record<string, string>>()
+
+// `heic-to` solo corre en el navegador real: se simula para controlar cuándo termina la conversión.
+const heic = vi.hoisted(() => ({ heicTo: vi.fn() }))
+vi.mock('heic-to', () => ({ heicTo: heic.heicTo }))
 
 class FakeXHR {
   upload: { onprogress: ((e: { lengthComputable: boolean, loaded: number, total: number }) => void) | null } = { onprogress: null }
@@ -27,6 +32,7 @@ class FakeXHR {
 
   send() {
     sent.push(this.url)
+    headersByUrl.set(this.url, this.headers)
     const behavior = behaviors.get(this.url) ?? 'ok'
     if (behavior === 'hang') return
     setTimeout(() => {
@@ -65,6 +71,8 @@ beforeEach(() => {
   vi.stubGlobal('XMLHttpRequest', FakeXHR)
   behaviors.clear()
   sent.length = 0
+  headersByUrl.clear()
+  heic.heicTo.mockReset()
   ticket = 0
   resetCalls()
   useToast().toasts.value = []
@@ -214,5 +222,69 @@ describe('useUploader', () => {
     uploader.add([file('a.jpg'), file('b.jpg')])
     await flush(30)
     expect(useToast().toasts.value.map(t => t.message)).toEqual(['Se subieron 2 archivos'])
+  })
+})
+
+// Feature 002: una HEIC apta sube además su copia JPEG para leer el texto, en paralelo con el original.
+describe('useUploader · copia JPEG de una HEIC', () => {
+  const heicFile = () => file('IMG_0001.heic', 'image/heic', 3_000_000)
+
+  function mockHeicTicket() {
+    mockApi('POST', '/api/uploads', () => {
+      ticket++
+      const body = calls.at(-1)?.body as { withTextSource?: boolean }
+      return {
+        fileId: `up${ticket}`,
+        uploadUrl: `https://s3.test/up${ticket}`,
+        headers: { 'content-type': 'image/heic' },
+        ...(body.withTextSource ? { textSourceUploadUrl: `https://s3.test/textsrc/up${ticket}.jpg` } : {}),
+      }
+    })
+  }
+
+  it('pide la firma con withTextSource, sube el original sin esperar la conversión y la copia antes de complete', async () => {
+    mockHeicTicket()
+    let convert!: (blob: Blob) => void
+    heic.heicTo.mockImplementation(() => new Promise<Blob>(resolve => (convert = resolve)))
+    const uploader = useUploader({ folderId: null })
+    uploader.add([heicFile()])
+    await flush(20)
+
+    expect(calls.find(c => c.url === '/api/uploads')?.body).toMatchObject({ withTextSource: true })
+    expect(sent).toContain('https://s3.test/up1')
+    expect(uploader.items.value[0]).toMatchObject({ status: 'uploading', preparing: true })
+    expect(calls.some(c => c.url === '/api/uploads/up1/complete')).toBe(false)
+
+    convert(new Blob(['jpeg'], { type: 'image/jpeg' }))
+    await flush(20)
+    expect(sent).toContain('https://s3.test/textsrc/up1.jpg')
+    expect(headersByUrl.get('https://s3.test/textsrc/up1.jpg')).toEqual({ 'content-type': 'image/jpeg' })
+    expect(sent.indexOf('https://s3.test/textsrc/up1.jpg')).toBeGreaterThan(sent.indexOf('https://s3.test/up1'))
+    expect(uploader.items.value[0]).toMatchObject({ status: 'done', preparing: false })
+    expect(calls.some(c => c.url === '/api/uploads/up1/complete')).toBe(true)
+  })
+
+  it('si la conversión o el PUT de la copia fallan, el archivo se sube igual', async () => {
+    mockHeicTicket()
+    heic.heicTo.mockRejectedValue(new Error('libheif'))
+    const uploader = useUploader({ folderId: null })
+    uploader.add([heicFile()])
+    await flush(20)
+    expect(uploader.items.value[0]).toMatchObject({ status: 'done', preparing: false })
+    expect(sent).not.toContain('https://s3.test/textsrc/up1.jpg')
+
+    heic.heicTo.mockResolvedValue(new Blob(['jpeg'], { type: 'image/jpeg' }))
+    behaviors.set('https://s3.test/textsrc/up2.jpg', 403)
+    uploader.add([heicFile()])
+    await flush(20)
+    expect(uploader.items.value[1]).toMatchObject({ status: 'done' })
+  })
+
+  it('un JPEG o una HEIC de más de 5 MB no piden copia', async () => {
+    const uploader = useUploader({ folderId: null })
+    uploader.add([file('foto.jpg'), file('grande.heic', 'image/heic', 6_000_000)])
+    await flush(20)
+    expect(calls.filter(c => c.url === '/api/uploads').map(c => (c.body as { withTextSource: boolean }).withTextSource)).toEqual([false, false])
+    expect(heic.heicTo).not.toHaveBeenCalled()
   })
 })

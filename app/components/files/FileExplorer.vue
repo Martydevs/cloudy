@@ -162,6 +162,12 @@ const TYPE_FILTERS: { value: FileCategory | undefined, label: string }[] = [
       </div>
     </div>
 
+    <!-- Búsqueda (feature 002, FR-015): el texto solo cuenta en las imágenes que ya se leyeron. -->
+    <p v-if="q" class="flex items-start gap-2 text-sm text-base-content/70">
+      <Icon name="lucide:scan-text" class="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+      {{ messages.imageText.searchHint }}
+    </p>
+
     <!-- Consulta de contenedor: la barra pasa a una fila cuando el ancho del contenido (no el del
          viewport) lo permite, así funciona igual con la barra lateral expandida o contraída. -->
     <div class="@container">

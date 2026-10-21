@@ -34,6 +34,7 @@ beforeEach(() => {
   useToast().toasts.value = []
   mockApi('GET', '/api/folders/root/children', children())
   mockApi('GET', `/api/files/${F1}/comments`, [])
+  mockApi('GET', `/api/files/${F1}/text`, { status: 'ready', text: 'Oremos por Ana', error: null, readAt: null, editedAt: null, editedBy: null })
 })
 
 describe('FileExplorer · los cuatro estados', () => {
@@ -105,6 +106,35 @@ describe('FileExplorer · búsqueda, filtros, orden y vista', () => {
     const none = await mountSuspended(FileExplorer, { props: { folderId: null }, route: '/archivos?q=zzz' })
     await flush()
     expect(none.text()).toContain('No encontramos nada con «zzz»')
+  })
+
+  it('feature 002: insignia «En el texto» en la cuadrícula y la lista, y la nota de búsqueda siempre que hay q', async () => {
+    mockApi('GET', '/api/files/search', (event) => {
+      const { q } = getQuery(event)
+      return q === 'abuela'
+        ? { folders: [], files: [file({ path: [], matchedIn: 'text' }), file({ id: D1, name: 'abuela.jpg', path: [], matchedIn: 'name' })], nextCursor: null }
+        : { folders: [], files: [], nextCursor: null }
+    })
+    const found = await mountSuspended(FileExplorer, { props: { folderId: null }, route: '/archivos?q=abuela' })
+    await flush()
+    expect(found.text()).toContain(messages.imageText.searchHint)
+    expect(found.findAll('.badge').filter(b => b.text() === 'En el texto')).toHaveLength(1)
+    await found.get('button[aria-label="Ver en lista"]').trigger('click')
+    await flush()
+    const rows = found.findAll('li').filter(li => li.text().includes('.jpg'))
+    expect(rows.map(li => li.text().includes('En el texto'))).toEqual([true, false])
+
+    clearNuxtData()
+    const none = await mountSuspended(FileExplorer, { props: { folderId: null }, route: '/archivos?q=zzz' })
+    await flush()
+    expect(none.text()).toContain('No encontramos nada con «zzz»')
+    expect(none.text()).toContain(messages.imageText.searchHint)
+
+    clearNuxtData()
+    const folderView = await mountSuspended(FileExplorer, { props: { folderId: null }, route: '/archivos' })
+    await flush()
+    expect(folderView.text()).not.toContain(messages.imageText.searchHint)
+    expect(folderView.text()).not.toContain('En el texto')
   })
 
   it('el filtro de tipo y el orden se guardan en la URL', async () => {
@@ -269,12 +299,32 @@ describe('detalle de archivo', () => {
     // El hilo de comentarios (US8) se monta junto a los metadatos. Es un componente `Lazy`: su chunk
     // llega asíncrono y bajo carga (corrida con cobertura) puede tardar más que un `flush()`.
     await vi.waitFor(() => expect(wrapper.text()).toContain('Sé el primero en comentar'))
-    expect(wrapper.get('section[aria-labelledby] h2').text()).toContain('Comentarios')
+    // Primero el texto de la imagen (feature 002) y después los comentarios.
+    // Ambos son componentes `Lazy`: cada chunk llega por su cuenta.
+    const titles = () => wrapper.findAll('section[aria-labelledby]').map(section => wrapper.get(`#${section.attributes('aria-labelledby')}`).text())
+    await vi.waitFor(() => expect(titles()).toEqual([expect.stringContaining('Texto de la imagen'), expect.stringContaining('Comentarios')]))
 
     await wrapper.get('button[aria-label="Más acciones de foto.jpg"]').trigger('click')
     await wrapper.findAll('[role="menuitem"]').find(o => o.text() === 'Renombrar')!.trigger('click')
     await flush()
     expect(wrapper.get('dialog h2').text()).toBe('Renombrar archivo')
+  })
+
+  it('una imagen muestra su texto en un espacio reservado; otras categorías no tienen panel (feature 002)', async () => {
+    mockApi('GET', `/api/files/${F1}`, file())
+    const image = await mountSuspended(FileDetailPage, { route: `/archivos/ver/${F1}` })
+    await flush()
+    const reserved = image.get('aside .min-h-48')
+    await vi.waitFor(() => expect(reserved.text()).toContain('Oremos por Ana'))
+    // Un estado terminal no dispara la lectura de respaldo.
+    expect(calls.filter(c => c.url === `/api/files/${F1}/text`).map(c => c.method)).not.toContain('POST')
+
+    clearNuxtData()
+    mockApi('GET', `/api/files/${F1}`, file({ name: 'guion.pdf', extension: 'pdf', mimeType: 'application/pdf', category: 'presentation' }))
+    const pdf = await mountSuspended(FileDetailPage, { route: `/archivos/ver/${F1}` })
+    await flush()
+    expect(pdf.find('aside .min-h-48').exists()).toBe(false)
+    expect(pdf.text()).not.toContain('Texto de la imagen')
   })
 
   it('en la raíz muestra «Archivos (raíz)», al autor del equipo y abre Mover desde el menú', async () => {

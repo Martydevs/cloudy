@@ -332,6 +332,10 @@ describe('Actividad', () => {
 
   it('etiquetas: todas las acciones tienen texto, ícono por tipo y detalle según meta', () => {
     expect(activityLabel('x.y')).toBe('x.y')
+    // Feature 002: la corrección del texto de una imagen; su meta solo trae la longitud, sin detalle visible.
+    expect(activityLabel('file.text_edit')).toBe('corrigió el texto de la imagen')
+    expect(activityIcon('file.text_edit')).toBe('lucide:file')
+    expect(activityDetail('file.text_edit', { length: 14 })).toBe('')
     expect(activityIcon('folder.create')).toBe('lucide:folder')
     expect(activityIcon('x')).toBe('lucide:activity')
     expect(activityDetail('file.rename', { from: 'a.jpg' })).toBe('antes «a.jpg»')

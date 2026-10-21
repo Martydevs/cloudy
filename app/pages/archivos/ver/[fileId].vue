@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { FileItem } from '#shared/types/api'
+import { MAX_IMAGE_TEXT_BYTES } from '#shared/constants/image-text'
 import type { ItemAction } from '~/utils/file-actions'
 
 definePageMeta({
@@ -86,6 +87,15 @@ const ORIGIN_LABELS = { team: 'Equipo', guest: 'Invitado' } as const
               <dd class="break-words">{{ file.path?.length ? file.path.join(' / ') : 'Archivos (raíz)' }}</dd>
             </dl>
           </div>
+        </div>
+        <!-- Texto leído de la imagen (feature 002); el contenedor reserva su espacio para no desplazar los comentarios. -->
+        <div v-if="file.category === 'image'" class="min-h-48">
+          <LazyImageTextPanel
+            :endpoint="`/api/files/${file.id}/text`"
+            :heic="file.extension === 'heic' && file.sizeBytes <= MAX_IMAGE_TEXT_BYTES"
+            auto-read
+            editable
+          />
         </div>
         <LazyCommentThread :file-id="file.id" />
       </aside>

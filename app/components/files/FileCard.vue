@@ -34,6 +34,8 @@ function onSelect(key: string) {
       </div>
       <div class="flex min-w-0 flex-col px-1" :class="{ 'pr-10': !compact }">
         <span class="truncate text-sm font-medium" :title="file.name">{{ file.name }}</span>
+        <!-- Búsqueda (feature 002): la consulta coincidió con el texto leído de la imagen, no con el nombre. -->
+        <span v-if="file.matchedIn === 'text'" class="badge badge-primary badge-sm my-0.5 self-start">En el texto</span>
         <!-- Tamaño y fecha en líneas distintas: en una sola, junto al hueco del menú, la fecha quedaba recortada. -->
         <span class="truncate text-xs text-base-content/70">
           {{ formatBytes(file.sizeBytes) }}<template v-if="compact"> · {{ timeAgo(file.createdAt) }}</template>

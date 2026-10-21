@@ -1,6 +1,8 @@
 // Cola de subidas (research R5): validación local → presign → PUT directo con progreso → complete.
 import { FetchError } from 'ofetch'
 import type { FileItem, UploadTicket } from '#shared/types/api'
+import { getExtension } from '#shared/constants/files'
+import { isImageTextEligible } from '#shared/constants/image-text'
 import { checkUploadFile } from '#shared/validation/files'
 
 export type UploadStatus = 'queued' | 'uploading' | 'verifying' | 'done' | 'error'
@@ -14,6 +16,8 @@ export interface UploadItem {
   progress: number
   error: string | null
   retryable: boolean
+  /** Generando y subiendo la copia JPEG de una HEIC para leer su texto (feature 002). */
+  preparing?: boolean
 }
 
 const CONCURRENCY = 3
@@ -67,6 +71,7 @@ export function useUploader(options: { folderId: MaybeRefOrGetter<string | null>
         progress: 0,
         error: problem?.message ?? null,
         retryable: false,
+        preparing: false,
       })
       if (problem) failed++
     }
@@ -98,9 +103,11 @@ export function useUploader(options: { folderId: MaybeRefOrGetter<string | null>
     patch(id, { status: 'uploading', progress: 0, error: null })
     try {
       const thumbnail = await makeThumbnail(file)
+      // Una HEIC apta sube además su copia JPEG para leer el texto, sin esperar la conversión (research A4).
+      const withTextSource = getExtension(file.name) === 'heic' && isImageTextEligible({ extension: 'heic', size: file.size })
       const ticket = await api<UploadTicket>('/api/uploads', {
         method: 'POST',
-        body: { folderId: toValue(options.folderId), name: file.name, size: file.size, mimeType: file.type, withThumbnail: !!thumbnail },
+        body: { folderId: toValue(options.folderId), name: file.name, size: file.size, mimeType: file.type, withThumbnail: !!thumbnail, withTextSource },
       })
       if (!sources.has(id)) {
         // Se canceló mientras se pedía la firma: se libera la reserva y no se sube nada.
@@ -108,6 +115,13 @@ export function useUploader(options: { folderId: MaybeRefOrGetter<string | null>
         return
       }
       reserved.set(id, ticket.fileId)
+
+      // La copia se convierte y sube en paralelo con el original; nunca rechaza (FR-023).
+      let textSource: Promise<void> = Promise.resolve()
+      if (ticket.textSourceUploadUrl) {
+        patch(id, { preparing: true })
+        textSource = uploadTextSourceCopy(file, ticket.textSourceUploadUrl).finally(() => patch(id, { preparing: false }))
+      }
 
       await putWithProgress(ticket.uploadUrl, file, ticket.headers, (ratio) => {
         patch(id, { progress: Math.min(99, Math.round(ratio * 100)) })
@@ -118,6 +132,7 @@ export function useUploader(options: { folderId: MaybeRefOrGetter<string | null>
         await putWithProgress(ticket.thumbUploadUrl, thumbnail, { 'content-type': 'image/webp' }, () => {}, xhr => requests.set(id, xhr)).catch(() => {})
       }
 
+      await textSource
       patch(id, { status: 'verifying' })
       const result = await api<FileItem>(`/api/uploads/${ticket.fileId}/complete`, { method: 'POST' })
       reserved.delete(id)

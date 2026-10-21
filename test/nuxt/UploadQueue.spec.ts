@@ -68,3 +68,12 @@ describe('UploadQueue', () => {
     expect(wrapper.emitted('cancel')).toEqual([['a']])
   })
 })
+
+describe('UploadQueue · copia para leer el texto (feature 002)', () => {
+  it('muestra "Preparando…" mientras se genera la copia de una HEIC', async () => {
+    const wrapper = await mountSuspended(UploadQueue, { props: { items: [item({ name: 'IMG.heic', status: 'uploading', preparing: true })] } })
+    expect(wrapper.text()).toContain('Subiendo · Preparando…')
+    const done = await mountSuspended(UploadQueue, { props: { items: [item({ name: 'IMG.heic', status: 'uploading', preparing: false })] } })
+    expect(done.text()).not.toContain('Preparando')
+  })
+})

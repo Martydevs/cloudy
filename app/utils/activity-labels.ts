@@ -7,6 +7,7 @@ export const ACTIVITY_LABELS: Record<string, string> = {
   'file.trash': 'envió a la papelera el archivo',
   'file.restore': 'restauró el archivo',
   'file.purge': 'eliminó definitivamente el archivo',
+  'file.text_edit': 'corrigió el texto de la imagen',
   'folder.create': 'creó la carpeta',
   'folder.rename': 'renombró la carpeta',
   'folder.move': 'movió la carpeta',

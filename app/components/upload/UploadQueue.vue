@@ -30,7 +30,7 @@ const STATUS_LABELS: Record<UploadStatus, string> = {
         />
         <div class="flex min-w-0 flex-1 flex-col">
           <span class="truncate font-medium" :title="item.name">{{ item.name }}</span>
-          <span class="text-sm text-base-content/70">{{ formatBytes(item.size) }} · {{ STATUS_LABELS[item.status] }}</span>
+          <span class="text-sm text-base-content/70">{{ formatBytes(item.size) }} · {{ STATUS_LABELS[item.status] }}<template v-if="item.preparing"> · {{ messages.files.preparing }}</template></span>
         </div>
         <button
           v-if="item.status === 'error' && item.retryable"
