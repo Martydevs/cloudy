@@ -2,8 +2,7 @@
 import { createPage, setup } from '@nuxt/test-utils/e2e'
 import type { Page } from 'playwright-core'
 import { describe, expect, it } from 'vitest'
-import { existsSync } from 'node:fs'
-import { E2E_URL, fixture, fixtureOr, resetStub, runId, signedInAs, stubCalls, testSql, viewports, waitForHydration } from './setup/fixtures'
+import { E2E_URL, fixture, resetStub, runId, signedInAs, stubCalls, testSql, viewports, waitForHydration } from './setup/fixtures'
 import { NOTE_TEXT } from './setup/openai-stub'
 
 await setup({ host: E2E_URL, browser: true })
@@ -164,7 +163,7 @@ describe('US3 · envíos de invitados', () => {
 // Feature 002 · US2 — el texto de las imágenes de invitados se lee en segundo plano al recibir el envío.
 describe('US2 · texto de las imágenes de invitados', () => {
   const FIRST_LINE = NOTE_TEXT.split('\n')[0]!
-  const note = fixtureOr('nota.jpg', 'foto.jpg')
+  const note = 'nota.jpg'
 
   it('confirmación inmediata, texto en Pendientes, aprobación sin releer y rechazo que lo elimina (9, 10, 11)', async () => {
     await resetStub()
@@ -177,7 +176,7 @@ describe('US2 · texto de las imágenes de invitados', () => {
     await guest.goto(`${E2E_URL}/enviar`)
     await waitForHydration(guest)
     expect(await guest.getByText('Leeremos automáticamente el texto de tus imágenes').isVisible()).toBe(true)
-    const files = existsSync(fixture('nota.heic')) ? [note, 'nota.heic'] : [note]
+    const files = [note, 'nota.heic']
     await sendAsGuest(guest, name, files)
     expect(await guest.content()).not.toContain(FIRST_LINE)
     await guest.close()

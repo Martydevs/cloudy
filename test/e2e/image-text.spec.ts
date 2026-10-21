@@ -1,15 +1,12 @@
 // Feature 002 · US1 — Texto extraído de las imágenes que sube el equipo, contra el stub de OpenAI (A9).
 // La lectura corre en segundo plano tras `complete`: las pruebas esperan el texto en el panel, no la
-// respuesta de la subida. Sin las fotos reales (`nota.*`, `paisaje.jpg`), `foto.jpg` e `imagen.png` hacen
-// de nota: el stub lee como nota toda imagen que no reconoce.
-import { existsSync } from 'node:fs'
+// respuesta de la subida. El stub lee como nota toda imagen que no reconoce (`foto.jpg`, `imagen.png`).
 import { createPage, setup } from '@nuxt/test-utils/e2e'
 import type { BrowserContextOptions, Page } from 'playwright-core'
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import {
   E2E_URL,
   fixture,
-  fixtureOr,
   profileUserId,
   resetStub,
   seedFolder,
@@ -26,8 +23,8 @@ import { NOTE_TEXT } from './setup/openai-stub'
 
 await setup({ host: E2E_URL, browser: true })
 
-const NOTE_JPG = fixtureOr('nota.jpg', 'foto.jpg')
-const NOTE_PNG = fixtureOr('nota.png', 'imagen.png')
+const NOTE_JPG = 'nota.jpg'
+const NOTE_PNG = 'nota.png'
 const FIRST_LINE = NOTE_TEXT.split('\n')[0]!
 
 const panel = (page: Page) => page.getByRole('region', { name: 'Texto de la imagen' })
@@ -120,7 +117,7 @@ describe('US1 · texto de las imágenes del equipo', () => {
     await page.close()
   })
 
-  it.skipIf(!existsSync(fixture('paisaje.jpg')))('una imagen sin texto lo dice (escenario 4)', async () => {
+  it('una imagen sin texto lo dice (escenario 4)', async () => {
     const page = await editorPage({ viewport: viewports.phone })
     await openNewFolder(page, creds.email, '3')
     await uploadAndClose(page, ['paisaje.jpg'])
@@ -201,7 +198,7 @@ describe('US1 · texto de las imágenes del equipo', () => {
     await page.close()
   })
 
-  it.skipIf(!existsSync(fixture('nota.heic')))('una HEIC sube su copia JPEG y se lee su texto (escenario 3)', async () => {
+  it('una HEIC sube su copia JPEG y se lee su texto (escenario 3)', async () => {
     const page = await editorPage({ viewport: viewports.phone })
     await openNewFolder(page, creds.email, '7')
     await uploadAndClose(page, ['nota.heic'])

@@ -272,11 +272,6 @@ export const stubCalls = () => stubRequest<StubCalls>('/__stub/calls')
 export const setStubMode = (mode: { fail?: boolean, delayMs?: number }) => stubRequest('/__stub/mode', mode)
 export const resetStub = () => stubRequest('/__stub/reset', {})
 
-/** El fixture si existe (fotos reales que aporta el equipo) o el de respaldo, que el stub también "lee". */
-export function fixtureOr(name: string, fallback: string): string {
-  return existsSync(fixture(name)) ? name : fallback
-}
-
 /**
  * Siembra una imagen `ready` como las subidas antes de la feature (`text_status` en `NULL`): sube los
  * bytes del fixture al bucket de pruebas bajo `e2e/<runId>/` y crea la fila. Con `withBytes: false`
