@@ -33,9 +33,10 @@ export default defineEventHandler(async (event): Promise<CleanupReport> => {
       .returning({ id: guestSubmissions.id })
     if (expired.length === 0) break
     const ids = expired.map(r => r.id)
-    const objects = await db.select({ storageKey: guestSubmissionFiles.storageKey }).from(guestSubmissionFiles)
+    const objects = await db.select({ id: guestSubmissionFiles.id, storageKey: guestSubmissionFiles.storageKey, textSourceKey: guestSubmissionFiles.textSourceKey })
+      .from(guestSubmissionFiles)
       .where(inArray(guestSubmissionFiles.submissionId, ids))
-    await deleteMany(objects.map(o => o.storageKey))
+    await deleteMany(objects.flatMap(o => [o.storageKey, o.textSourceKey ?? '', textSourceKeyFor(o.id)]))
     await db.delete(guestSubmissionFiles).where(inArray(guestSubmissionFiles.submissionId, ids))
     report.expiredSubmissions += ids.length
     if (expired.length < BATCH) break
@@ -48,7 +49,7 @@ export default defineEventHandler(async (event): Promise<CleanupReport> => {
       .where(and(eq(files.uploadStatus, 'uploading'), lt(files.createdAt, orphanLimit)))
       .limit(BATCH)
     if (orphans.length === 0) break
-    await deleteMany(orphans.flatMap(o => [o.storageKey, thumbKeyFor(o.id)]))
+    await deleteMany(orphans.flatMap(o => [o.storageKey, thumbKeyFor(o.id), textSourceKeyFor(o.id)]))
     await db.delete(files).where(inArray(files.id, orphans.map(o => o.id)))
     report.orphanUploads += orphans.length
     if (orphans.length < BATCH) break
@@ -62,7 +63,7 @@ export default defineEventHandler(async (event): Promise<CleanupReport> => {
       .where(and(eq(guestSubmissionFiles.uploadStatus, 'uploading'), lt(guestSubmissions.createdAt, orphanLimit)))
       .limit(BATCH)
     if (orphans.length === 0) break
-    await deleteMany(orphans.map(o => o.storageKey))
+    await deleteMany(orphans.flatMap(o => [o.storageKey, textSourceKeyFor(o.id)]))
     await db.delete(guestSubmissionFiles).where(inArray(guestSubmissionFiles.id, orphans.map(o => o.id)))
     report.orphanUploads += orphans.length
     if (orphans.length < BATCH) break

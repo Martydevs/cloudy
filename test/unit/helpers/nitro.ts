@@ -9,11 +9,14 @@ import { PgDialect } from 'drizzle-orm/pg-core'
 import { vi } from 'vitest'
 import * as activity from '../../../server/utils/activity'
 import * as auth from '../../../server/utils/auth'
+import * as background from '../../../server/utils/background'
 import * as comments from '../../../server/utils/comments'
 import * as cron from '../../../server/utils/cron'
 import * as fileAccess from '../../../server/utils/file-access'
 import * as fileSignature from '../../../server/utils/file-signature'
 import * as files from '../../../server/utils/files'
+import * as imageText from '../../../server/utils/image-text'
+import * as imageTextStore from '../../../server/utils/image-text-store'
 import * as naming from '../../../server/utils/naming'
 import * as pagination from '../../../server/utils/pagination'
 import * as rateLimit from '../../../server/utils/rate-limit'
@@ -35,18 +38,28 @@ export const RUNTIME_CONFIG = {
   cronSecret: 'cron-secreto',
 }
 
+/**
+ * Tareas que los endpoints programaron con `runInBackground` en la última `installNitro`: no corren solas,
+ * así la prueba puede afirmar que la respuesta no las espera y luego esperarlas explícitamente.
+ */
+export const backgroundTasks: (() => Promise<void>)[] = []
+
 /** Instala los globales de Nitro; `db` reemplaza `useDb()` con una cola de resultados. */
 export function installNitro(results: unknown[] = [], overrides: Record<string, unknown> = {}) {
   const fake = fakeDb(results)
+  backgroundTasks.length = 0
   const globals: Record<string, unknown> = {
     ...h3,
     ...activity,
     ...auth,
+    ...background,
     ...comments,
     ...cron,
     ...fileAccess,
     ...fileSignature,
     ...files,
+    ...imageText,
+    ...imageTextStore,
     ...naming,
     ...pagination,
     ...rateLimit,
@@ -59,6 +72,9 @@ export function installNitro(results: unknown[] = [], overrides: Record<string, 
     defineEventHandler: (handler: unknown) => handler,
     useDb: () => fake.db,
     useRuntimeConfig: () => RUNTIME_CONFIG,
+    runInBackground: (task: () => Promise<void>) => {
+      backgroundTasks.push(task)
+    },
     ...overrides,
   }
   for (const [name, value] of Object.entries(globals)) vi.stubGlobal(name, value)

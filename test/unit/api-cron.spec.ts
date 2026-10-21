@@ -30,7 +30,7 @@ describe('GET /api/cron/cleanup', () => {
       // Papelera vencida: ninguna raíz.
       { rows: [] },
       // Envíos caducados: update, objetos, delete.
-      [{ id: 's1' }], [{ storageKey: 'pre/guest/s1/a' }], [],
+      [{ id: 's1' }], [{ id: 'a1', storageKey: 'pre/guest/s1/a', textSourceKey: 'pre/textsrc/a1.jpg' }, { id: 'a2', storageKey: 'pre/guest/s1/c', textSourceKey: null }], [],
       // Subidas del equipo huérfanas: select, delete.
       [{ id: UUID, storageKey: `pre/files/${UUID}` }], [],
       // Archivos de invitados huérfanos: select, delete.
@@ -44,9 +44,10 @@ describe('GET /api/cron/cleanup', () => {
     expect(await handler(authorized())).toEqual({ purgedTrash: 0, expiredSubmissions: 1, orphanUploads: 2, rateLimitRows: 2 })
     expect(fake.calls.find(c => c.method === 'set')?.args[0]).toEqual({ status: 'expired' })
     expect(s3.deleteMany.mock.calls.map(c => c[0])).toEqual([
-      ['pre/guest/s1/a'],
-      [`pre/files/${UUID}`, `pre/thumbs/${UUID}.webp`],
-      ['pre/guest/s2/b'],
+      // La copia JPEG de una HEIC (feature 002): la columna y la clave derivada del id, aunque esté vacía.
+      ['pre/guest/s1/a', 'pre/textsrc/a1.jpg', 'pre/textsrc/a1.jpg', 'pre/guest/s1/c', '', 'pre/textsrc/a2.jpg'],
+      [`pre/files/${UUID}`, `pre/thumbs/${UUID}.webp`, `pre/textsrc/${UUID}.jpg`],
+      ['pre/guest/s2/b', 'pre/textsrc/g1.jpg'],
     ])
     expect(fake.calls.filter(c => c.method === 'delete')).toHaveLength(5)
   })
@@ -69,6 +70,6 @@ describe('GET /api/cron/cleanup', () => {
     const cutoff = new Date(Date.now() - 30 * 86_400_000).toISOString().slice(0, 10)
     expect(sqlText(fake.db.execute.mock.calls[0]![0])).toContain('deleted_at <')
     expect(sqlText(fake.db.execute.mock.calls[0]![0])).toContain(cutoff)
-    expect(s3.deleteMany.mock.calls[0]![0]).toEqual([`pre/files/${UUID}`, '', `pre/thumbs/${UUID}.webp`])
+    expect(s3.deleteMany.mock.calls[0]![0]).toEqual([`pre/files/${UUID}`, '', `pre/thumbs/${UUID}.webp`, ''])
   })
 })

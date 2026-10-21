@@ -94,14 +94,14 @@ describe('subidas en curso', () => {
     await expect(uploads.getOwnUpload('f2', 'u1')).rejects.toMatchObject({ statusCode: 404 })
   })
 
-  it('discardUpload borra objeto, miniatura y registro', async () => {
+  it('discardUpload borra objeto, miniatura, copia para lectura y registro', async () => {
     const { fakeDb } = await import('./helpers/fake-db')
     const fake = fakeDb([[]])
     vi.stubGlobal('useDb', () => fake.db)
     send.mockResolvedValue({})
     await uploads.discardUpload({ id: 'f1', storageKey: 'e2e/run/files/f1' })
     const deleted = send.mock.calls[0]![0].input.Delete.Objects.map((o: { Key: string }) => o.Key)
-    expect(deleted).toEqual(['e2e/run/files/f1', 'e2e/run/thumbs/f1.webp'])
+    expect(deleted).toEqual(['e2e/run/files/f1', 'e2e/run/thumbs/f1.webp', 'e2e/run/textsrc/f1.jpg'])
     expect(fake.calls.some(c => c.method === 'delete')).toBe(true)
   })
 })

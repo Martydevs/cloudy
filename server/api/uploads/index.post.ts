@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto'
 import { createError } from 'h3'
 import type { UploadTicket } from '#shared/types/api'
 import { canonicalMime, categoryOf, getExtension } from '#shared/constants/files'
+import { isImageTextEligible } from '#shared/constants/image-text'
 import { checkUploadFile, sanitizeFileName, uploadInput } from '#shared/validation/files'
 import { files } from '../../db/schema'
 import { key, presignPut } from '../../utils/storage'
@@ -45,9 +46,14 @@ export default defineEventHandler(async (event): Promise<UploadTicket> => {
     uploadedBy: profile.userId,
   })
 
-  const [uploadUrl, thumbUploadUrl] = await Promise.all([
+  // Copia JPEG para leer el texto de una HEIC apta (feature 002, research A4); en otro caso se ignora.
+  const withTextSource = input.withTextSource && ext === 'heic'
+    && isImageTextEligible({ category: categoryOf(ext)!, extension: ext, size: input.size })
+
+  const [uploadUrl, thumbUploadUrl, textSourceUploadUrl] = await Promise.all([
     presignPut(storageKey, { contentType: mimeType, contentLength: input.size }),
     input.withThumbnail ? presignPut(key(`thumbs/${id}.webp`), { contentType: 'image/webp' }) : undefined,
+    withTextSource ? presignPut(textSourceKeyFor(id), { contentType: 'image/jpeg' }) : undefined,
   ])
 
   setResponseStatus(event, 201)
@@ -55,6 +61,7 @@ export default defineEventHandler(async (event): Promise<UploadTicket> => {
     fileId: id,
     uploadUrl,
     ...(thumbUploadUrl ? { thumbUploadUrl } : {}),
+    ...(textSourceUploadUrl ? { textSourceUploadUrl } : {}),
     headers: { 'content-type': mimeType },
   }
 })

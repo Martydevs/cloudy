@@ -67,6 +67,8 @@ export const uploadInput = object(
     size: int({ min: 1, max: MAX_FILE_SIZE, message: 'El tamaño debe estar entre 1 byte y 100 MB' }),
     mimeType: str({ min: 0, max: 255 }),
     withThumbnail: optional(bool()),
+    /** Pide el PUT de la copia JPEG de una HEIC apta (feature 002); en otro caso se ignora. */
+    withTextSource: optional(bool()),
   },
   (raw) => {
     const name = typeof raw.name === 'string' ? raw.name : ''

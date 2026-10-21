@@ -8,15 +8,32 @@ import { files, folders, profiles } from '../db/schema'
 export type FileRow = typeof files.$inferSelect
 export type FolderRow = typeof folders.$inferSelect
 
-/** Columnas de `files` + nombre de quien subió (requiere `leftJoin(profiles, …)`). */
+/**
+ * Columnas de `files` sin las del texto leído (feature 002: hasta 10 000 caracteres por imagen que los
+ * listados no usan; el texto se pide aparte) + nombre de quien subió (requiere `leftJoin(profiles, …)`).
+ */
+const {
+  textStatus: _textStatus,
+  textContent: _textContent,
+  textError: _textError,
+  textSourceKey: _textSourceKey,
+  textAttempts: _textAttempts,
+  textStartedAt: _textStartedAt,
+  textReadAt: _textReadAt,
+  textEditedBy: _textEditedBy,
+  textEditedAt: _textEditedAt,
+  ...listedColumns
+} = getTableColumns(files)
+
 export const fileColumns = {
-  ...getTableColumns(files),
+  ...listedColumns,
   uploaderName: profiles.name,
 }
 
-export type FileWithUploader = FileRow & { uploaderName: string | null }
+type TextColumn = 'textStatus' | 'textContent' | 'textError' | 'textSourceKey' | 'textAttempts' | 'textStartedAt' | 'textReadAt' | 'textEditedBy' | 'textEditedAt'
+export type FileWithUploader = Omit<FileRow, TextColumn> & { uploaderName: string | null }
 
-export function toFileItem(row: FileWithUploader, extra: Partial<Pick<FileItem, 'path' | 'commentCount'>> = {}): FileItem {
+export function toFileItem(row: FileWithUploader, extra: Partial<Pick<FileItem, 'path' | 'commentCount' | 'matchedIn'>> = {}): FileItem {
   return {
     id: row.id,
     folderId: row.folderId,

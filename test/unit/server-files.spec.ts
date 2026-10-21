@@ -200,3 +200,12 @@ describe('folderItemCountSql', () => {
     expect(sql).not.toMatch(/= "id"/)
   })
 })
+
+describe('fileColumns (feature 002)', () => {
+  it('los listados no traen las columnas del texto leído, que se pide aparte', async () => {
+    const { fileColumns } = await import('../../server/utils/files')
+    const keys = Object.keys(fileColumns)
+    expect(keys).toEqual(expect.arrayContaining(['id', 'name', 'thumbKey', 'uploaderName']))
+    expect(keys.filter(k => k.startsWith('text'))).toEqual([])
+  })
+})

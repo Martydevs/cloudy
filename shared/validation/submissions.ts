@@ -6,12 +6,12 @@ import { uploadInput } from './files'
 export const senderName = () => str({ max: 80 })
 export const note = () => optional(str({ min: 0, max: 500 }))
 
-/** Un archivo del envío: igual que `uploadInput` pero sin carpeta ni miniatura. */
+/** Un archivo del envío: igual que `uploadInput` pero sin carpeta ni miniatura; `withTextSource` pide la copia JPEG de una HEIC (feature 002). */
 const guestFile = (input: unknown) => {
   const res = uploadInput({ ...(input && typeof input === 'object' ? input : {}), folderId: null, withThumbnail: false })
   if (res.ok) {
-    const { name, size, mimeType } = res.data
-    return { ok: true as const, value: { name, size, mimeType } }
+    const { name, size, mimeType, withTextSource } = res.data
+    return { ok: true as const, value: { name, size, mimeType, withTextSource } }
   }
   return { ok: false as const, error: Object.values(res.errors)[0] ?? 'Archivo no válido' }
 }

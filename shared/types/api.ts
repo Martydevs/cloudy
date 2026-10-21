@@ -62,6 +62,8 @@ export interface FileItem {
   /** Nombres de las carpetas ancestro (búsqueda y detalle). */
   path?: string[]
   commentCount?: number
+  /** Solo en la búsqueda (feature 002): dónde coincidió la consulta. */
+  matchedIn?: 'name' | 'text'
 }
 
 export interface FolderChildren {
@@ -104,6 +106,8 @@ export interface SubmissionFile {
   category: FileCategory
   size: number
   previewUrl: string
+  /** Texto leído de la imagen (feature 002); `null` si no es imagen. */
+  text: ImageText | null
 }
 
 export interface Submission {
@@ -162,5 +166,31 @@ export interface UploadTicket {
   fileId: string
   uploadUrl: string
   thumbUploadUrl?: string
+  /** PUT de la copia JPEG de una HEIC apta (`textsrc/<id>.jpg`). */
+  textSourceUploadUrl?: string
   headers: Record<string, string>
+}
+
+export interface GuestUploadTicket {
+  fileId: string
+  uploadUrl: string
+  /** PUT de la copia JPEG de una HEIC apta (`textsrc/<id>.jpg`). */
+  textSourceUploadUrl?: string
+  headers: Record<string, string>
+}
+
+/** `pending` es `NULL` en la base de datos: la imagen aún no se ha leído. */
+export type ImageTextStatus = 'pending' | 'reading' | 'ready' | 'empty' | 'failed' | 'unavailable'
+export type ImageTextError = 'timeout' | 'provider' | 'rate_limited' | 'quota_exceeded' | 'invalid_input' | 'invalid_output'
+
+/** Texto extraído de una imagen (feature 002, data-model "DTO compartido"). */
+export interface ImageText {
+  status: ImageTextStatus
+  /** Solo en `ready`. */
+  text: string | null
+  error: ImageTextError | null
+  readAt: string | null
+  editedAt: string | null
+  /** Nombre visible de quien lo corrigió. */
+  editedBy: string | null
 }

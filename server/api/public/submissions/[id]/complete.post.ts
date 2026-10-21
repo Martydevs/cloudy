@@ -2,6 +2,7 @@
 // inválidos y cierra el envío con `completed_at`, que dispara el aviso en vivo (T120a).
 import { and, eq, inArray, isNull } from 'drizzle-orm'
 import { createError, getRequestIP } from 'h3'
+import { isImageTextEligible } from '#shared/constants/image-text'
 import { guestSubmissionFiles, guestSubmissions } from '../../../../db/schema'
 import { deleteMany, head, readRange } from '../../../../utils/storage'
 
@@ -38,7 +39,7 @@ export default defineEventHandler(async (event): Promise<{ status: 'pending', ac
 
   // Sin huérfanos (Constitución II): los objetos y filas inválidos se eliminan.
   if (rejected.length > 0) {
-    await deleteMany(files.filter(f => rejected.includes(f.id)).map(f => f.storageKey))
+    await deleteMany(files.filter(f => rejected.includes(f.id)).flatMap(f => [f.storageKey, textSourceKeyFor(f.id)]))
     await db.delete(guestSubmissionFiles).where(inArray(guestSubmissionFiles.id, rejected))
   }
 
@@ -55,6 +56,17 @@ export default defineEventHandler(async (event): Promise<{ status: 'pending', ac
     db.update(guestSubmissionFiles).set({ uploadStatus: 'ready' }).where(inArray(guestSubmissionFiles.id, accepted)),
     db.update(guestSubmissions).set({ completedAt: new Date() }).where(and(eq(guestSubmissions.id, id), isNull(guestSubmissions.completedAt))),
   ])
+
+  // Texto de las imágenes (feature 002, FR-009): las copias JPEG de las HEIC se validan aquí y las lecturas
+  // corren en segundo plano; la respuesta no las espera y ningún fallo de lectura la cambia (FR-004).
+  let readable = false
+  for (const file of files.filter(f => accepted.includes(f.id))) {
+    const image = { category: file.category, extension: file.extension, sizeBytes: Number(file.sizeBytes) }
+    const heic = file.extension === 'heic' && isImageTextEligible({ ...image, size: image.sizeBytes })
+    const hasTextSource = heic && await checkTextSourceCopy({ table: 'guest_submission_files', id: file.id })
+    readable ||= canReadImageText(image, hasTextSource)
+  }
+  if (readable) runInBackground(() => readSubmissionImages(id, { concurrency: 4 }))
 
   return { status: 'pending', accepted: accepted.length, rejected: rejected.length }
 })

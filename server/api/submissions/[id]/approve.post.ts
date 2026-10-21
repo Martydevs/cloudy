@@ -47,11 +47,15 @@ export default defineEventHandler(async (event): Promise<{ files: FileItem[] }> 
         .returning({ id: guestSubmissions.id }),
       // Depende del UPDATE: solo inserta si este mismo revisor acaba de aprobar el envío.
       db.execute<{ id: string }>(sql`
-        INSERT INTO files (id, folder_id, name, extension, mime_type, category, size_bytes, storage_key, upload_status, origin, guest_name, submission_id)
-        SELECT v.id, ${folderId}::uuid, v.name, v.extension, v.mime_type, v.category, v.size_bytes, v.storage_key, 'ready', 'guest', gs.sender_name, gs.id
+        INSERT INTO files (id, folder_id, name, extension, mime_type, category, size_bytes, storage_key, upload_status, origin, guest_name, submission_id,
+          text_status, text_content, text_error, text_attempts, text_started_at, text_read_at, text_source_key)
+        SELECT v.id, ${folderId}::uuid, v.name, v.extension, v.mime_type, v.category, v.size_bytes, v.storage_key, 'ready', 'guest', gs.sender_name, gs.id,
+          g.text_status, g.text_content, g.text_error, g.text_attempts, g.text_started_at, g.text_read_at, g.text_source_key
         FROM (VALUES ${values}) AS v(id, name, extension, mime_type, category, size_bytes, storage_key)
         JOIN guest_submissions gs ON gs.id = ${id}::uuid AND gs.status = 'approved'
           AND gs.reviewed_by = ${profile.userId} AND gs.reviewed_at = ${reviewedAt.toISOString()}::timestamptz
+        -- El texto leído pasa al archivo sin volver a leerlo (feature 002, FR-010).
+        JOIN guest_submission_files g ON g.id = v.id
         RETURNING id
       `),
     ])

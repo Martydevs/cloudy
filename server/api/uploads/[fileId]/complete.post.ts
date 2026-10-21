@@ -2,6 +2,7 @@
 import { eq } from 'drizzle-orm'
 import { createError } from 'h3'
 import type { FileItem } from '#shared/types/api'
+import { isImageTextEligible } from '#shared/constants/image-text'
 import { files } from '../../../db/schema'
 import { deleteMany, head, readRange } from '../../../utils/storage'
 
@@ -40,6 +41,13 @@ export default defineEventHandler(async (event): Promise<FileItem> => {
     ])
     return rows[0]!
   })
+
+  // Texto de la imagen (feature 002, FR-001b): la copia JPEG de una HEIC se valida aquí y la lectura
+  // corre en segundo plano; la respuesta no la espera y la subida nunca falla por ella (FR-004, FR-023).
+  const file = { category: row.category, extension: row.extension, sizeBytes: Number(row.sizeBytes) }
+  const heic = row.extension === 'heic' && isImageTextEligible({ ...file, size: file.sizeBytes })
+  const hasTextSource = heic && await checkTextSourceCopy({ table: 'files', id: row.id })
+  if (canReadImageText(file, hasTextSource)) runInBackground(() => readFileImage(row.id))
 
   return toFileItem({ ...updated, uploaderName: profile.name })
 })

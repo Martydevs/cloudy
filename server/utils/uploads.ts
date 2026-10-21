@@ -10,6 +10,11 @@ export function thumbKeyFor(fileId: string): string {
   return key(`thumbs/${fileId}.webp`)
 }
 
+/** Copia JPEG de una HEIC para leer su texto (feature 002, research A4); derivada del id, como la miniatura. */
+export function textSourceKeyFor(fileId: string): string {
+  return key(`textsrc/${fileId}.jpg`)
+}
+
 /** Registro `uploading` del usuario, o 404. */
 export async function getOwnUpload(fileId: string, userId: string) {
   const [row] = await useDb().select().from(files).where(and(
@@ -23,6 +28,6 @@ export async function getOwnUpload(fileId: string, userId: string) {
 
 /** Borra los objetos y el registro de una subida que no se completará. */
 export async function discardUpload(row: { id: string, storageKey: string }) {
-  await deleteMany([row.storageKey, thumbKeyFor(row.id)])
+  await deleteMany([row.storageKey, thumbKeyFor(row.id), textSourceKeyFor(row.id)])
   await useDb().delete(files).where(and(eq(files.id, row.id), eq(files.uploadStatus, 'uploading')))
 }

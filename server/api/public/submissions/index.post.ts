@@ -2,16 +2,12 @@
 import { randomUUID } from 'node:crypto'
 import { createError, getRequestIP } from 'h3'
 import { canonicalMime, categoryOf, getExtension } from '#shared/constants/files'
+import { isImageTextEligible } from '#shared/constants/image-text'
+import type { GuestUploadTicket } from '#shared/types/api'
 import { checkUploadFile, sanitizeFileName } from '#shared/validation/files'
 import { submissionInput } from '#shared/validation/submissions'
 import { guestSubmissionFiles, guestSubmissions } from '../../../db/schema'
 import { key, presignPut } from '../../../utils/storage'
-
-export interface GuestUploadTicket {
-  fileId: string
-  uploadUrl: string
-  headers: Record<string, string>
-}
 
 export default defineEventHandler(async (event): Promise<{ submissionId: string, uploads: GuestUploadTicket[] }> => {
   const ip = getRequestIP(event, { xForwardedFor: true }) ?? 'unknown'
@@ -27,6 +23,7 @@ export default defineEventHandler(async (event): Promise<{ submissionId: string,
       name: sanitizeFileName(typeof file.name === 'string' ? file.name : ''),
       size: typeof file.size === 'number' ? file.size : 0,
       mimeType: typeof file.mimeType === 'string' ? file.mimeType : '',
+      withTextSource: file.withTextSource === true,
     }
   })
   for (const file of cleaned) {
@@ -38,10 +35,14 @@ export default defineEventHandler(async (event): Promise<{ submissionId: string,
   const input = unwrap(submissionInput({ ...raw, files: cleaned }))
 
   const submissionId = randomUUID()
+  const textSources = new Set<string>()
   const rows = input.files.map((file) => {
     const ext = getExtension(file.name)
+    const id = randomUUID()
+    // Copia JPEG para leer el texto de una HEIC apta (feature 002, research A4).
+    if (file.withTextSource && ext === 'heic' && isImageTextEligible({ category: categoryOf(ext)!, extension: ext, size: file.size })) textSources.add(id)
     return {
-      id: randomUUID(),
+      id,
       submissionId,
       originalName: file.name,
       extension: ext,
@@ -59,11 +60,18 @@ export default defineEventHandler(async (event): Promise<{ submissionId: string,
     db.insert(guestSubmissionFiles).values(rows),
   ])
 
-  const uploads = await Promise.all(rows.map(async row => ({
-    fileId: row.id,
-    uploadUrl: await presignPut(row.storageKey, { contentType: row.mimeType, contentLength: row.sizeBytes }),
-    headers: { 'content-type': row.mimeType },
-  })))
+  const uploads = await Promise.all(rows.map(async (row): Promise<GuestUploadTicket> => {
+    const [uploadUrl, textSourceUploadUrl] = await Promise.all([
+      presignPut(row.storageKey, { contentType: row.mimeType, contentLength: row.sizeBytes }),
+      textSources.has(row.id) ? presignPut(textSourceKeyFor(row.id), { contentType: 'image/jpeg' }) : undefined,
+    ])
+    return {
+      fileId: row.id,
+      uploadUrl,
+      ...(textSourceUploadUrl ? { textSourceUploadUrl } : {}),
+      headers: { 'content-type': row.mimeType },
+    }
+  }))
 
   setResponseStatus(event, 201)
   return { submissionId, uploads }

@@ -1,8 +1,10 @@
 // Consultas y mapeos de los envíos de invitados (US3).
 import { and, asc, eq, inArray } from 'drizzle-orm'
+import { createError } from 'h3'
 import type { Submission, SubmissionStatus } from '#shared/types/api'
 import { submissionExpiresAt } from '#shared/retention'
 import { guestSubmissionFiles, guestSubmissions } from '../db/schema'
+import { toImageText } from './image-text'
 
 export type SubmissionRow = typeof guestSubmissions.$inferSelect
 export type SubmissionFileRow = typeof guestSubmissionFiles.$inferSelect
@@ -21,6 +23,10 @@ export function toSubmission(row: SubmissionRow, files: SubmissionFileRow[]): Su
       category: f.category,
       size: Number(f.sizeBytes),
       previewUrl: `/api/submissions/${row.id}/files/${f.id}/content`,
+      // El texto viaja en el mismo SELECT del listado (sin N+1, feature 002).
+      text: f.category === 'image'
+        ? toImageText({ ...f, sizeBytes: Number(f.sizeBytes), textEditedAt: null, editedByName: null })
+        : null,
     })),
   }
 }
@@ -47,4 +53,20 @@ export async function listSubmissions(status: SubmissionStatus): Promise<Submiss
   return rows
     .map(row => toSubmission(row, bySubmission.get(row.id) ?? []))
     .filter(s => s.status !== 'pending' || s.files.length > 0)
+}
+
+/** Archivo listo de un envío y el estado del envío, o 404 (texto de las imágenes, feature 002). */
+export async function getSubmissionFile(submissionId: string, fileId: string): Promise<{ status: SubmissionStatus }> {
+  const [row] = await useDb()
+    .select({ status: guestSubmissions.status })
+    .from(guestSubmissionFiles)
+    .innerJoin(guestSubmissions, eq(guestSubmissions.id, guestSubmissionFiles.submissionId))
+    .where(and(
+      eq(guestSubmissionFiles.id, fileId),
+      eq(guestSubmissionFiles.submissionId, submissionId),
+      eq(guestSubmissionFiles.uploadStatus, 'ready'),
+    ))
+    .limit(1)
+  if (!row) throw createError({ statusCode: 404, statusMessage: 'No encontrado', message: 'El envío o el archivo no existen' })
+  return row
 }

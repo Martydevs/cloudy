@@ -128,6 +128,7 @@ type PurgeRow = {
   id: string | null
   storage_key: string | null
   thumb_key: string | null
+  text_source_key: string | null
 }
 
 /**
@@ -156,7 +157,7 @@ export async function purge(rootIds: string[]): Promise<number> {
     purged_files AS (
       DELETE FROM files
       WHERE folder_id IN (SELECT id FROM tree) OR id IN (SELECT id FROM root_files)
-      RETURNING id, storage_key, thumb_key
+      RETURNING id, storage_key, thumb_key, text_source_key
     ),
     purged_folders AS (
       DELETE FROM folders WHERE id IN (SELECT id FROM root_folders)
@@ -165,10 +166,10 @@ export async function purge(rootIds: string[]): Promise<number> {
     total AS (
       SELECT ((SELECT count(*) FROM purged_folders) + (SELECT count(*) FROM root_files))::int AS purged
     )
-    SELECT total.purged, p.id, p.storage_key, p.thumb_key FROM total LEFT JOIN purged_files p ON true
+    SELECT total.purged, p.id, p.storage_key, p.thumb_key, p.text_source_key FROM total LEFT JOIN purged_files p ON true
   `)
   const rows = result.rows
-  const keys = rows.flatMap(r => r.id ? [r.storage_key ?? '', r.thumb_key ?? '', thumbKeyFor(r.id)] : [])
+  const keys = rows.flatMap(r => r.id ? [r.storage_key ?? '', r.thumb_key ?? '', thumbKeyFor(r.id), r.text_source_key ?? ''] : [])
   if (keys.length) {
     try {
       await deleteMany(keys)

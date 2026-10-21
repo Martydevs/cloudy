@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { created, expectGuarded, expectStatus, installNitro, loadHandler, makeEvent, UUID, UUID2 } from './helpers/nitro'
+import { backgroundTasks, created, expectGuarded, expectStatus, installNitro, loadHandler, makeEvent, sqlText, UUID, UUID2 } from './helpers/nitro'
 
 const s3 = vi.hoisted(() => ({
   presignPut: vi.fn(async (key: string) => `https://s3.test/put/${key}`),
@@ -120,7 +120,7 @@ describe('POST /api/uploads/:fileId/complete', () => {
     const fake = installNitro([[uploading()], []])
     const handler = await loadHandler('api/uploads/[fileId]/complete.post.ts')
     await expectStatus(Promise.resolve(handler(makeEvent({ params: { fileId: UUID } }))), 422)
-    expect(s3.deleteMany).toHaveBeenCalledWith([`pre/files/${UUID}`, `pre/thumbs/${UUID}.webp`])
+    expect(s3.deleteMany).toHaveBeenCalledWith([`pre/files/${UUID}`, `pre/thumbs/${UUID}.webp`, `pre/textsrc/${UUID}.jpg`])
     expect(fake.calls.some(c => c.method === 'delete')).toBe(true)
   })
 
@@ -150,9 +150,81 @@ describe('DELETE /api/uploads/:fileId', () => {
     const event = makeEvent({ method: 'DELETE', params: { fileId: UUID } })
     expect(await handler(event)).toBeNull()
     expect(event.node.res.statusCode).toBe(204)
-    expect(s3.deleteMany).toHaveBeenCalled()
+    expect(s3.deleteMany).toHaveBeenCalledWith([`pre/files/${UUID}`, `pre/thumbs/${UUID}.webp`, `pre/textsrc/${UUID}.jpg`])
     expect(fake.calls.some(c => c.method === 'delete')).toBe(true)
     await expectGuarded(handler, { method: 'DELETE', params: { fileId: UUID } })
+  })
+})
+
+describe('texto de las imágenes al subir (feature 002)', () => {
+  const heicBody = { folderId: null, name: 'IMG_0001.heic', size: 3_000_000, mimeType: 'image/heic', withTextSource: true }
+
+  it('POST /api/uploads firma la copia JPEG solo para una HEIC apta', async () => {
+    installNitro([[]])
+    const handler = await loadHandler('api/uploads/index.post.ts')
+    const ticket = await handler(makeEvent({ body: heicBody })) as { fileId: string, textSourceUploadUrl?: string }
+    expect(ticket.textSourceUploadUrl).toBe(`https://s3.test/put/pre/textsrc/${ticket.fileId}.jpg`)
+    expect(s3.presignPut).toHaveBeenCalledWith(`pre/textsrc/${ticket.fileId}.jpg`, { contentType: 'image/jpeg' })
+
+    for (const body of [
+      { ...heicBody, name: 'foto.jpg', mimeType: 'image/jpeg' },
+      { ...heicBody, size: 6_000_000 },
+      { ...heicBody, withTextSource: false },
+    ]) {
+      installNitro([[]])
+      const other = await handler(makeEvent({ body })) as { textSourceUploadUrl?: string }
+      expect(other.textSourceUploadUrl).toBeUndefined()
+    }
+  })
+
+  const completeWith = async (row: Record<string, unknown>, overrides: Record<string, unknown> = {}) => {
+    const readFileImage = vi.fn(async () => {})
+    const checkTextSourceCopy = vi.fn(async () => true)
+    installNitro([[fileRow({ uploadStatus: 'uploading', ...row })], [], [fileRow(row)], []], { readFileImage, checkTextSourceCopy, ...overrides })
+    const handler = await loadHandler('api/uploads/[fileId]/complete.post.ts')
+    const file = await handler(makeEvent({ params: { fileId: UUID } }))
+    return { file, readFileImage, checkTextSourceCopy }
+  }
+
+  it('complete programa la lectura de una imagen apta y responde sin esperarla', async () => {
+    s3.head.mockResolvedValueOnce({ size: 8386 }).mockResolvedValueOnce(null)
+    s3.readRange.mockResolvedValueOnce(JPEG)
+    const { file, readFileImage, checkTextSourceCopy } = await completeWith({})
+    expect(file).toMatchObject({ id: UUID, name: 'foto.jpg' })
+    expect(backgroundTasks).toHaveLength(1)
+    // La respuesta ya llegó y la tarea capturada aún no corrió.
+    expect(readFileImage).not.toHaveBeenCalled()
+    expect(checkTextSourceCopy).not.toHaveBeenCalled()
+    await backgroundTasks[0]!()
+    expect(readFileImage).toHaveBeenCalledWith(UUID)
+  })
+
+  it('una HEIC apta valida su copia y solo se lee si la copia es válida', async () => {
+    const heic = { name: 'IMG.heic', extension: 'heic', mimeType: 'image/heic', sizeBytes: 3_000_000 }
+    s3.head.mockResolvedValueOnce({ size: 3_000_000 }).mockResolvedValueOnce(null)
+    s3.readRange.mockResolvedValueOnce(new Uint8Array([0, 0, 0, 24, 0x66, 0x74, 0x79, 0x70, 0x68, 0x65, 0x69, 0x63]))
+    const valid = await completeWith(heic)
+    expect(valid.checkTextSourceCopy).toHaveBeenCalledWith({ table: 'files', id: UUID })
+    expect(backgroundTasks).toHaveLength(1)
+
+    s3.head.mockResolvedValueOnce({ size: 3_000_000 }).mockResolvedValueOnce(null)
+    s3.readRange.mockResolvedValueOnce(new Uint8Array([0, 0, 0, 24, 0x66, 0x74, 0x79, 0x70, 0x68, 0x65, 0x69, 0x63]))
+    const missing = await completeWith(heic, { checkTextSourceCopy: vi.fn(async () => false) })
+    expect(missing.file).toMatchObject({ id: UUID })
+    expect(backgroundTasks).toHaveLength(0)
+  })
+
+  it.each([
+    ['webp', { name: 'i.webp', extension: 'webp', mimeType: 'image/webp' }, new Uint8Array([0x52, 0x49, 0x46, 0x46, 0, 0, 0, 0, 0x57, 0x45, 0x42, 0x50])],
+    ['gif', { name: 'a.gif', extension: 'gif', mimeType: 'image/gif' }, new Uint8Array([0x47, 0x49, 0x46, 0x38])],
+    ['más de 5 MB', { sizeBytes: 6_000_000 }, JPEG],
+    ['no es imagen', { name: 'n.txt', extension: 'txt', mimeType: 'text/plain', category: 'document' }, new TextEncoder().encode('hola')],
+  ])('%s: no programa ninguna lectura', async (_, row, bytes) => {
+    s3.head.mockResolvedValueOnce({ size: (row as { sizeBytes?: number }).sizeBytes ?? 8386 }).mockResolvedValueOnce(null)
+    s3.readRange.mockResolvedValueOnce(bytes)
+    const { checkTextSourceCopy } = await completeWith(row)
+    expect(backgroundTasks).toHaveLength(0)
+    expect(checkTextSourceCopy).not.toHaveBeenCalled()
   })
 })
 
@@ -179,6 +251,22 @@ describe('GET /api/files/search', () => {
     const result = await handler(makeEvent({ url: '/api/files/search?q=foto&type=image&sort=size&dir=desc' }))
     expect(result).toMatchObject({ folders: [], files: [expect.objectContaining({ path: [] })] })
     expect(fake.db.execute).not.toHaveBeenCalled()
+  })
+
+  it('encuentra también por el texto leído de las imágenes y dice dónde coincidió (feature 002)', async () => {
+    const fake = installNitro([[fileRow({ matchedIn: 'text' }), fileRow({ id: UUID2, name: 'abuela.jpg', matchedIn: 'name' })], [], { rows: [] }])
+    const handler = await loadHandler('api/files/search.get.ts')
+    const result = await handler(makeEvent({ url: '/api/files/search?q=abue_la&type=image&sort=date&dir=desc' })) as { files: { matchedIn: string }[] }
+    expect(result.files.map(f => f.matchedIn)).toEqual(['text', 'name'])
+    const where = sqlText(fake.calls.find(c => c.method === 'where')!.args[0])
+    // El mismo patrón escapado para el nombre y el texto; sigue excluyendo papelera y subidas pendientes.
+    expect(where).toMatch(/"files"."name" ILIKE \$(\d+) OR "files"."text_content" ILIKE \$\d+/)
+    // Los dos ILIKE reciben el mismo patrón, con el `_` escapado (JSON duplica la barra).
+    expect(where.match(/%abue\\\\_la%/g)).toHaveLength(2)
+    expect(where).toMatch(/deleted_at.*upload_status|upload_status.*deleted_at/s)
+    expect(where).toContain('"files"."category" = ')
+    const select = fake.calls.find(c => c.method === 'select')!.args[0] as Record<string, unknown>
+    expect(sqlText(select.matchedIn)).toContain("THEN 'name' ELSE 'text' END")
   })
 
   it('exige q y rol', async () => {
