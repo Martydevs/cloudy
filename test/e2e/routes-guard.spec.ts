@@ -97,6 +97,12 @@ describe('US6 · protección de rutas', () => {
       ['POST', `/api/files/${id}/comments`],
       ['PATCH', `/api/comments/${id}`],
       ['DELETE', `/api/comments/${id}`],
+      // Texto de las imágenes (feature 002).
+      ['GET', `/api/files/${id}/text`],
+      ['POST', `/api/files/${id}/text`],
+      ['PATCH', `/api/files/${id}/text`],
+      ['GET', `/api/submissions/${id}/files/${id}/text`],
+      ['POST', `/api/submissions/${id}/files/${id}/text`],
     ] as const
     for (const [method, path] of commentRoutes) {
       const init: { method: string, headers: Record<string, string>, body?: string } = method === 'GET' || method === 'DELETE'

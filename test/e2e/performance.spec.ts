@@ -185,3 +185,33 @@ describe('Constitución I · Web Vitals en móvil 4G (T155)', () => {
     await audit('/enviar', annotate)
   })
 })
+
+// Feature 002 · SC-006 — la búsqueda por el texto leído de las imágenes responde en < 2 s con 5 000 archivos.
+describe('SC-006 · búsqueda por texto con 5 000 archivos', () => {
+  it('GET /api/files/search?q=<palabra del texto> responde en menos de 2 s', async ({ annotate }) => {
+    const p = await throttledPage()
+    const owner = await profileUserId(email(ADMIN))
+    const folderId = await seedFolder(`Texto ${runId()}`, owner)
+    const word = `girasol${runId()}`
+    // Una de cada 10 con texto leído; solo 50 contienen la palabra buscada.
+    await seedFiles(owner, folderId, 5000, `Nota ${runId()}`, {
+      textContent: i => (i % 10 === 0 ? `Oremos por la familia\nGracias por ${i % 100 === 0 ? word : 'el campamento'}` : null),
+    })
+    const cookie = (await p.context().cookies()).map(c => `${c.name}=${c.value}`).join('; ')
+    const timings: number[] = []
+    let found = 0
+    for (let i = 0; i < 3; i++) {
+      const start = performance.now()
+      const res = await fetch(`${E2E_URL}/api/files/search?q=${word}`, { headers: { cookie } })
+      timings.push(Math.round(performance.now() - start))
+      expect(res.status).toBe(200)
+      const body = await res.json() as { files: { matchedIn: string }[] }
+      found = body.files.length
+      expect(body.files.every(f => f.matchedIn === 'text')).toBe(true)
+    }
+    const ms = median(timings)
+    await annotate(`búsqueda por texto: ${ms} ms (${timings.join(', ')}) · ${found} resultados en la primera página`, 'perf')
+    expect(found).toBeGreaterThan(0)
+    expect(ms, `búsqueda por texto: ${ms} ms`).toBeLessThan(2000)
+  })
+})

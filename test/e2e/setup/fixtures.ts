@@ -169,18 +169,27 @@ const SEED_EXTENSIONS = ['jpg', 'png', 'mp3', 'wav', 'mp4', 'mov', 'pptx', 'pdf'
 /**
  * Siembra `count` filas `ready` en una sola consulta, sin bytes en el bucket. Sin `thumb_key`, las
  * tarjetas muestran el icono de la categoría y nunca piden `/thumbnail`, así que no hay 404.
- * Los nombres son `<label> <n>.<ext>` y las claves de storage van bajo `e2e/<runId>/`.
+ * Los nombres son `<label> <n>.<ext>` y las claves de storage van bajo `e2e/<runId>/`. Con `textContent`
+ * (feature 002) cada fila con texto queda leída (`text_status = 'ready'`), como una imagen ya procesada.
  */
-export async function seedFiles(owner: string, folderId: string | null, count: number, label: string): Promise<string[]> {
+export async function seedFiles(
+  owner: string,
+  folderId: string | null,
+  count: number,
+  label: string,
+  { textContent }: { textContent?: (index: number) => string | null } = {},
+): Promise<string[]> {
   const ids = Array.from({ length: count }, () => randomUUID())
   const names = ids.map((_, i) => `${label} ${String(i + 1).padStart(3, '0')}.${SEED_EXTENSIONS[i % SEED_EXTENSIONS.length]}`)
   const exts = names.map(getExtension)
   const types = exts.map(ext => ALLOWED_TYPES[ext]!)
   await testSql().query(
-    `INSERT INTO files (id, folder_id, name, extension, mime_type, category, size_bytes, storage_key, upload_status, origin, uploaded_by)
-     SELECT id::uuid, $2::uuid, name, extension, mime_type, category::file_category, size_bytes, storage_key, 'ready', 'team', $9
-     FROM unnest($1::text[], $3::text[], $4::text[], $5::text[], $6::text[], $7::bigint[], $8::text[])
-       AS t(id, name, extension, mime_type, category, size_bytes, storage_key)`,
+    `INSERT INTO files (id, folder_id, name, extension, mime_type, category, size_bytes, storage_key, upload_status, origin, uploaded_by,
+       text_content, text_status)
+     SELECT id::uuid, $2::uuid, name, extension, mime_type, category::file_category, size_bytes, storage_key, 'ready', 'team', $9,
+       text_content, CASE WHEN text_content IS NULL THEN NULL ELSE 'ready'::image_text_status END
+     FROM unnest($1::text[], $3::text[], $4::text[], $5::text[], $6::text[], $7::bigint[], $8::text[], $10::text[])
+       AS t(id, name, extension, mime_type, category, size_bytes, storage_key, text_content)`,
     [
       ids,
       folderId,
@@ -191,6 +200,7 @@ export async function seedFiles(owner: string, folderId: string | null, count: n
       ids.map((_, i) => 1000 + i),
       ids.map(id => `e2e/${runId()}/files/${id}`),
       owner,
+      ids.map((_, i) => textContent?.(i) ?? null),
     ],
   )
   return ids
@@ -241,4 +251,66 @@ export async function signedInAs(page: Page, role: 'admin' | 'editor', label: st
   await page.context().clearCookies()
   await login(page, creds)
   return creds
+}
+
+// ---------------------------------------------------------------- texto de las imágenes (feature 002)
+
+/** Control del stub de OpenAI que levanta `global-setup.ts` (research A9). */
+async function stubRequest<T>(path: string, body?: unknown): Promise<T> {
+  const res = await fetch(`${inject('openaiStubUrl')}${path}`, body === undefined
+    ? {}
+    : { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
+  return res.json() as Promise<T>
+}
+
+export interface StubCalls {
+  total: number
+  byImage: Record<string, number>
+}
+
+export const stubCalls = () => stubRequest<StubCalls>('/__stub/calls')
+export const setStubMode = (mode: { fail?: boolean, delayMs?: number }) => stubRequest('/__stub/mode', mode)
+export const resetStub = () => stubRequest('/__stub/reset', {})
+
+/** El fixture si existe (fotos reales que aporta el equipo) o el de respaldo, que el stub también "lee". */
+export function fixtureOr(name: string, fallback: string): string {
+  return existsSync(fixture(name)) ? name : fallback
+}
+
+/**
+ * Siembra una imagen `ready` como las subidas antes de la feature (`text_status` en `NULL`): sube los
+ * bytes del fixture al bucket de pruebas bajo `e2e/<runId>/` y crea la fila. Con `withBytes: false`
+ * solo crea la fila (p. ej. una HEIC sin copia, que nunca se descarga).
+ */
+export async function seedImage(owner: string, fixtureName: string, { withBytes = true }: { withBytes?: boolean } = {}): Promise<string> {
+  const id = randomUUID()
+  const extension = getExtension(fixtureName)
+  const type = ALLOWED_TYPES[extension]!
+  const storageKey = `e2e/${runId()}/files/${id}`
+  const bytes = readFileSync(fixture(fixtureName))
+  if (withBytes) {
+    const env = readEnvFile('test')
+    const { S3Client, PutObjectCommand } = await import('@aws-sdk/client-s3')
+    const s3 = new S3Client({
+      endpoint: env.NUXT_AWS_ENDPOINT_URL_S3,
+      region: env.NUXT_AWS_REGION || 'auto',
+      forcePathStyle: true,
+      credentials: { accessKeyId: env.NUXT_AWS_ACCESS_KEY_ID ?? '', secretAccessKey: env.NUXT_AWS_SECRET_ACCESS_KEY ?? '' },
+      requestChecksumCalculation: 'WHEN_REQUIRED',
+      responseChecksumValidation: 'WHEN_REQUIRED',
+    })
+    await s3.send(new PutObjectCommand({ Bucket: env.NUXT_S3_BUCKET, Key: storageKey, Body: bytes, ContentType: type.mimes[0] }))
+  }
+  await testSql()`
+    INSERT INTO files (id, name, extension, mime_type, category, size_bytes, storage_key, upload_status, origin, uploaded_by)
+    VALUES (${id}, ${`${id.slice(0, 8)}-${fixtureName}`}, ${extension}, ${type.mimes[0]}, ${type.category}, ${bytes.byteLength},
+      ${storageKey}, 'ready', 'team', ${owner})
+  `
+  return id
+}
+
+/** Columnas `text_*` de un archivo, para afirmar sobre la reclamación y los intentos. */
+export async function textColumns(fileId: string): Promise<{ text_status: string | null, text_attempts: number, text_content: string | null }> {
+  const [row] = await testSql()`SELECT text_status, text_attempts, text_content FROM files WHERE id = ${fileId}`
+  return row as { text_status: string | null, text_attempts: number, text_content: string | null }
 }
