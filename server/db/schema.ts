@@ -9,6 +9,7 @@ import {
   pgEnum,
   pgTable,
   primaryKey,
+  smallint,
   text,
   timestamp,
   uuid,
@@ -27,6 +28,8 @@ export const fileCategory = pgEnum('file_category', ['image', 'audio', 'video', 
 export const fileOrigin = pgEnum('file_origin', ['team', 'guest'])
 export const uploadStatus = pgEnum('upload_status', ['uploading', 'ready'])
 export const submissionStatus = pgEnum('submission_status', ['pending', 'approved', 'rejected', 'expired'])
+/** Lectura del texto de una imagen (feature 002); `NULL` = pendiente. */
+export const imageTextStatus = pgEnum('image_text_status', ['reading', 'ready', 'empty', 'failed', 'unavailable'])
 export const activityAction = pgEnum('activity_action', [
   'file.upload',
   'file.rename',
@@ -48,6 +51,7 @@ export const activityAction = pgEnum('activity_action', [
   'user.disable',
   'user.role_change',
   'user.remove',
+  'file.text_edit',
 ])
 
 // ---------------------------------------------------------------- profiles
@@ -87,6 +91,20 @@ export const folders = pgTable('folders', {
   index('folders_trash_root_idx').on(t.trashRootId),
 ])
 
+// Texto extraído de la imagen (feature 002, data-model): mismas columnas en `files` y `guest_submission_files`.
+const imageTextColumns = () => ({
+  textStatus: imageTextStatus('text_status'),
+  /** Solo si `ready`; ≤ 10 000 caracteres (CHECK). */
+  textContent: text('text_content'),
+  /** Código interno: timeout, provider, rate_limited, quota_exceeded, invalid_input, invalid_output. */
+  textError: text('text_error'),
+  /** Solo HEIC: copia JPEG `textsrc/<id>.jpg` que subió el navegador. */
+  textSourceKey: text('text_source_key'),
+  textAttempts: smallint('text_attempts').notNull().default(0),
+  textStartedAt: timestamp('text_started_at', { withTimezone: true }),
+  textReadAt: timestamp('text_read_at', { withTimezone: true }),
+})
+
 // ---------------------------------------------------------------- guest submissions
 
 export const guestSubmissions = pgTable('guest_submissions', {
@@ -120,6 +138,7 @@ export const guestSubmissionFiles = pgTable('guest_submission_files', {
   sizeBytes: bigint('size_bytes', { mode: 'number' }).notNull(),
   storageKey: text('storage_key').notNull().unique(),
   uploadStatus: uploadStatus('upload_status').notNull().default('uploading'),
+  ...imageTextColumns(),
 }, t => [
   index('guest_submission_files_submission_idx').on(t.submissionId),
 ])
@@ -148,6 +167,9 @@ export const files = pgTable('files', {
   deletedAt: timestamp('deleted_at', { withTimezone: true }),
   deletedBy: text('deleted_by').references(() => profiles.userId),
   trashRootId: uuid('trash_root_id'),
+  ...imageTextColumns(),
+  textEditedBy: text('text_edited_by').references(() => profiles.userId, { onDelete: 'set null' }),
+  textEditedAt: timestamp('text_edited_at', { withTimezone: true }),
 }, t => [
   index('files_folder_created_idx').on(t.folderId, t.createdAt.desc()),
   index('files_category_idx').on(t.category),
