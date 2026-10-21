@@ -82,4 +82,45 @@ Anotar el resultado por proveedor en este archivo, §6.
 
 ## 6. Resultado
 
-_Pendiente de la implementación._
+Validación del 2026-10-21 (rama `002-note-text-extraction-impl`).
+
+### Presupuestos (T070)
+
+- `bun run analyze`: `heic-to` (3,15 MB sin comprimir) queda en su propio chunk, alcanzado solo por un
+  `import()` dinámico desde el chunk del diálogo de subida; ninguna ruta lo descarga al cargar.
+  `@vercel/functions` solo aparece en el bundle del servidor (`.output/server/chunks/_/nitro.mjs`).
+- JS descargado al cargar cada ruta (gzip, incluido el chunk `Lazy` del panel, ~3 KB):
+  `/archivos/ver/:id` 150 KB · `/archivos` 141 KB · `/pendientes` 140 KB · `/enviar` 130 KB (presupuesto 200 KB).
+- CLS de `/archivos/ver/:id` con una imagen y su texto (build de producción, sin limitación de red, 3 cargas):
+  0 a 360 px y 0,0009 a 1280 px. No se ejecutó Lighthouse.
+- SC-006 (e2e `performance.spec.ts`): búsqueda por texto con 5 000 archivos sembrados < 2 s.
+- `/archivos/<carpeta>` con 200 elementos supera el LCP de 2,5 s en esta máquina (2,96–3,42 s) por el TTFB
+  de la rama de pruebas; la misma prueba en el código base sin la feature dio 8,2 s, así que no es una
+  regresión de la feature.
+
+### Escenarios manuales (T074)
+
+Con datos de desarrollo y el **respaldo real (Gemini)**: por indicación del usuario, para no gastar saldo
+de OpenAI, `NUXT_OPENAI_APIKEY` quedó vacía y OpenAI solo se usaría si Gemini respondiera 429.
+
+| # | Resultado |
+|---|-----------|
+| 1, 2, 6 | ✅ Nota de prueba (PNG con el logotipo «Skykids») leída en segundo plano antes de abrirla, sin «Skykids» y con sus saltos de línea; copiar muestra el aviso |
+| 2c | ✅ tres imágenes subidas juntas en ~9 s; cada una con su texto |
+| 5 | ✅ `imagen.webp` → «No disponible…» |
+| 7 | ✅ editar, insignia «Editado por», foco de vuelta en Editar, confirmación al volver a leer |
+| 8 | ✅ ambas claves vacías → error con Reintentar; la descarga sigue disponible |
+| 8b | ✅ todas las lecturas de esta validación las hizo Gemini |
+| 8c | ✅ OpenAI apuntando a un puerto cerrado → `fallback openai→google (provider)` y texto leído en ~13 s |
+| 9, 10, 11 | ✅ aviso en `/enviar`, confirmación en ~5,6 s, texto ya leído al abrir Pendientes, aprobación sin releer (`text_attempts = 1`), rechazo sin filas |
+| 12 | ✅ búsqueda de una palabra corregida → insignia «En el texto» y nota de búsqueda |
+| 3, 4, 9 (HEIC) | ⏸ pendientes de las fotos reales (`nota.heic`, `paisaje.jpg`) |
+| OpenAI real | ⏸ no se ejecutó por la indicación de ahorro del usuario |
+
+Accesibilidad (axe-core, WCAG 2.2 AA) sin violaciones en el panel (lectura, edición, no disponible), la
+búsqueda, Pendientes y `/enviar` en ambos temas, salvo elementos anteriores a la feature (pestañas
+de Pendientes y etiquetas de `/enviar` en el tema claro). `prefers-reduced-motion` detiene el skeleton.
+
+### Calidad real (SC-002, T075)
+
+_Pendiente: requiere las 20 fotos reales del equipo._

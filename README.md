@@ -73,3 +73,9 @@ specs/    documentos de Spec Kit
 
 Las reglas de contribución (reutilizar antes de escribir, presupuestos de rendimiento, pruebas por
 historia, acciones destructivas) están en [`AGENTS.md`](AGENTS.md).
+
+## Licencias de terceros
+
+- [`heic-to`](https://github.com/hoppergee/heic-to) (LGPL-3.0, incluye libheif): convierte en el navegador las
+  fotos HEIC a una copia JPEG para leer su texto (feature 002). Se usa **sin modificar** y se carga como un
+  módulo aparte con `import()` dinámico (`app/utils/heic-copy.ts`), solo cuando se elige una HEIC.
