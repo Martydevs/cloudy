@@ -339,7 +339,8 @@ describe('US9 · recorrido de rutas (T151)', () => {
   it('las listas cubren todas las páginas de app/pages', async () => {
     const dir = fileURLToPath(new URL('../../app/pages', import.meta.url))
     const files = (await readdir(dir, { recursive: true })).filter(file => file.endsWith('.vue'))
-    const routes = files.map(file => `/${file.replace(/\.vue$/, '').replace(/(^|\/)index$/, '').replace(/\[(\w+)\]/g, ':$1')}`)
+    // `readdir` devuelve `\` como separador en Windows: se normaliza para comparar con las rutas de la app.
+    const routes = files.map(file => `/${file.replaceAll('\\', '/').replace(/\.vue$/, '').replace(/(^|\/)index$/, '').replace(/\[(\w+)\]/g, ':$1')}`)
     expect(routes.sort()).toEqual([...PRIVATE_ROUTES, ...PUBLIC_ROUTES, ...PENDING_ROUTES].sort())
   })
 

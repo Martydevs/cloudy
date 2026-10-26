@@ -33,8 +33,8 @@ async function uploadAndClose(page: Page, names: string[]) {
   await page.getByRole('button', { name: 'Subir', exact: true }).click()
   const dialog = page.getByRole('dialog', { name: 'Subir archivos' })
   await dialog.getByLabel('Elegir archivos', { exact: true }).setInputFiles(names.map(fixture))
-  await expect.poll(() => dialog.getByText(/Subiendo|Verificando|En espera/).count(), { timeout: 60_000 }).toBe(0)
-  expect(await dialog.getByText(/· Listo$/).count()).toBe(names.length)
+  // Se espera a que cada fila llegue a «Listo»: contar solo «sin filas en curso» pasaba antes de que las filas se pintaran.
+  await expect.poll(() => dialog.getByText(/· Listo$/).count(), { timeout: 60_000 }).toBe(names.length)
   await dialog.getByRole('button', { name: 'Listo' }).click()
 }
 
