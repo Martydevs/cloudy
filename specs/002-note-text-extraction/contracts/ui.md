@@ -10,7 +10,7 @@ Es la única lógica de cliente del panel.
 
 **Entrada**:
 - `endpoint`: `/api/files/:id/text` o `/api/submissions/:sid/files/:fid/text`.
-- `{ autoRead: boolean, editable: boolean }`.
+- `{ initial?: ImageText | null, autoRead: boolean, editable: boolean }`.
 
 **Expone**:
 - Estado: `state: Ref<ImageText | null>`, `loading` y `error`, que es el error de red, no el de la lectura.
@@ -28,7 +28,8 @@ Es la única lógica de cliente del panel.
 
 ### `app/components/files/ImageTextPanel.vue`
 
-- **Props**: `endpoint`, `initial?: ImageText | null`, `editable`, `autoRead`.
+- **Props**: `endpoint`, `initial?: ImageText | null`, `editable`, `autoRead`, `compact?` (trunca el texto a 6
+  líneas con un botón "Ver todo"; lo usa `SubmissionCard`).
 - **Estados** (FR-005, FR-020), todos con copy de `messages.imageText`:
 
 | Estado | Contenido |
@@ -42,6 +43,8 @@ Es la única lógica de cliente del panel.
 
 - **Edición**: el panel alterna entre la vista de lectura y `<ImageTextEditor>` (abajo); al guardar o cancelar
   devuelve el foco a **Editar**. El toast `messages.imageText.saved` lo muestra `useImageText.save()`.
+- **Volver a leer con corrección manual**: si `editedAt` no es nulo, el panel primero pasa por `useConfirm` →
+  `ConfirmDialog` ("Se reemplazará tu corrección") y solo lee al confirmar.
 
 ### `app/components/files/ImageTextEditor.vue` (US3)
 
@@ -49,8 +52,6 @@ Componente pequeño de una sola responsabilidad (Constitución IV): solo el modo
 - **Props / eventos**: `modelValue: string`; emite `save(text)` y `cancel`.
 - **Contenido**: un `textarea` con etiqueta "Texto de la imagen", contador `n / 10 000` (`MAX_IMAGE_TEXT_LENGTH`
   de `shared/`), botones **Guardar** y **Cancelar**; Guardar se desactiva si el texto queda vacío tras `trim`.
-- **Volver a leer con corrección manual**: si `editedAt` no es nulo, primero pasa por `useConfirm` →
-  `ConfirmDialog` ("Se reemplazará tu corrección").
 - **Botones**: de tamaño `btn` base, con `lg:btn-sm` solo en escritorio (Constitución III).
 
 ### `app/utils/heic-copy.ts`
@@ -78,7 +79,7 @@ Componente pequeño de una sola responsabilidad (Constitución IV): solo el modo
 |----------|--------|
 | `app/pages/archivos/ver/[fileId].vue` | Si `file.category === 'image'`, el aside muestra `<LazyImageTextPanel :endpoint="/api/files/${id}/text" auto-read editable />` antes de los comentarios. Como la lectura empezó al subir, lo normal es ver el texto ya listo o "Leyendo texto…" unos segundos. En móvil va debajo de la vista previa y en `lg:` en la columna lateral, como el aside actual. Las fotos HEIC, que no tienen `<img>`, también muestran su texto |
 | `app/components/guests/SubmissionCard.vue` | Bajo cada miniatura de imagen, `<LazyImageTextPanel :endpoint=… :initial="file.text" auto-read :editable="false" />` en versión compacta: el texto se trunca a 6 líneas con un botón "Ver todo". Mientras el envío recién recibido se lee en segundo plano, muestra "Leyendo texto…" y consulta `GET …/text`. Hace `POST` sin `force` solo si el estado es `pending`; `failed` espera el Reintentar del usuario |
-| `app/pages/enviar.vue` | Junto al selector de archivos, un aviso `text-base-content/70` (FR-011): "Leeremos automáticamente el texto de tus imágenes para que el equipo pueda revisarlas." El botón Enviar y su estado no cambian |
+| `app/pages/enviar.vue` | Junto al selector de archivos, un aviso `text-base-content/70` (FR-011): "Leeremos automáticamente el texto de tus imágenes para que el equipo pueda revisarlas." Debajo, una línea de privacidad (`guestPrivacy`): "Las imágenes se procesan con servicios externos de inteligencia artificial solo para transcribir su texto; no se envían tu nombre, tu nota ni tu dirección IP. El texto lo ve únicamente el equipo." El botón Enviar y su estado no cambian |
 | `app/components/files/FileExplorer.vue` (resultados de búsqueda) | Si `matchedIn === 'text'`, la fila muestra la insignia "En el texto". Siempre que `q` esté activo (con resultados y en el estado vacío), una nota breve `text-base-content/70` muestra `searchHint`: solo se busca en el texto de las imágenes que ya se leyeron; las que se están leyendo, las no aptas y las subidas antes de esta feature que nadie ha abierto no aparecen por su texto (FR-015) |
 
 ## Copy (`app/utils/messages.ts`)
@@ -86,7 +87,7 @@ Componente pequeño de una sola responsabilidad (Constitución IV): solo el modo
 La sección nueva `imageText` lleva:
 - `reading`, `empty`, `unavailable`, `failedRetryable`, `failedQuota`, `failedPermanent`.
 - `copied`, `saved`, `confirmReread`, `editedBy(name)`.
-- `searchHint` ("Solo buscamos en el texto de las imágenes que ya se leyeron"), `guestNotice`.
+- `searchHint` ("Solo buscamos en el texto de las imágenes que ya se leyeron"), `guestNotice`, `guestPrivacy`.
 - Además, en la sección `files`, `preparing`.
 
 Todo en español y en el mismo tono amable del resto de la sección `messages`.

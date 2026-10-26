@@ -146,7 +146,8 @@ files: set the same names per environment in the project settings.
 `NUXT_AWS_SECRET_ACCESS_KEY`, `NUXT_AWS_REGION`, `NUXT_S3_BUCKET`, `NUXT_PUBLIC_SITE_URL`,
 `NUXT_OPENAI_APIKEY`, `NUXT_OPENAI_ORG`, `NUXT_OPENAI_PROJ`, `NUXT_OPENAI_BASE_URL` (empty = OpenAI; e2e only),
 `NUXT_GOOGLE_APIKEY` (fallback provider; empty = no fallback),
-`CRON_SECRET`, `NUXT_RATE_LIMIT_SALT`. `NUXT_NEON_JWKS_URL` is present but intentionally unused in v1.
+`CRON_SECRET`, `NUXT_RATE_LIMIT_SALT`. `NUXT_NEON_JWKS_URL` is present but intentionally unused in v1. `NUXT_NEON_REALTIME_URL` and
+`NUXT_NEON_REALTIME_SECRET` exist in `.env.example` and `runtimeConfig` but are outside feature 002; do not use them in it.
 Never print or commit their values.
 
 ## Known gotchas
@@ -179,7 +180,7 @@ Never print or commit their values.
 - Spec Kit: `/speckit-specify` → `/speckit-clarify` → `/speckit-plan` → `/speckit-tasks` →
   `/speckit-implement`. Plans must pass the Constitution Check (principles I–VI).
 - **Definition of done for every task and every phase** (phases are the `## Phase N` sections of
-  `specs/001-shared-media-drive/tasks.md`). When a task or phase is implemented, run these in order and
+  the active feature's `tasks.md`, e.g. `specs/002-note-text-extraction/tasks.md`). When a task or phase is implemented, run these in order and
   do not mark it complete or start the next one until all pass:
   1. `bun run typecheck`, then the tests that cover the change: `bun run test:unit`, `bun run test:nuxt`
      and, when the change touches a user story or protected route, `bun run test:e2e`. At the end of a
@@ -194,3 +195,7 @@ Never print or commit their values.
 - Conventional Commits (`feat:`, `fix:`, `docs:`, `test:`, `refactor:`, `chore:`).
 - Merge gates: typecheck + build, `test:unit`/`test:nuxt`/`test:e2e` green with coverage, manual check
   at 360 px and ≥ 1280 px in dark and light themes, no performance budget regressions, code review.
+
+## Notes
+
+Based in your knowledge, every time you will decide to run a peligrous command like dropping a table or running an mcp database command, ask me and you can't run without my permission.

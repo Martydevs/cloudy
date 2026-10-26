@@ -6,7 +6,7 @@
 
 ## Summary
 
-Cloudy lee el texto de las imágenes JPEG/JPG, PNG y HEIC de hasta 5 MB. Así el equipo deja de transcribir a
+Cloudy lee el texto de las imágenes JPEG/JPG, PNG y HEIC de hasta 5 MB (5 242 880 bytes). Así el equipo deja de transcribir a
 mano las notas adhesivas y las peticiones de oración.
 
 **Cuándo se lee** (siempre en segundo plano, sin retrasar ninguna respuesta):
@@ -24,7 +24,7 @@ El texto se guarda con el archivo y se puede copiar, corregir, volver a leer y b
   salida se validan con **Zod**.
 - **Segundo plano**: `waitUntil` de `@vercel/functions`, encapsulado en `server/utils/background.ts`
   (`runInBackground`), porque `event.waitUntil` de Nitro no está conectado en el preset de Vercel para Node.
-- **Imagen**: el servidor descarga la imagen de Neon Object Storage (≤ 5 MB) y envía los bytes al modelo tal
+- **Imagen**: el servidor descarga la imagen de Neon Object Storage (≤ 5 MB, 5 242 880 bytes) y envía los bytes al modelo tal
   como están guardados, sin procesarlos. Las HEIC se convierten a JPEG **en el navegador al subir** con
   `heic-to`, que solo funciona en el navegador; esa copia se sube con PUT prefirmado, como las miniaturas, y es
   la que se lee.
@@ -52,7 +52,7 @@ El texto se guarda con el archivo y se puede copiar, corregir, volver a leer y b
 **Storage**:
 - **Neon Postgres**: un enum nuevo, columnas `text_*` en dos tablas, un valor nuevo de `activity_action`, un
   índice GIN trigram y CHECKs ([data-model.md](./data-model.md)).
-- **Bucket**: un objeto nuevo por HEIC apta, la copia `textsrc/<id>.jpg` (≤ 5 MB), con el mismo ciclo de vida
+- **Bucket**: un objeto nuevo por HEIC apta, la copia `textsrc/<id>.jpg` (≤ 5 MB, 5 242 880 bytes), con el mismo ciclo de vida
   que la miniatura (data-model).
 
 **Testing**: Vitest con los proyectos `unit`, `nuxt` y `e2e`. Los unit usan `MockLanguageModelV4` de `ai/test`.
@@ -347,7 +347,7 @@ storage, background } → `shared/`. `server/ai/` solo importa `shared/constants
 | Ninguna clave configurada, o ambos proveedores caídos | Sin candidatos: `failed`/`provider` sin llamar a nadie. Con ambos caídos: `failed` con el código del último intento y Reintentar; nunca se muestra texto parcial |
 | Una caída de OpenAI duplica el tiempo y el consumo de la lectura | El respaldo se activa por cualquier fallo del proveedor (research A11); el principal falla rápido (20 s, sin reintento) y el tope de 45 s sigue acotando la lectura; el costo extra lo limita `guest-text` (20/h); dentro de un envío de invitados, el cortacircuito deja de probar a OpenAI tras un error persistente o 3 fallos transitorios seguidos (A6) |
 | Saldo o cuota agotados en OpenAI (o en Gemini) | Código `quota_exceeded`: activa el respaldo; si ambos fallan, el aviso dice que se alcanzó el límite de uso y que se avise a un administrador, con Reintentar. Se registra como error para recargar el saldo. Fuera de un envío de invitados cada imagen vuelve a intentar OpenAI primero, pero el rechazo es inmediato y sin reintento; dentro de un envío, el cortacircuito (A6) lo evita |
-| El respaldo envía la imagen a un segundo tercero | Solo bytes (FR-019) y solo cuando OpenAI no está disponible; se documenta en Privacidad y se desactiva dejando `NUXT_GOOGLE_APIKEY` vacía |
+| El respaldo envía la imagen a un segundo tercero | Solo bytes (FR-019) y solo cuando OpenAI no está disponible; se explica en el aviso de privacidad de la página pública (`messages.imageText.guestPrivacy`) y se desactiva dejando `NUXT_GOOGLE_APIKEY` vacía |
 | Un lote grande de fotos del equipo programa una lectura simultánea por archivo y el proveedor (OpenAI o Gemini) puede responder 429 (`rate_limited`) | un 429 de OpenAI activa el respaldo con Gemini (A11) y, si ambos fallan, Reintentar manual; sin tope de concurrencia por ahora (unos cientos de imágenes al mes) |
 | Costo por abuso de invitados | `guest-text` con 20/h por remitente, más los límites de envíos ya existentes |
 | Texto sensible (peticiones de oración) | Mismos permisos que el archivo (FR-016); no se guarda en la actividad (solo la longitud); no se registra en logs (solo id y código de error) |

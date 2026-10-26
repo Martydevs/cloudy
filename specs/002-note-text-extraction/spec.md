@@ -18,7 +18,11 @@
 - Q: ¿Qué pasa con HEIC (fotos de iPhone), que el servicio no lee directamente? → A: Se convierten a JPEG antes de leerlas; dónde se convierten se fija en la aclaración sobre la biblioteca de conversión.
 - Q: ¿Se mantiene la búsqueda por texto extraído aunque las imágenes del equipo se lean al abrirse? → A: Sí; la búsqueda solo encuentra por su texto las imágenes ya leídas, y la interfaz lo indica.
 - Directiva del usuario: dentro del flujo de extracción, la entrada (imagen, tipo, tamaño, archivo) y la salida del servicio se validan con esquemas Zod.
-- Q: ¿Los formatos JPEG/JPG/PNG/HEIC y el máximo de 5 MB limitan solo la lectura del texto o también lo que Cloudy acepta al subir? → A: Solo la lectura del texto: se leen únicamente imágenes JPEG/JPG, PNG o HEIC de hasta 5 MB (tamaño del archivo original). Cloudy sigue aceptando al subir todos los formatos y hasta 100 MB, como define la feature 001; WEBP, GIF e imágenes de más de 5 MB quedan como "No disponible para este archivo".
+- Q: ¿Los formatos JPEG/JPG/PNG/HEIC y el máximo de 5 MB limitan solo la lectura del texto o también lo que Cloudy
+  acepta al subir? → A: Solo la lectura del texto: se leen únicamente imágenes JPEG/JPG, PNG o HEIC de hasta 5 MB
+  (5 242 880 bytes), el tamaño del archivo original. Cloudy sigue aceptando al subir todos los formatos y hasta
+  100 MB, como define la feature 001; WEBP, GIF e imágenes de más de 5 242 880 bytes quedan como "No disponible
+  para este archivo".
 - Directiva del usuario: la conversión HEIC usa la biblioteca `heic-to` (ya instalada) y no se agrega ninguna biblioteca de procesos en segundo plano o concurrentes (como `@vercel/functions`). *(Reemplazada en la revisión de arquitectura.)*
 - Q: `heic-to` solo funciona en el navegador; ¿dónde se convierte una HEIC a JPEG para leer su texto? → A: Al subir: el navegador de quien sube (equipo o invitado) convierte la HEIC y sube una copia JPEG junto al original, como ya se hace con las miniaturas; la lectura usa esa copia. Las HEIC subidas antes de esta feature, sin copia, quedan como "No disponible para este archivo".
 - Q: Sin una biblioteca de segundo plano, ¿cómo se leen las imágenes de invitados "al recibir el envío"? → A: Dentro de la misma petición de envío: el servidor lee hasta 4 imágenes a la vez antes de confirmar, con un tope total de unos 40 s; lo que quede sin leer o falle se lee cuando un revisor abre el envío en Pendientes. *(Reemplazada en la revisión de arquitectura.)*
@@ -37,6 +41,13 @@
 - Q: ¿Se mantiene la conversión HEIC en el navegador? → A: Sí, con `heic-to`, que solo funciona en el navegador.
   El servidor no procesa imágenes: envía al servicio de lectura los bytes tal como están guardados (el original
   JPEG/PNG o la copia JPEG de una HEIC).
+
+### Session 2026-10-24 (cierre del análisis)
+
+- Decisión: la lectura usa un servicio principal y, si no responde, un servicio de respaldo; quien sube no elige y el
+  texto no indica cuál de los dos lo leyó. Sin respaldo configurado, o si ambos fallan, la imagen queda en error con
+  Reintentar. A los servicios de lectura solo se envían los bytes de la imagen (FR-019).
+- Aclaración: "5 MB" significa 5 242 880 bytes, también en el caso límite de una imagen de exactamente ese tamaño.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -140,9 +151,9 @@ palabra en la búsqueda global encuentra la imagen.
   envío; las que fallaron muestran "Reintentar".
 - La plataforma detiene una lectura en segundo plano (por ejemplo, al agotar el tiempo máximo de la función):
   pasados 90 s la imagen se muestra como error con el botón "Reintentar", igual que una lectura vencida.
-- Imágenes WEBP o GIF, o de más de 5 MB: se suben y se ven con normalidad (la subida nunca falla por ello),
-  no se leen y su sección de texto indica "No disponible para este archivo", sin botón de reintentar.
-- Imagen de exactamente 5 MB: se lee; el límite incluye los 5 MB.
+- Imágenes WEBP o GIF, o de más de 5 MB (5 242 880 bytes): se suben y se ven con normalidad (la subida nunca
+  falla por ello), no se leen y su sección de texto indica "No disponible para este archivo", sin botón de reintentar.
+- Imagen de exactamente 5 MB (5 242 880 bytes): se lee; el límite incluye ese tamaño.
 - Dos personas abren a la vez una imagen aún no leída: se hace una sola lectura y ambas ven el mismo resultado.
 - El servicio de lectura está caído, lento, sin saldo o devuelve un resultado que no cumple el formato
   esperado: la subida, la vista previa y la aprobación funcionan igual; el texto queda en "error" con opción de
@@ -163,16 +174,16 @@ palabra en la búsqueda global encuentra la imagen.
 **Lectura del texto**
 
 - **FR-001**: El sistema MUST extraer el texto legible de toda imagen apta para lectura (JPEG/JPG, PNG o HEIC
-  de hasta 5 MB) subida por el equipo o recibida en envíos de invitados, sin que quien sube tenga que marcarla.
-  Las demás imágenes (WEBP, GIF o de más de 5 MB) MUST quedar como "no disponible"; estos límites no cambian
-  los formatos ni el tamaño que Cloudy acepta al subir.
+  de hasta 5 MB, es decir, 5 242 880 bytes) subida por el equipo o recibida en envíos de invitados, sin que quien
+  sube tenga que marcarla. Las demás imágenes (WEBP, GIF o de más de 5 242 880 bytes) MUST quedar como "no
+  disponible"; estos límites no cambian los formatos ni el tamaño que Cloudy acepta al subir.
 - **FR-001b**: Una imagen del equipo MUST leerse en segundo plano en cuanto termina de subirse, sin retrasar la
   subida; el texto se guarda y cada apertura de la vista previa lo muestra sin volver a leer la imagen. Si al
   abrir la vista previa la imagen sigue sin leer (subida antes de esta feature o lectura que nunca empezó), MUST
   leerse en ese momento; las HEIC antiguas sin copia JPEG quedan como "no disponible" (FR-023).
-- **FR-023**: Al subir una imagen HEIC apta (equipo o invitado), el navegador MUST generar una copia JPEG de hasta
-  5 MB y subirla junto al original; la lectura usa esa copia. Una HEIC sin copia MUST quedar como "no
-  disponible", y un fallo de la conversión MUST NOT impedir la subida del original.
+- **FR-023**: Al subir una imagen HEIC apta (equipo o invitado), el navegador MUST generar una copia JPEG de
+  hasta 5 MB (5 242 880 bytes) y subirla junto al original; la lectura usa esa copia. Una HEIC sin copia MUST
+  quedar como "no disponible", y un fallo de la conversión MUST NOT impedir la subida del original.
 - **FR-002**: La transcripción MUST respetar el texto tal como está escrito (orden, saltos de línea, nombres e
   idioma original), sin interpretar, corregir, resumir, traducir ni añadir nada, y MUST omitir el logotipo y la
   palabra "Skykids" y los elementos decorativos.
@@ -185,17 +196,22 @@ palabra en la búsqueda global encuentra la imagen.
 - **FR-005**: Cada imagen MUST tener un estado de extracción visible: pendiente (aún no leída), leyendo,
   listo, sin texto, error o no disponible; un fallo MUST indicar qué puede hacer el usuario a continuación.
 - **FR-006**: Administradores y editores MUST poder reintentar una extracción en error y volver a leer
-  cualquier imagen apta para lectura; volver a leer un texto corregido a mano MUST pedir confirmación.
-- **FR-007**: Una extracción MUST tener un tiempo máximo; superado, pasa a "error" con opción de reintentar.
+  cualquier imagen apta para lectura; volver a leer un texto corregido a mano MUST pedir confirmación. Si la
+  entrada no pasa la validación (FR-021), MUST explicarse el motivo y, cuando volver a subirla en JPG o PNG lo
+  resuelva, MUST indicarlo; en ningún caso se ofrece reintento.
+- **FR-007**: Una extracción MUST tener un tiempo máximo de 45 s por lectura (sumados todos los intentos); una
+  lectura que sigue en "leyendo" pasados 90 s (por ejemplo, una tarea de segundo plano que la plataforma detuvo)
+  MUST mostrarse como "error" con opción de reintentar.
 - **FR-008**: El sistema MUST limitar las extracciones por remitente invitado y por ventana de tiempo, igual que
-  ya limita los envíos, para evitar abusos que generen costos.
+  ya limita los envíos, para evitar abusos que generen costos. El límite aplica a las lecturas automáticas del
+  envío; las que un revisor del equipo pide en Pendientes (abrir el envío o Reintentar) quedan fuera del límite.
 - **FR-021**: Antes de leer una imagen, el sistema MUST validar contra un esquema definido que la entrada es
   válida (archivo existente al que el usuario tiene acceso, tipo JPEG/JPG, PNG o HEIC según su contenido real y
-  tamaño original de hasta 5 MB); una entrada inválida no se envía al servicio: un formato o tamaño no apto
-  (incluido un archivo cuyo contenido real no coincide con su extensión) queda como "no disponible" y cualquier
-  otro fallo de validación como "error", con un mensaje que indica qué hacer (por ejemplo, volver a subirla en JPG
-  o PNG).
-- **FR-022**: El servicio de lectura MUST devolver un resultado estructurado (si hay texto y el texto) que el
+  tamaño original de hasta 5 MB, es decir, 5 242 880 bytes); una entrada inválida no se envía al servicio: un
+  formato o tamaño no apto (incluido un archivo cuyo contenido real no coincide con su extensión) queda como
+  "no disponible" y cualquier otro fallo de validación como "error", con un mensaje que indica qué hacer (por
+  ejemplo, volver a subirla en JPG o PNG).
+- **FR-022**: Los servicios de lectura MUST devolver un resultado estructurado (si hay texto y el texto) que el
   sistema valida contra un esquema definido antes de guardarlo; un resultado que no cumpla el esquema se
   registra como "error" y nunca se muestra.
 
@@ -208,7 +224,8 @@ palabra en la búsqueda global encuentra la imagen.
 - **FR-010**: Al aprobar un envío, el texto extraído MUST acompañar al archivo sin volver a procesarlo; al
   rechazarse o caducar, el texto MUST eliminarse definitivamente junto con los archivos.
 - **FR-011**: La página pública MUST informar brevemente a los invitados que el texto de sus imágenes se lee de
-  forma automática.
+  forma automática, que para ello se procesan con servicios externos de inteligencia artificial solo para
+  transcribir su texto (sin enviarles su nombre, su nota ni su IP) y que el texto lo ve únicamente el equipo.
 
 **Consulta, corrección y búsqueda**
 
@@ -216,8 +233,9 @@ palabra en la búsqueda global encuentra la imagen.
   su estado, actualizándose sin recargar la página cuando termine la lectura.
 - **FR-013**: Los usuarios del equipo MUST poder copiar el texto extraído con una sola acción y recibir
   confirmación.
-- **FR-014**: Administradores y editores MUST poder editar el texto extraído (hasta 10,000 caracteres); el
-  sistema MUST registrar que fue editado, quién y cuándo.
+- **FR-014**: Administradores y editores MUST poder editar el texto extraído de un archivo del disco (hasta
+  10,000 caracteres); el sistema MUST registrar que fue editado, quién y cuándo. En Pendientes el texto solo se
+  lee y se reintenta; se edita después de aprobar el envío.
 - **FR-015**: La búsqueda del disco MUST encontrar imágenes por palabras de su texto ya extraído (incluidas las
   recién subidas en cuanto termina su lectura en segundo plano), excluyendo lo que está en la papelera y lo
   pendiente de aprobación, e indicar que solo se buscan por su texto las imágenes cuyo texto ya se leyó (no las
@@ -230,7 +248,7 @@ palabra en la búsqueda global encuentra la imagen.
 - **FR-017**: El texto extraído MUST seguir el ciclo de vida de su archivo: se conserva en la papelera, se
   restaura con él y se elimina definitivamente con él.
 - **FR-018**: El sistema MUST registrar en el registro de actividad las ediciones manuales del texto extraído.
-- **FR-019**: El sistema MUST NOT guardar ni enviar al servicio de lectura más datos del invitado que la imagen
+- **FR-019**: El sistema MUST NOT guardar ni enviar a los servicios de lectura más datos del invitado que la imagen
   misma (ni nombre, ni nota, ni IP).
 - **FR-020**: Toda la interfaz nueva MUST estar en español, funcionar desde 360 px en ambos temas, usarse con
   teclado y cubrir los estados de carga, vacío, error con reintento y contenido.
@@ -251,8 +269,10 @@ palabra en la búsqueda global encuentra la imagen.
 
 ### Measurable Outcomes
 
-- **SC-001**: El 90 % de las imágenes aptas para lectura tienen su texto listo en menos de 30 segundos desde
-  que termina su subida (equipo) o desde que llega el envío (invitados).
+- **SC-001**: Con el servicio de lectura respondiendo con normalidad, el 90 % de las imágenes aptas para lectura
+  tienen su texto listo en menos de 30 segundos desde que termina su subida (equipo) o desde que llega el envío
+  (invitados). En un envío con más imágenes que el turno de lectura simultánea (4), las que esperan turno pueden
+  tardar más; el resto se lee al abrir el envío (FR-009).
 - **SC-002**: En un conjunto de prueba de 20 fotos de notas adhesivas y peticiones de oración legibles, al menos
   el 95 % de las palabras se transcriben correctamente y ninguna incluye el logotipo o la palabra "Skykids".
 - **SC-003**: El 100 % de las imágenes sin texto se marcan como "sin texto reconocido", sin texto inventado.
@@ -274,9 +294,12 @@ palabra en la búsqueda global encuentra la imagen.
 - El proveedor y el modelo de lectura de imágenes ya están decididos por el equipo, y ya existen la
   configuración del cliente, las instrucciones y el mensaje de extracción; el plan los detallará e integrará,
   ajustando las instrucciones al resultado estructurado.
-- Solo se procesan imágenes JPEG/JPG, PNG y HEIC de hasta 5 MB; las fotos de notas desde el celular suelen
-  estar dentro de ese tamaño. Las notas en texto (TXT, MD, DOCX) y los PDF no entran en esta feature.
+- Solo se procesan imágenes JPEG/JPG, PNG y HEIC de hasta 5 MB (5 242 880 bytes); las fotos de notas desde el
+  celular suelen estar dentro de ese tamaño. Las notas en texto (TXT, MD, DOCX) y los PDF no entran en esta
+  feature.
 - El texto extraído no se envía a los invitados ni se publica fuera de Cloudy.
+- El texto extraído de una imagen de invitado es contenido del archivo que la persona ya envió, no un dato personal
+  nuevo del invitado; se guarda con el archivo y se elimina con él al rechazarse o caducar (FR-010).
 - Toda imagen apta que sube el equipo se lee, no solo las que alguien consulta: el volumen esperado es de unos
   cientos de imágenes al mes, un costo asumible a cambio de tener el texto listo al abrir y de poder buscar por
   él desde el principio; el límite de FR-008 acota el costo de los invitados.
@@ -285,4 +308,5 @@ palabra en la búsqueda global encuentra la imagen.
 - La confirmación del envío de un invitado no cambia de duración, así que el objetivo de la feature 001 (envío
   desde el teléfono en menos de 1 minuto) se mantiene sin ajustes.
 - La lectura debe funcionar en el entorno sin estado de la plataforma de despliegue; el "sin recargar" de
-  FR-012 usa el mismo mecanismo de actualización periódica que ya usa Pendientes.
+  FR-012 usa consultas periódicas del cliente (cada 3 s mientras una lectura está en curso), el mismo tipo de
+  mecanismo que ya usa Pendientes.

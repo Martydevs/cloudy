@@ -289,7 +289,10 @@ palabras ni nombres propios mal escritos, y añade otra columna y otro trigger.
 - **e2e**:
   - Un servidor stub de la Responses API, levantado en `global-setup.ts` en un puerto local.
   - La app de pruebas arranca con `NUXT_OPENAI_BASE_URL` apuntando a él.
-  - El stub responde según el nombre del fixture (nota → texto, paisaje → `hasText: false`, `falla` → 500).
+  - El stub responde según el contenido de la imagen recibida, que distingue por los bytes exactos del fixture
+    (`nota.*` → texto, `paisaje.jpg` → `hasText: false`). Un endpoint de control del propio stub
+    (`POST /__stub/mode { fail, delayMs }`) provoca el 500 y el retraso por prueba, y `GET /__stub/calls` cuenta
+    las llamadas (tasks T026).
   - Como `complete` responde antes de que termine la lectura, las specs no esperan la respuesta del endpoint
     sino el texto en el panel (que consulta mientras dura `reading`) o consultan `GET …/text` hasta un estado
     terminal. El stub cuenta una llamada por imagen y admite un retraso de respuesta configurable para poder

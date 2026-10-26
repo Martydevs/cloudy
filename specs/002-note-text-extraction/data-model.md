@@ -42,7 +42,7 @@ image_text_status: reading | ready | empty | failed | unavailable
 | `text_attempts` | `smallint` | no, default 0 | Se incrementa en cada reclamación |
 | `text_started_at` | `timestamptz` | sí | Momento de la reclamación; una lectura con más de 90 s se puede volver a reclamar (FR-007), incluida una tarea de segundo plano que la plataforma detuvo |
 | `text_read_at` | `timestamptz` | sí | Última lectura terminada |
-| `text_edited_by` | `uuid` → `profiles.user_id` ON DELETE SET NULL | sí | FR-014 |
+| `text_edited_by` | `text` → `profiles.user_id` ON DELETE SET NULL | sí | FR-014; `profiles.user_id` es `text` (id de Neon Auth) |
 | `text_edited_at` | `timestamptz` | sí | FR-014; la UI muestra "editado" si no es nulo |
 
 ### `guest_submission_files` (existente) — columnas nuevas

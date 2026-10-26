@@ -36,6 +36,7 @@ bun run typecheck
 bun run test:unit        # server/ai (schemas, extract con MockLanguageModelV4), background, image-text (reclamación y estados), endpoints
 bun run test:nuxt        # ImageTextPanel: 6 estados, copiar, editar, confirmación al volver a leer
 bun run test:e2e         # contra el stub de OpenAI: US1, US2, US3 y rutas protegidas
+                         # (la primera vez: bunx playwright-core install chromium)
 bun run test:coverage    # umbral del 92 % (incluye server/ai/**)
 ```
 
@@ -61,7 +62,7 @@ Verificar cada escenario a 360 px y a ≥ 1280 px, en tema oscuro y claro, con t
 | 8 | Con **ambas** claves vacías o inválidas (`NUXT_OPENAI_APIKEY` y `NUXT_GOOGLE_APIKEY`), subir una imagen nueva y abrirla | Estado de error con Reintentar (la subida terminó bien); la vista previa y la descarga siguen funcionando |
 | 8b | Con `NUXT_OPENAI_APIKEY` vacía o inválida y `NUXT_GOOGLE_APIKEY` válida, subir `nota.jpg` y abrirla | El texto se lee igual (lo lee Gemini); la interfaz no indica qué proveedor lo leyó |
 | 8c | Con `NUXT_OPENAI_BASE_URL` apuntando a un puerto cerrado (error de red) y `NUXT_GOOGLE_APIKEY` válida, subir una imagen nueva | La lectura termina en "listo" por el respaldo, sin error visible y en menos de ~45 s |
-| 9 | Desde `/enviar` (sin sesión), enviar `nota.jpg` y `nota.heic` | Se ve el aviso de lectura automática; la confirmación llega igual de rápido que antes; en Pendientes el editor ve el texto de ambas en menos de ~30 s (mientras tanto, "Leyendo texto…") |
+| 9 | Desde `/enviar` (sin sesión), enviar `nota.jpg` y `nota.heic` | Se ve el aviso de lectura automática y la línea de privacidad (`guestPrivacy`); la confirmación llega igual de rápido que antes; en Pendientes el editor ve el texto de ambas en menos de ~30 s (mientras tanto, "Leyendo texto…") |
 | 9b | Enviar 20 imágenes desde `/enviar` | Confirmación inmediata; las 20 se leen en segundo plano de 4 en 4; las que queden sin leer (límite de 20/h, presupuesto de tiempo o proveedores caídos) se leen al abrir el envío en Pendientes |
 | 10 | Aprobar ese envío y abrir el archivo | El mismo texto, sin una lectura nueva |
 | 11 | Rechazar otro envío con imagen | El archivo y su texto desaparecen (las filas ya no existen) |
@@ -76,13 +77,14 @@ para cada una:
 
 - al menos el 95 % de las palabras correctas;
 - ninguna con "Skykids";
-- las imágenes sin texto marcadas como vacías.
+- las imágenes sin texto marcadas como vacías;
+- la latencia de SC-001 también del lado invitado: envíos de 1, 4 y 8 imágenes aptas, con el tiempo hasta `ready` de cada una.
 
 Anotar el resultado por proveedor en este archivo, §6.
 
 ## 6. Resultado
 
-Validación del 2026-10-21 (rama `002-note-text-extraction-impl`).
+Validación del 2026-10-21 (rama `002-note-text-extraction`).
 
 ### Presupuestos (T070)
 
@@ -97,6 +99,17 @@ Validación del 2026-10-21 (rama `002-note-text-extraction-impl`).
 - `/archivos/<carpeta>` con 200 elementos supera el LCP de 2,5 s en esta máquina (2,96–3,42 s) por el TTFB
   de la rama de pruebas; la misma prueba en el código base sin la feature dio 8,2 s, así que no es una
   regresión de la feature.
+
+### Verificación automática (2026-10-25)
+
+`typecheck` sin errores · `test:unit` 608 pruebas · `test:nuxt` 305 pruebas · `test:coverage`: 98,3 % de
+sentencias, 93,68 % de ramas, 95,13 % de funciones y 98,8 % de líneas (umbral 92 %). `test:e2e`: 83 de 85 en la
+primera corrida; los dos fallos (separador de ruta en Windows y una carrera en `uploadAndClose`) eran de las
+pruebas y se corrigen en T082 y T083. Requiere `bunx playwright-core install chromium` la primera vez en cada máquina.
+
+Segunda corrida (2026-10-25, tras T079 y T080): `typecheck` sin errores · `test:unit` + `test:nuxt` 914 pruebas ·
+`test:coverage` 98,3 % / 93,68 % / 95,13 % / 98,8 % · `test:e2e` 85 de 85 (incluidos el build de producción y el
+escenario 13), en 574 s.
 
 ### Escenarios manuales (T074)
 
@@ -114,7 +127,10 @@ de OpenAI, `NUXT_OPENAI_APIKEY` quedó vacía y OpenAI solo se usaría si Gemini
 | 8c | ✅ OpenAI apuntando a un puerto cerrado → `fallback openai→google (provider)` y texto leído en ~13 s |
 | 9, 10, 11 | ✅ aviso en `/enviar`, confirmación en ~5,6 s, texto ya leído al abrir Pendientes, aprobación sin releer (`text_attempts = 1`), rechazo sin filas |
 | 12 | ✅ búsqueda de una palabra corregida → insignia «En el texto» y nota de búsqueda |
-| 3, 4, 9 (HEIC) | ⏸ pendientes de las fotos reales (`nota.heic`, `paisaje.jpg`) |
+| 9 (`/enviar`, 2026-10-25) | ✅ aviso y línea `guestPrivacy` a 360 y 1280 px en ambos temas, sin scroll horizontal ni errores de consola; envío de `nota.jpg` + `nota.heic` confirmado en ~11,9 s en el dev server (incluye subir ambos archivos y convertir la HEIC; con la build de producción fue ~5,6 s). Dato de QA creado: envío de «QA feature 002» (nota «QA T078 — se puede rechazar») en Pendientes de desarrollo; se puede rechazar desde la UI |
+| 3 (2026-10-25) | ✅ cuenta de editor «QA Editor 002»: subir `nota.heic` muestra «Preparando…» en la cola; la vista previa no tiene `<img>` y el panel muestra el texto 2,5 s después de terminar la subida. A 360 y 1280 px en ambos temas: sin scroll horizontal ni errores de consola, foco visible (contorno de 2 px) al llegar con Tab a «Copiar texto», Enter copia y muestra el toast |
+| 4 (2026-10-25) | ✅ con un degradado JPEG sin texto (generado para la prueba) → «No se reconoció texto en esta imagen». **Ojo**: `paisaje.jpg` contiene el logotipo «PEQUEÑOS HÉROES», así que con un proveedor real se lee («PEQUEÑOS HEROES», sin la tilde); solo sirve como imagen sin texto con el stub de e2e, que la reconoce por sus bytes |
+| 9 (Pendientes, 2026-10-25) | ✅ el envío de invitado muestra el texto de `nota.jpg` y de `nota.heic` (leído en segundo plano) a 360 y 1280 px en ambos temas, sin botón Editar, sin scroll horizontal ni errores de consola. Defecto previo a la feature (001): la miniatura de la HEIC en `SubmissionCard.vue:68` es un `<img>` del original que Chromium no puede mostrar (imagen rota con el nombre como texto alternativo) |
 | OpenAI real | ⏸ no se ejecutó por la indicación de ahorro del usuario |
 
 Accesibilidad (axe-core, WCAG 2.2 AA) sin violaciones en el panel (lectura, edición, no disponible), la
@@ -124,3 +140,5 @@ de Pendientes y etiquetas de `/enviar` en el tema claro). `prefers-reduced-motio
 ### Calidad real (SC-002, T075)
 
 _Pendiente: requiere las 20 fotos reales del equipo._
+
+La latencia de SC-001 del lado invitado (envíos de 1, 4 y 8 imágenes aptas, tiempo hasta `ready`) se mide en la misma pasada y se anota aquí.

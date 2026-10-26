@@ -19,9 +19,10 @@ DTO `ImageText`: ver [data-model.md](../data-model.md#dto-compartido-sharedtypes
 
 ### `POST /api/uploads/:fileId/complete` (existente, cambia)
 
-La respuesta y su latencia no cambian. Además de lo que ya hace:
+La respuesta no cambia y su latencia no varía de forma perceptible: la validación de la copia es un `head` y una
+lectura de 4 KB, y la lectura de la imagen nunca se espera. Además de lo que ya hace:
 
-1. Si el archivo es HEIC apta, valida la copia con `head` (0 < tamaño ≤ 5 MB) y
+1. Si el archivo es HEIC apta, valida la copia con `head` (0 < tamaño ≤ 5 MB, 5 242 880 bytes) y
    `matchesSignature('jpg', readRange(0, 4095))`:
 
    | Copia | Resultado |
@@ -104,10 +105,12 @@ Corrección manual (FR-014, FR-018).
 
 ### `POST /api/public/submissions/:id/complete` (existente, cambia)
 
-La respuesta y su latencia no cambian: responde de inmediato y la lectura sigue en segundo plano.
+La respuesta no cambia y su latencia no varía de forma perceptible: responde de inmediato y la lectura sigue en
+segundo plano.
 
 1. **Copias**: igual que hoy acepta o rechaza cada archivo. Para las HEIC aptas valida la copia JPEG como en
-   `/api/uploads/:id/complete`: si es válida guarda `text_source_key`; si no, marca `unavailable`.
+   `/api/uploads/:id/complete` (las validaciones de todas las HEIC del envío corren en paralelo, no una tras
+   otra): si es válida guarda `text_source_key`; si no, marca `unavailable`.
 2. **Lectura**: programa `runInBackground(() => readSubmissionImages(submissionId, { concurrency: 4 }))`, que
    lee las imágenes **aptas** del envío después de responder (FR-009, research A6).
    - **Pool**: 4 lecturas a la vez; cada una con los tiempos de `extractImageText` (research A11: principal 20 s
@@ -122,7 +125,7 @@ La respuesta y su latencia no cambian: responde de inmediato y la lectura sigue 
    - **Errores**: `readSubmissionImages` nunca lanza; ningún fallo de lectura cambia el código ni el cuerpo de
      la respuesta (FR-004).
 
-Al modelo solo se envían los bytes de la imagen; nunca el nombre, la nota ni la IP (FR-019).
+A los servicios de lectura solo se envían los bytes de la imagen; nunca el nombre, la nota ni la IP (FR-019).
 
 ### `GET /api/submissions?status=` (existente, cambia)
 

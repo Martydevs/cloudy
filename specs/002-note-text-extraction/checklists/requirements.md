@@ -33,7 +33,7 @@
 
 - Iteration 1: two [NEEDS CLARIFICATION] markers open (FR-001 which images are processed, FR-009 when guest
   images are processed). Awaiting user answers.
-- The provider/model (OpenAI gpt-4o as primary and Google gemini-3.5-flash-lite as fallback, via the AI SDK) and the existing clients/instruction/prompt in `server/ai/openai.ts` and
-  `server/ai/gemini.ts` are deliberately kept out of the spec; they go into `plan.md` (stack + Complexity
+- The provider/model (OpenAI gpt-4o as primary and Google gemini-3.5-flash-lite as fallback, via the AI SDK) and the existing clients/instruction/prompt in `server/ai/providers/openai.ts` and
+  `server/ai/providers/google.ts` are deliberately kept out of the spec; they go into `plan.md` (stack + Complexity
   Tracking, since they add an external service and the `ai`, `@ai-sdk/openai`, `@ai-sdk/google` and `zod`
   dependencies) and `research.md` A11.
