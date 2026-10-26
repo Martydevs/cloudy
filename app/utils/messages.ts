@@ -59,8 +59,8 @@ export const messages = {
     reading: 'Leyendo texto…',
     empty: 'No se reconoció texto en esta imagen',
     notRead: 'El texto de esta imagen aún no se ha leído.',
-    unavailable: 'No disponible para este archivo: solo se lee el texto de imágenes JPG, PNG o HEIC de hasta 5 MB.',
-    unavailableHeic: 'No disponible para este archivo: esta foto HEIC se subió sin copia para lectura.',
+    unavailable: 'No disponible para este archivo: solo se lee el texto de imágenes JPG, PNG o HEIC de hasta 5 MB. Si necesitas el texto, súbela en JPG o PNG de hasta 5 MB.',
+    unavailableHeic: 'No disponible para este archivo: esta foto HEIC se subió sin copia para lectura. Si necesitas el texto, vuelve a subirla desde tu teléfono o en JPG o PNG.',
     failedRetryable: 'No pudimos leer el texto ahora. Inténtalo de nuevo en un momento.',
     failedQuota: 'El servicio de lectura alcanzó su límite de uso. Avisa a un administrador e inténtalo más tarde.',
     failedPermanent: 'No pudimos leer esta imagen. Descárgala y vuelve a subirla en JPG o PNG.',
@@ -74,6 +74,7 @@ export const messages = {
     edited: 'Editado',
     searchHint: 'Solo buscamos en el texto de las imágenes que ya se leyeron',
     guestNotice: 'Leeremos automáticamente el texto de tus imágenes para que el equipo pueda revisarlas.',
+    guestPrivacy: 'Las imágenes se procesan con servicios externos de inteligencia artificial solo para transcribir su texto; no se envían tu nombre, tu nota ni tu dirección IP. El texto lo ve únicamente el equipo.',
   },
   trash: {
     restored: (name: string, where: string) => `«${name}» se restauró en ${where}`,

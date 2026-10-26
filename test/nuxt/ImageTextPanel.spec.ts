@@ -115,12 +115,14 @@ describe('ImageTextPanel · estados', () => {
     expect(toasts()).toContain(messages.imageText.failedRetryable)
   })
 
-  it('unavailable: texto de ayuda, sin botones; variante HEIC', async () => {
+  it('unavailable: texto de ayuda con la acción siguiente, sin botones; variante HEIC', async () => {
     const wrapper = await mount({ initial: text({ status: 'unavailable', text: null }) })
     expect(wrapper.text()).toContain(messages.imageText.unavailable)
+    expect(wrapper.text()).toContain('súbela en JPG o PNG')
     expect(wrapper.findAll('button')).toHaveLength(0)
     const heic = await mount({ initial: text({ status: 'unavailable', text: null }), heic: true })
     expect(heic.text()).toContain(messages.imageText.unavailableHeic)
+    expect(heic.text()).toContain('vuelve a subirla')
   })
 
   it('error de red del panel: ErrorState con reintento de la petición', async () => {

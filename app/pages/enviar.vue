@@ -95,6 +95,10 @@ function another() {
           <Icon name="lucide:scan-text" class="mt-0.5 size-4 shrink-0" aria-hidden="true" />
           {{ messages.imageText.guestNotice }}
         </p>
+        <p class="flex items-start gap-2 text-sm text-base-content/70">
+          <Icon name="lucide:shield-check" class="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+          {{ messages.imageText.guestPrivacy }}
+        </p>
         <UploadQueue v-if="submission.items.value.length" :items="submission.items.value" @cancel="submission.remove" />
       </div>
 

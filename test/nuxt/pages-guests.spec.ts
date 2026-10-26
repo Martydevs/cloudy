@@ -204,6 +204,7 @@ describe('texto de las imágenes de invitados (feature 002)', () => {
   it('/enviar avisa de la lectura automática junto al selector; el botón Enviar no cambia', async () => {
     const wrapper = await mountSuspended(EnviarPage)
     expect(wrapper.text()).toContain(messages.imageText.guestNotice)
+    expect(wrapper.text()).toContain(messages.imageText.guestPrivacy)
     expect(button(wrapper, 'Enviar').attributes('disabled')).toBeUndefined()
   })
 
