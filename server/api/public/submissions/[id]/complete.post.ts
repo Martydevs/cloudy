@@ -59,14 +59,14 @@ export default defineEventHandler(async (event): Promise<{ status: 'pending', ac
 
   // Texto de las imágenes (feature 002, FR-009): las copias JPEG de las HEIC se validan aquí y las lecturas
   // corren en segundo plano; la respuesta no las espera y ningún fallo de lectura la cambia (FR-004).
-  let readable = false
-  for (const file of files.filter(f => accepted.includes(f.id))) {
+  // Las copias se validan todas a la vez para no sumar viajes al bucket a la latencia de la respuesta.
+  const readable = await Promise.all(files.filter(f => accepted.includes(f.id)).map(async (file) => {
     const image = { category: file.category, extension: file.extension, sizeBytes: Number(file.sizeBytes) }
     const heic = file.extension === 'heic' && isImageTextEligible({ ...image, size: image.sizeBytes })
     const hasTextSource = heic && await checkTextSourceCopy({ table: 'guest_submission_files', id: file.id })
-    readable ||= canReadImageText(image, hasTextSource)
-  }
-  if (readable) runInBackground(() => readSubmissionImages(id, { concurrency: 4 }))
+    return canReadImageText(image, hasTextSource)
+  }))
+  if (readable.some(Boolean)) runInBackground(() => readSubmissionImages(id, { concurrency: 4 }))
 
   return { status: 'pending', accepted: accepted.length, rejected: rejected.length }
 })

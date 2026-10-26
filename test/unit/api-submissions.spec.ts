@@ -338,6 +338,20 @@ describe('texto de las imágenes de invitados (feature 002)', () => {
     expect(backgroundTasks).toHaveLength(0)
   })
 
+  it('valida todas las copias HEIC a la vez, sin esperar una para empezar la siguiente', async () => {
+    s3.head.mockResolvedValue({ size: 3_000_000 })
+    s3.readRange.mockResolvedValue(HEIC_HEADER)
+    const heic = { originalName: 'IMG.heic', extension: 'heic', mimeType: 'image/heic', sizeBytes: 3_000_000 }
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => { release = resolve })
+    const checkTextSourceCopy = vi.fn(async () => { await gate; return true })
+    const pending = complete([heic, { ...heic, id: F2 }], { checkTextSourceCopy })
+    await vi.waitFor(() => expect(checkTextSourceCopy).toHaveBeenCalledTimes(2))
+    release()
+    expect((await pending).body).toEqual({ status: 'pending', accepted: 2, rejected: 0 })
+    expect(backgroundTasks).toHaveLength(1)
+  })
+
   it('GET /api/submissions incluye el texto de cada imagen en el mismo listado (null si no es imagen)', async () => {
     const fake = installNitro([[submission()], [
       guestFile({ textStatus: 'ready', textContent: 'Oremos', textReadAt: created }),
