@@ -162,6 +162,9 @@ Evaluado contra la constitución **v1.0.1** (la 1.0.1 aclara el principio IV: la
     antes de leer, las specs esperan el texto en el panel (que consulta mientras dura `reading`).
   - Cobertura ≥ 92 % incluyendo `server/ai/**`.
 
+**Privacidad de invitados** (2026-10-26): decisión de la persona: el aviso informativo de FR-011 es suficiente; el
+texto extraído se trata como contenido del archivo enviado (no se enmienda la constitución ni se pide consentimiento).
+
 **Resultado**: **PASS**. La única tensión con un principio (I, la lectura de ≤ 5 MB en el servidor), la
 dependencia nueva y las que instaló el usuario están justificadas en Complexity Tracking.
 

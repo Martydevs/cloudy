@@ -44,6 +44,8 @@
 
 ### Session 2026-10-24 (cierre del análisis)
 
+- Decisión (2026-10-26): el aviso informativo de FR-011 basta para la privacidad de invitados; no se enmienda la
+  constitución ni se pide consentimiento explícito en `/enviar`.
 - Decisión: la lectura usa un servicio principal y, si no responde, un servicio de respaldo; quien sube no elige y el
   texto no indica cuál de los dos lo leyó. Sin respaldo configurado, o si ambos fallan, la imagen queda en error con
   Reintentar. A los servicios de lectura solo se envían los bytes de la imagen (FR-019).
@@ -201,9 +203,10 @@ palabra en la búsqueda global encuentra la imagen.
   resuelva, MUST indicarlo; en ningún caso se ofrece reintento.
 - **FR-007**: Una extracción MUST tener un tiempo máximo de 45 s por lectura (sumados todos los intentos); una
   lectura que sigue en "leyendo" pasados 90 s (por ejemplo, una tarea de segundo plano que la plataforma detuvo)
-  MUST mostrarse como "error" con opción de reintentar.
+  MUST mostrarse como "error" con opción de reintentar. El presupuesto compartido de las lecturas de un envío de
+  invitado no alarga este tope: cada lectura se reclama justo antes de empezar y dura como máximo 45 s.
 - **FR-008**: El sistema MUST limitar las extracciones por remitente invitado y por ventana de tiempo, igual que
-  ya limita los envíos, para evitar abusos que generen costos. El límite aplica a las lecturas automáticas del
+  ya limita los envíos (20 lecturas por remitente y hora), para evitar abusos que generen costos. El límite aplica a las lecturas automáticas del
   envío; las que un revisor del equipo pide en Pendientes (abrir el envío o Reintentar) quedan fuera del límite.
 - **FR-021**: Antes de leer una imagen, el sistema MUST validar contra un esquema definido que la entrada es
   válida (archivo existente al que el usuario tiene acceso, tipo JPEG/JPG, PNG o HEIC según su contenido real y
@@ -272,7 +275,8 @@ palabra en la búsqueda global encuentra la imagen.
 - **SC-001**: Con el servicio de lectura respondiendo con normalidad, el 90 % de las imágenes aptas para lectura
   tienen su texto listo en menos de 30 segundos desde que termina su subida (equipo) o desde que llega el envío
   (invitados). En un envío con más imágenes que el turno de lectura simultánea (4), las que esperan turno pueden
-  tardar más; el resto se lee al abrir el envío (FR-009).
+  tardar más; el resto se lee al abrir el envío (FR-009). El objetivo de 30 s aplica a envíos de hasta 4 imágenes
+  aptas; para 8 imágenes se registra el tiempo medido (T075) sin umbral fijo.
 - **SC-002**: En un conjunto de prueba de 20 fotos de notas adhesivas y peticiones de oración legibles, al menos
   el 95 % de las palabras se transcriben correctamente y ninguna incluye el logotipo o la palabra "Skykids".
 - **SC-003**: El 100 % de las imágenes sin texto se marcan como "sin texto reconocido", sin texto inventado.
