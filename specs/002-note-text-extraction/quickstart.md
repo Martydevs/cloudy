@@ -111,6 +111,8 @@ Segunda corrida (2026-10-25, tras T079 y T080): `typecheck` sin errores · `test
 `test:coverage` 98,3 % / 93,68 % / 95,13 % / 98,8 % · `test:e2e` 85 de 85 (incluidos el build de producción y el
 escenario 13), en 574 s.
 
+Tercera corrida (2026-10-29, tras T079–T083): `typecheck` sin errores · `build` completo · `test:coverage` 98,3 % / 93,68 % / 95,13 % / 98,8 % · `test:e2e` 84 de 85 en la corrida completa; el fallo fue «un invitado envía desde el móvil y el equipo recibe el aviso en menos de 5 s» (`guest-queue.spec.ts:49`, aviso en tiempo real por polling) y la misma especificación pasó 6 de 6 al repetirla sola, así que es intermitente (a vigilar, no se debilitó la prueba).
+
 ### Escenarios manuales (T074)
 
 Con datos de desarrollo y el **respaldo real (Gemini)**: por indicación del usuario, para no gastar saldo
@@ -131,7 +133,26 @@ de OpenAI, `NUXT_OPENAI_APIKEY` quedó vacía y OpenAI solo se usaría si Gemini
 | 3 (2026-10-25) | ✅ cuenta de editor «QA Editor 002»: subir `nota.heic` muestra «Preparando…» en la cola; la vista previa no tiene `<img>` y el panel muestra el texto 2,5 s después de terminar la subida. A 360 y 1280 px en ambos temas: sin scroll horizontal ni errores de consola, foco visible (contorno de 2 px) al llegar con Tab a «Copiar texto», Enter copia y muestra el toast |
 | 4 (2026-10-25) | ✅ con un degradado JPEG sin texto (generado para la prueba) → «No se reconoció texto en esta imagen». **Ojo**: `paisaje.jpg` contiene el logotipo «PEQUEÑOS HÉROES», así que con un proveedor real se lee («PEQUEÑOS HEROES», sin la tilde); solo sirve como imagen sin texto con el stub de e2e, que la reconoce por sus bytes |
 | 9 (Pendientes, 2026-10-25) | ✅ el envío de invitado muestra el texto de `nota.jpg` y de `nota.heic` (leído en segundo plano) a 360 y 1280 px en ambos temas, sin botón Editar, sin scroll horizontal ni errores de consola. Defecto previo a la feature (001): la miniatura de la HEIC en `SubmissionCard.vue:68` es un `<img>` del original que Chromium no puede mostrar (imagen rota con el nombre como texto alternativo) |
-| OpenAI real | ⏸ no se ejecutó por la indicación de ahorro del usuario |
+| OpenAI real (2026-10-29) | ✅ ver la tabla siguiente |
+
+#### Pasada con OpenAI real (2026-10-29, T074)
+
+Cuenta de QA «QA T074 Editor» en desarrollo, con `NUXT_OPENAI_APIKEY` válida y `NUXT_GOOGLE_APIKEY` presente; el log del servidor no registró ningún `[image-text] fallback`, así que todas las lecturas las hizo OpenAI.
+
+| # | Resultado |
+|---|-----------|
+| 1, 2c | ✅ `nota.jpg` y `nota.png` subidas juntas; el texto ya estaba al abrirlas («David, oración por mi primo que se siente mal», sin «Skykids») |
+| 3 | ✅ `nota.heic` leyendo el mismo texto (copia JPEG generada en el navegador) |
+| 4 | ✅ degradado JPEG sin texto → «No se reconoció texto en esta imagen» con «Volver a leer» y «Escribir el texto» |
+| 5 | ✅ `imagen.webp`, `anim.gif` y `grande.jpg` → «No disponible…» con la acción siguiente |
+| 6, 7 | ✅ copiar muestra «Texto copiado»; editar → «Editado por»; «Volver a leer» pide confirmación y reemplaza la corrección por la lectura |
+| 9, 10 | ✅ envío de invitado con `nota.jpg` + `nota.heic`: confirmación inmediata, texto de ambas ya leído al abrir Pendientes, y los archivos aprobados conservan el texto |
+| 11 | ✅ envío rechazado desde Pendientes |
+| 12 | ✅ buscar «primo» muestra las tres notas con la insignia «En el texto» |
+| Diseño | ✅ vista previa a 360 y 1280 px en tema oscuro y claro sin scroll horizontal; sin errores de consola |
+| SC-005 | ✅ abrir la vista previa y copiar el texto: ~6 s medidos con el CLI del navegador (incluye su sobrecarga), por debajo de 15 s |
+
+No se ejecutaron en esta pasada: 8, 8b y 8c (ya validados con Gemini real el 2026-10-25 y cubiertos por e2e), 9b (20 imágenes, para no gastar saldo) ni 13 (cubierto por e2e). Las comprobaciones de foco con teclado y contraste se hicieron en la pasada del 2026-10-25 y no cambió la UI desde entonces.
 
 Accesibilidad (axe-core, WCAG 2.2 AA) sin violaciones en el panel (lectura, edición, no disponible), la
 búsqueda, Pendientes y `/enviar` en ambos temas, salvo elementos anteriores a la feature (pestañas
@@ -139,6 +160,6 @@ de Pendientes y etiquetas de `/enviar` en el tema claro). `prefers-reduced-motio
 
 ### Calidad real (SC-002, T075)
 
-_Pendiente: requiere las 20 fotos reales del equipo._
+_La persona del equipo la mide por su cuenta con las 20 fotos reales; los resultados no se anotan aquí._
 
 La latencia de SC-001 del lado invitado (envíos de 1, 4 y 8 imágenes aptas, tiempo hasta `ready`) se mide en la misma pasada y se anota aquí.
