@@ -9,8 +9,6 @@ export const openaiClient = (config: RuntimeConfig) => {
     apiKey: config.openaiApikey,
     organization: config.openaiOrg,
     project: config.openaiProj,
-    // Vacío = API de OpenAI; solo los e2e lo apuntan a un stub local (research A9).
-    baseURL: config.openaiBaseUrl || undefined,
   })
 }
 

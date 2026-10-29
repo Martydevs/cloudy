@@ -9,7 +9,7 @@ quickstart; D1 añade además el aviso de privacidad de `/enviar` y el resto no 
 (latencia de `complete`, stub e2e, FR-007/008/011/014, contratos de UI, referencias de AGENTS.md y tasks). Quedan
 abiertos C1 y G1 abajo.
 
-## [ ] C1 — Privacidad de invitados vs. servicios externos de IA (decisión de la persona)
+## [x] C1 — Privacidad de invitados vs. servicios externos de IA *(resuelto 2026-10-26: aviso informativo, opción a)*
 
 - **Problema**: la constitución ("Privacidad") dice que solo se guardan nombre y nota del invitado. El texto
   extraído y los bytes de la imagen van a OpenAI y, de respaldo, a Google. El plan y la spec lo justifican como
@@ -18,7 +18,7 @@ abiertos C1 y G1 abajo.
   aclaración PATCH (como la 1.0.1) vía `/speckit-constitution`, o (c) pedir consentimiento en `/enviar`.
   No se modificó la constitución: es una decisión de la persona, fuera de `/speckit-analyze`.
 
-## [ ] G1 — T078 y verificación pendiente
+## [ ] G1 — Verificación pendiente (T078 ya verificada; quedan T074, T075 y T076)
 
 - 2026-10-25: con el shell ya disponible, `typecheck`, `test:unit` (608), `test:nuxt` (305) y `test:coverage`
   (98,3 % / 93,68 % / 95,13 % / 98,8 %) pasaron en verde. T078 queda solo a falta de la verificación en navegador.
