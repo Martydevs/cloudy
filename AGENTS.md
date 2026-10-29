@@ -7,7 +7,8 @@ send material from a public page into an approval queue that the team reviews li
 **Governance**: `.specify/memory/constitution.md` (v1.0.1) is the source of truth and overrides this
 file. Keep this guide aligned with it whenever the constitution is amended.
 
-**Active feature**: `specs/002-note-text-extraction/` (builds on `specs/001-shared-media-drive/`). Read `spec.md` (what), `plan.md` + `research.md`
+**Active feature**: `specs/003-guest-upload-access-code/` (builds on `specs/001-shared-media-drive/` and
+`specs/002-note-text-extraction/`). Read `spec.md` (what), `plan.md` + `research.md`
 (how), `data-model.md` and `contracts/` (interfaces) before changing related code.
 
 ## Stack
@@ -180,7 +181,7 @@ Never print or commit their values.
 - Spec Kit: `/speckit-specify` → `/speckit-clarify` → `/speckit-plan` → `/speckit-tasks` →
   `/speckit-implement`. Plans must pass the Constitution Check (principles I–VI).
 - **Definition of done for every task and every phase** (phases are the `## Phase N` sections of
-  the active feature's `tasks.md`, e.g. `specs/002-note-text-extraction/tasks.md`). When a task or phase is implemented, run these in order and
+  the active feature's `tasks.md`, e.g. `specs/003-guest-upload-access-code/tasks.md`). When a task or phase is implemented, run these in order and
   do not mark it complete or start the next one until all pass:
   1. `bun run typecheck`, then the tests that cover the change: `bun run test:unit`, `bun run test:nuxt`
      and, when the change touches a user story or protected route, `bun run test:e2e`. At the end of a
