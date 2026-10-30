@@ -50,6 +50,36 @@
       "sourceType": "autoskills-registry",
       "computedHash": "094afcb1b2d6c2936775816a8b59751ccea96cd18eb4bfc93dabd9dc18c47312"
     },
+    "regle": {
+      "source": "victorgarciaesgi/regle",
+      "sourceType": "github",
+      "skillPath": "skills/regle/SKILL.md",
+      "computedHash": "ef9507771bf0eed50a9901afa71275d596748a3e4dfe98debea33ddea5802f4b"
+    },
+    "regle-advanced": {
+      "source": "victorgarciaesgi/regle",
+      "sourceType": "github",
+      "skillPath": "skills/regle-advanced/SKILL.md",
+      "computedHash": "013bd51854ddfcbcb42499e6f7e9e34cd22d1fbb0d78d4efed736856b47232bf"
+    },
+    "regle-rules": {
+      "source": "victorgarciaesgi/regle",
+      "sourceType": "github",
+      "skillPath": "skills/regle-rules/SKILL.md",
+      "computedHash": "760cbadeb7446a376d6ea94fc541b50ab9a78b1ebdbc9c5e6004d234cd8046d9"
+    },
+    "regle-schemas": {
+      "source": "victorgarciaesgi/regle",
+      "sourceType": "github",
+      "skillPath": "skills/regle-schemas/SKILL.md",
+      "computedHash": "1f4a83358af0ff28bc3fb7056e4eee8d9f0d4c1e4223a1755bce7a9a90427e5b"
+    },
+    "regle-typescript": {
+      "source": "victorgarciaesgi/regle",
+      "sourceType": "github",
+      "skillPath": "skills/regle-typescript/SKILL.md",
+      "computedHash": "a85ebd057e770bb8c8f958d89fc2ebb38ac5797617bc6cc4a1d1030175ba78cf"
+    },
     "tailwind-css-patterns": {
       "source": "giuseppe-trisciuoglio/developer-kit",
       "sourceType": "autoskills-registry",

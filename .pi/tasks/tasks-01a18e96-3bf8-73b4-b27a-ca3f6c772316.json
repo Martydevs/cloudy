@@ -1,0 +1,71 @@
+{
+  "nextId": 7,
+  "tasks": [
+    {
+      "id": "1",
+      "subject": "Config + deps: remove @ai-sdk/openai/google, add openrouterBaseUrl",
+      "description": "bun remove @ai-sdk/openai @ai-sdk/google; nuxt.config runtimeConfig openrouterBaseUrl; .env.example NUXT_OPENROUTER_BASE_URL",
+      "status": "completed",
+      "metadata": {},
+      "blocks": [],
+      "blockedBy": [],
+      "createdAt": 1793393714627,
+      "updatedAt": 1793393769937
+    },
+    {
+      "id": "2",
+      "subject": "Rewrite server/ai for OpenRouter only",
+      "description": "openrouter.ts (client + resolveImageTextModel), single breaker, errors without fallback, extract single call, index exports, delete openai/google/candidates; server/utils/image-text.ts pool",
+      "status": "completed",
+      "metadata": {},
+      "blocks": [],
+      "blockedBy": [],
+      "createdAt": 1793393714641,
+      "updatedAt": 1793393825981
+    },
+    {
+      "id": "3",
+      "subject": "Update unit tests (breaker, errors, extract, openrouter client, pool, image-text)",
+      "description": "Per plan Tests section; delete ai-openai-client.spec.ts and ai-provider.spec.ts",
+      "status": "completed",
+      "metadata": {},
+      "blocks": [],
+      "blockedBy": [],
+      "createdAt": 1793393714656,
+      "updatedAt": 1793393970179
+    },
+    {
+      "id": "4",
+      "subject": "E2E OpenRouter stub + global-setup + fixtures",
+      "description": "openrouter-stub.ts serving /chat/completions; aiStubUrl; NUXT_OPENROUTER_BASE_URL/APIKEY",
+      "status": "completed",
+      "metadata": {},
+      "blocks": [],
+      "blockedBy": [],
+      "createdAt": 1793393714671,
+      "updatedAt": 1793394001072
+    },
+    {
+      "id": "5",
+      "subject": "Update AGENTS.md AI docs",
+      "description": "Stack row, env list, AI gotcha, e2e stub note",
+      "status": "completed",
+      "metadata": {},
+      "blocks": [],
+      "blockedBy": [],
+      "createdAt": 1793393714686,
+      "updatedAt": 1793394015660
+    },
+    {
+      "id": "6",
+      "subject": "Gates: typecheck, unit, nuxt, coverage, e2e, build, browser check",
+      "description": "Done: typecheck, unit+nuxt+coverage, e2e (100/101, perf LCP flake), build via e2e. Skipped by user: browser check / real OpenRouter read, analyze.",
+      "status": "completed",
+      "metadata": {},
+      "blocks": [],
+      "blockedBy": [],
+      "createdAt": 1793393714700,
+      "updatedAt": 1793395506991
+    }
+  ]
+}

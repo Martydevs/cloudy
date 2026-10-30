@@ -4,19 +4,19 @@
       "type": "http",
       "url": "https://mcp.neon.tech/mcp"
     },
-    "chrome-devtools": {
-      "command": "bunx",
+    "regle": {
+      "command": "npx",
       "args": [
-        "chrome-devtools-mcp@latest",
-        "--isolated",
-        "--no-usage-statistics", 
-        "--executablePath", 
-        "C:/Users/andre.perez/AppData/Local/Chromium/Application/chrome.exe"
+        "-y",
+        "@regle/mcp-server"
       ]
     },
     "schedule-x": {
       "command": "npx",
-      "args": ["-y", "@schedule-x/mcp"]
+      "args": [
+        "-y",
+        "@schedule-x/mcp"
+      ]
     }
   }
 }
