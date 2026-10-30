@@ -1,5 +1,5 @@
-// Stub local de la Responses API de OpenAI para los e2e (feature 002, research A9). La app de pruebas lo
-// usa vía `NUXT_OPENAI_BASE_URL`; Gemini no tiene stub (`NUXT_GOOGLE_APIKEY` va vacía en e2e).
+// Stub local de la API de chat completions de OpenRouter para los e2e (feature 002, research A9). La app de
+// pruebas lo usa vía `NUXT_OPENROUTER_BASE_URL`; los e2e nunca llaman a OpenRouter.
 // Distingue las imágenes por sus bytes: llegan tal como están en `test/fixtures/files/`.
 import { createHash } from 'node:crypto'
 import { existsSync, readFileSync } from 'node:fs'
@@ -37,31 +37,29 @@ function fixtureHashes(): Map<string, string> {
   return byHash
 }
 
-/** La primera imagen del cuerpo de `POST /responses` (`data:<mime>;base64,<bytes>`). */
+/** La primera imagen del cuerpo de `POST /chat/completions` (`data:<mime>;base64,<bytes>`). */
 function imageOf(body: unknown): Buffer | null {
   const text = JSON.stringify(body)
   const match = /data:image\/[a-z]+;base64,([A-Za-z0-9+/=]+)/.exec(text)
   return match ? Buffer.from(match[1]!, 'base64') : null
 }
 
-function responseBody(output: { hasText: boolean, text: string }) {
+function chatCompletion(model: unknown, output: { hasText: boolean, text: string }) {
   return {
-    id: `resp_${Date.now()}`,
-    created_at: Math.floor(Date.now() / 1000),
-    model: 'gpt-4o',
-    status: 'completed',
-    incomplete_details: null,
-    output: [{
-      type: 'message',
-      role: 'assistant',
-      id: `msg_${Date.now()}`,
-      content: [{ type: 'output_text', text: JSON.stringify(output), annotations: [] }],
+    id: `gen-${Date.now()}`,
+    object: 'chat.completion',
+    created: Math.floor(Date.now() / 1000),
+    model: typeof model === 'string' ? model : 'stub',
+    choices: [{
+      index: 0,
+      message: { role: 'assistant', content: JSON.stringify(output) },
+      finish_reason: 'stop',
     }],
-    usage: { input_tokens: 100, output_tokens: 20 },
+    usage: { prompt_tokens: 100, completion_tokens: 20, total_tokens: 120 },
   }
 }
 
-export async function startOpenAIStub(): Promise<{ url: string, close: () => Promise<void> }> {
+export async function startAiStub(): Promise<{ url: string, close: () => Promise<void> }> {
   const byHash = fixtureHashes()
   let mode: StubMode = { fail: false, delayMs: 0 }
   let calls: StubCalls = { total: 0, byImage: {} }
@@ -86,20 +84,19 @@ export async function startOpenAIStub(): Promise<{ url: string, close: () => Pro
     }
     if (req.method === 'GET' && req.url === '/__stub/calls') return json(200, calls)
 
-    if (req.method === 'POST' && req.url?.startsWith('/responses')) {
-      const image = imageOf(raw ? JSON.parse(raw) : null)
+    if (req.method === 'POST' && req.url?.startsWith('/chat/completions')) {
+      const body = raw ? JSON.parse(raw) as { model?: unknown } : null
+      const image = imageOf(body)
       const name = image ? byHash.get(hash(image)) ?? 'other' : 'none'
       calls.total++
       calls.byImage[name] = (calls.byImage[name] ?? 0) + 1
       if (mode.delayMs > 0) await new Promise(r => setTimeout(r, mode.delayMs))
-      if (mode.fail) {
-        return json(500, { error: { message: 'stub failure', type: 'server_error', param: null, code: 'server_error' } })
-      }
+      if (mode.fail) return json(500, { error: { code: 500, message: 'stub failure' } })
       const empty = EMPTY_FIXTURES.includes(name)
-      return json(200, responseBody(empty ? { hasText: false, text: '' } : { hasText: true, text: NOTE_TEXT }))
+      return json(200, chatCompletion(body?.model, empty ? { hasText: false, text: '' } : { hasText: true, text: NOTE_TEXT }))
     }
 
-    json(404, { error: { message: 'not found', type: 'invalid_request_error', param: null, code: 'not_found' } })
+    json(404, { error: { code: 404, message: 'not found' } })
   })
 
   await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))

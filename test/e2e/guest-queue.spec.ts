@@ -3,7 +3,7 @@ import { createPage, setup } from '@nuxt/test-utils/e2e'
 import type { Page } from 'playwright-core'
 import { describe, expect, it } from 'vitest'
 import { E2E_URL, fixture, profileUserId, resetStub, runId, seedFolder, signedInAs, stubCalls, testSql, viewports, waitForHydration } from './setup/fixtures'
-import { NOTE_TEXT } from './setup/openai-stub'
+import { NOTE_TEXT } from './setup/openrouter-stub'
 
 await setup({ host: E2E_URL, browser: true })
 

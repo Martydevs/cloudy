@@ -13,7 +13,7 @@ vi.mock('#server/ai', async () => ({
   extractImageText: ai.extractImageText,
   imageSourceSchema: (await import('../../server/ai/image-text/schemas')).imageSourceSchema,
   createProviderBreaker: (await import('../../server/ai/breaker')).createProviderBreaker,
-  resolveImageTextCandidates: () => [],
+  resolveImageTextModel: () => null,
 }))
 
 const JPEG = new Uint8Array(readFileSync(new URL('../fixtures/files/foto.jpg', import.meta.url)))

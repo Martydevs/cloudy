@@ -12,6 +12,7 @@ export default defineNuxtConfig({
     '@vueuse/nuxt/module',
     '@nuxt/image',
     '@nuxt/test-utils/module',
+    '@regle/nuxt',
     Sonda({ enabled: analyze, server: true, gzip: true }),
   ],
   // Sonda mide desde los source maps; `hidden` los genera sin enlazarlos desde los bundles.
@@ -23,12 +24,9 @@ export default defineNuxtConfig({
     databaseUrl: '',
     neonRealtimeUrl: '',
     neonRealtimeSecret: '',
-    openaiApikey: '',
-    openaiOrg: '',
-    openaiProj: '',
-    // Vacío = API de OpenAI; solo los e2e lo apuntan a un stub local (research A9).
-    openaiBaseUrl: '',
-    googleApikey: '',
+    openrouterApikey: '',
+    // Vacío = API de OpenRouter; solo los e2e lo apuntan a un stub local.
+    openrouterBaseUrl: '',
     neonAuthBaseUrl: '',
     neonAuthCookieSecret: '',
     awsEndpointUrlS3: '',

@@ -255,9 +255,9 @@ export async function signedInAs(page: Page, role: 'admin' | 'editor', label: st
 
 // ---------------------------------------------------------------- texto de las imágenes (feature 002)
 
-/** Control del stub de OpenAI que levanta `global-setup.ts` (research A9). */
+/** Control del stub de OpenRouter que levanta `global-setup.ts` (research A9). */
 async function stubRequest<T>(path: string, body?: unknown): Promise<T> {
-  const res = await fetch(`${inject('openaiStubUrl')}${path}`, body === undefined
+  const res = await fetch(`${inject('aiStubUrl')}${path}`, body === undefined
     ? {}
     : { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
   return res.json() as Promise<T>

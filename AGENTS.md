@@ -22,7 +22,7 @@ file. Keep this guide aligned with it whenever the constitution is amended.
 | UI | Tailwind CSS 4 + daisyUI 5 (themes `cloudy` dark default, `cloudy-light`) · `@nuxt/icon` with **lucide** only · `@nuxt/fonts` (DM Sans) · `@nuxt/image` |
 | Utilities | `@vueuse/nuxt` (auto-imported) |
 | Tests | Vitest projects `unit` / `nuxt` / `e2e` · `@nuxt/test-utils` · `playwright-core` (Chromium) |
-| AI | AI SDK v7 (`generateText` + `Output.object`) · OpenAI `gpt-4o` as main provider, Google `gemini-3.5-flash-lite` as fallback · isolated in `server/ai/` |
+| AI | AI SDK v7 (`generateText` + `Output.object`) · OpenRouter as the only provider via `@openrouter/ai-sdk-provider`, preset `@preset/image-content-extraction` (the preset picks model and routing) · isolated in `server/ai/` |
 | Deploy | Vercel (Nitro `vercel` preset, SSR, Vercel Cron) |
 
 Do not add dependencies or external services without a justification in the feature plan's
@@ -149,8 +149,7 @@ files: set the same names per environment in the project settings.
 `NUXT_DATABASE_URL`, `NUXT_NEON_AUTH_BASE_URL`,
 `NUXT_NEON_AUTH_COOKIE_SECRET`, `NUXT_AWS_ENDPOINT_URL_S3`, `NUXT_AWS_ACCESS_KEY_ID`,
 `NUXT_AWS_SECRET_ACCESS_KEY`, `NUXT_AWS_REGION`, `NUXT_S3_BUCKET`, `NUXT_PUBLIC_SITE_URL`,
-`NUXT_OPENAI_APIKEY`, `NUXT_OPENAI_ORG`, `NUXT_OPENAI_PROJ`, `NUXT_OPENAI_BASE_URL` (empty = OpenAI; e2e only),
-`NUXT_GOOGLE_APIKEY` (fallback provider; empty = no fallback),
+`NUXT_OPENROUTER_APIKEY` (empty = no image-text reads), `NUXT_OPENROUTER_BASE_URL` (empty = OpenRouter; e2e only),
 `CRON_SECRET`, `NUXT_RATE_LIMIT_SALT`. `NUXT_NEON_JWKS_URL` is present but intentionally unused in v1. `NUXT_NEON_REALTIME_URL` and
 `NUXT_NEON_REALTIME_SECRET` exist in `.env.example` and `runtimeConfig` but are outside feature 002; do not use them in it.
 Never print or commit their values.
@@ -168,9 +167,11 @@ Never print or commit their values.
   429); never call the auth API directly from a spec.
 - The Neon auth client *throws* its own normalized codes (`bad_jwt`, `invalid_credentials`, …), not Better
   Auth's; `useAuthClient` maps what pages need (e.g. a used reset link → `INVALID_TOKEN`).
-- AI: OpenAI is the main provider and Gemini the fallback (no key, or any provider failure: network, timeout,
-  rate limit, exhausted balance/quota, invalid key or model). `NUXT_GOOGLE_APIKEY` stays empty in `.env.test` so
-  e2e never call Gemini.
+- AI: OpenRouter is the only provider; there is no fallback. Each image is one call (30 s, 1 retry, 45 s cap). The
+  guest pool's per-run breaker stops calling OpenRouter after a 402 (out of credits), 401/403/404 (key, permissions,
+  preset) or 3 transient failures in a row; images not started stay pending. With no key nothing is called. E2E run
+  against a local chat-completions stub (`test/e2e/setup/openrouter-stub.ts`) through `NUXT_OPENROUTER_BASE_URL`, so
+  they never call OpenRouter.
 - Nitro's `event.waitUntil` is not wired on Vercel Node: background work uses `waitUntil` from
   `@vercel/functions`, only through `server/utils/background.ts`.
 - `heic-to` only works in the browser: load it with a dynamic `import()` (`app/utils/heic-copy.ts`).
