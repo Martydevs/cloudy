@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import type { FormField } from '~/components/auth/AuthForm.vue'
-import type { Infer } from '#shared/validation/core'
-import { buildResetRedirect, forgotInput } from '#shared/validation/auth'
+import { buildResetRedirect } from '#shared/validation/auth'
 
 definePageMeta({ layout: 'auth', access: 'guest-only' })
 useHead({ title: 'Recuperar contraseña · Cloudy' })
@@ -16,7 +15,7 @@ const loading = ref(false)
 const sent = ref(false)
 const serverError = ref('')
 
-async function onSubmit(data: Infer<typeof forgotInput>) {
+async function onSubmit(data: ForgotForm) {
   loading.value = true
   serverError.value = ''
   try {
@@ -48,7 +47,7 @@ async function onSubmit(data: Infer<typeof forgotInput>) {
     v-else
     legend="Recuperar contraseña"
     :fields="fields"
-    :validator="forgotInput"
+    :rules="forgotRules"
     submit-label="Enviar enlace"
     :loading="loading"
     :server-error="serverError"

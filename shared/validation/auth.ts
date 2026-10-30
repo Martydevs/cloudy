@@ -2,9 +2,11 @@
 import { email, object, sameAs, str } from './core'
 
 export const PASSWORD_MIN = 8
+export const PASSWORD_MAX = 128
+export const NAME_MAX = 80
 
-const name = () => str({ max: 80 })
-const newPassword = () => str({ min: PASSWORD_MIN, max: 128, trim: false })
+const name = () => str({ max: NAME_MAX })
+const newPassword = () => str({ min: PASSWORD_MIN, max: PASSWORD_MAX, trim: false })
 const confirm = () => str({ trim: false })
 
 export const registerInput = object(

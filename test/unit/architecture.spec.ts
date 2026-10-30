@@ -88,6 +88,17 @@ describe('arquitectura de la feature 002', () => {
     expect(users).toEqual(['server/utils/background.ts'])
   })
 
+  it('app/ nunca importa useRegle ni inferRules de @regle/core (saltaría la configuración global en español)', () => {
+    const named = /import\s*\{([^}]*)\}\s*from\s*['"]@regle\/core['"]/g
+    const offenders = files
+      .filter(f => f.path.startsWith('app/'))
+      .filter(f => [...f.code.matchAll(named)].some(m => /\b(useRegle|inferRules)\b/.test(m[1]!)))
+      .map(f => f.path)
+    expect(offenders).toEqual([])
+    // Las reglas y el setupFile sí importan de @regle/core (createRule, tipos): el filtro no los marca.
+    expect(files.find(f => f.path === 'app/regle-config.ts')!.code).toMatch(/from '@regle\/core'/)
+  })
+
   it('heic-to solo se carga con import() dinámico desde app/utils/heic-copy.ts', () => {
     const users = files.filter(f => imports(f.code).includes('heic-to')).map(f => f.path)
     expect(users).toEqual(['app/utils/heic-copy.ts'])

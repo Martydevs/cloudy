@@ -1,0 +1,71 @@
+{
+  "nextId": 7,
+  "tasks": [
+    {
+      "id": "1",
+      "subject": "Shared constants refactor (server unchanged)",
+      "description": "Export messages/limits from shared/validation core/auth/files/submissions; validators use them; remove check()/Infer + tests.",
+      "status": "completed",
+      "metadata": {},
+      "blocks": [],
+      "blockedBy": [],
+      "createdAt": 1793395898676,
+      "updatedAt": 1793395944880
+    },
+    {
+      "id": "2",
+      "subject": "Regle setup: regle-config.ts + form-rules.ts",
+      "description": "nuxt.config regle.setupFile, app/regle-config.ts (defineRegleNuxtPlugin), app/utils/form-rules.ts rule factories + 422 helper.",
+      "status": "completed",
+      "metadata": {},
+      "blocks": [],
+      "blockedBy": [],
+      "createdAt": 1793395898690,
+      "updatedAt": 1793396720395
+    },
+    {
+      "id": "3",
+      "subject": "Migrate components to Regle",
+      "description": "AuthForm + 5 pages, NameDialog/ItemDialogs, CommentThread/CommentItem, GuestUploadForm, upload.vue, ImageTextEditor.",
+      "status": "completed",
+      "metadata": {},
+      "blocks": [],
+      "blockedBy": [],
+      "createdAt": 1793395898703,
+      "updatedAt": 1793396720418
+    },
+    {
+      "id": "4",
+      "subject": "Tests: parity, config, architecture, component updates",
+      "description": "form-rules.spec parity, config test, architecture check, update nuxt component tests.",
+      "status": "completed",
+      "metadata": {},
+      "blocks": [],
+      "blockedBy": [],
+      "createdAt": 1793395898716,
+      "updatedAt": 1793398141857
+    },
+    {
+      "id": "5",
+      "subject": "Gates: typecheck, unit, nuxt, e2e, coverage, build/analyze",
+      "description": "Full definition of done.",
+      "status": "in_progress",
+      "metadata": {},
+      "blocks": [],
+      "blockedBy": [],
+      "createdAt": 1793395898728,
+      "updatedAt": 1793398141873
+    },
+    {
+      "id": "6",
+      "subject": "Browser check + Lighthouse",
+      "description": "agent-browser at 360/1280, dark/light on forms; Lighthouse on form routes.",
+      "status": "pending",
+      "metadata": {},
+      "blocks": [],
+      "blockedBy": [],
+      "createdAt": 1793395898742,
+      "updatedAt": 1793395898742
+    }
+  ]
+}

@@ -1,7 +1,5 @@
 <script setup lang="ts">
 import type { FormField } from '~/components/auth/AuthForm.vue'
-import type { Infer } from '#shared/validation/core'
-import { resetInput } from '#shared/validation/auth'
 
 definePageMeta({ layout: 'auth', access: 'public' })
 useHead({ title: 'Restablecer contraseña · Cloudy' })
@@ -21,7 +19,7 @@ const toast = useToast()
 const loading = ref(false)
 const serverError = ref('')
 
-async function onSubmit(data: Infer<typeof resetInput>) {
+async function onSubmit(data: ResetForm) {
   loading.value = true
   serverError.value = ''
   try {
@@ -49,7 +47,7 @@ async function onSubmit(data: Infer<typeof resetInput>) {
     v-else
     legend="Restablecer contraseña"
     :fields="fields"
-    :validator="resetInput"
+    :rules="resetRules"
     submit-label="Guardar contraseña"
     :loading="loading"
     :server-error="serverError"

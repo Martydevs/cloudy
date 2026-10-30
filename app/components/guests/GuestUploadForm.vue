@@ -1,9 +1,9 @@
 <script setup lang="ts">
 // Formulario de envío de invitados (extraído de /enviar, feature 003): nombre, nota, selector, cola y
 // confirmación. Con `senderName` el nombre viene de la solicitud aprobada y es de solo lectura.
+import { applyIf, required } from '@regle/rules'
 import { MAX_GUEST_FILES } from '#shared/constants/files'
-import { check } from '#shared/validation/core'
-import { note as noteField, senderName as senderNameField } from '#shared/validation/submissions'
+import { NOTE_MAX, SENDER_NAME_MAX } from '#shared/validation/submissions'
 import type { SubmissionResult } from '~/composables/useGuestSubmission'
 
 const props = defineProps<{ createUrl: string, senderName?: string | null, disabled?: boolean }>()
@@ -15,38 +15,43 @@ const emit = defineEmits<{
   denied: [message: string]
 }>()
 
-const NOTE_MAX = 500
-const name = ref('')
-const note = ref('')
-const nameError = ref('')
 const nameId = useId()
 const noteId = useId()
 const noteHintId = useId()
 const fixedName = computed(() => !!props.senderName)
 
+const { r$ } = useRegle({ name: '', note: '' }, () => ({
+  // Con el nombre fijo de la solicitud aprobada no hay campo que validar.
+  name: { ...senderNameRules(), required: applyIf(() => !fixedName.value, required) },
+  note: noteRules(),
+}))
+const nameError = computed(() => r$.$errors.name[0] ?? '')
+
 const submission = useGuestSubmission({ createUrl: props.createUrl })
 const busy = computed(() => submission.status.value === 'submitting')
 watch(busy, active => emit('submitting', active))
 // El error del nombre desaparece en cuanto la persona corrige el campo.
-watch(name, () => {
-  nameError.value = ''
-})
+watch(() => r$.$value.name, () => r$.name.$reset())
 
 async function send() {
-  nameError.value = fixedName.value ? '' : check(senderNameField(), name.value) ?? ''
-  const noteProblem = check(noteField(), note.value)
-  if (nameError.value || noteProblem) {
+  const { valid, data } = await r$.$validate()
+  if (!valid) {
+    // La nota no tiene error en línea: su problema se muestra en el aviso del formulario.
+    const noteProblem = r$.$errors.note[0]
     if (noteProblem) submission.error.value = noteProblem
     return
   }
-  const result = await submission.submit({ senderName: fixedName.value ? undefined : name.value.trim(), note: note.value.trim() })
+  const result = await submission.submit({
+    senderName: fixedName.value ? undefined : data.name?.trim(),
+    note: (data.note ?? '').trim(),
+  })
   if (result) emit('done', result)
   else if (submission.errorStatus.value === 403 || submission.errorStatus.value === 409) emit('denied', submission.error.value)
 }
 
 function another() {
   submission.reset()
-  note.value = ''
+  r$.$reset({ toState: { name: r$.$value.name, note: '' } })
 }
 </script>
 
@@ -80,12 +85,12 @@ function another() {
         <label :for="nameId" class="label">Tu nombre</label>
         <input
           :id="nameId"
-          v-model="name"
+          v-model="r$.$value.name"
           type="text"
           class="input w-full"
           :class="{ 'input-error': nameError }"
           autocomplete="name"
-          maxlength="80"
+          :maxlength="SENDER_NAME_MAX"
           required
           :aria-invalid="!!nameError || undefined"
           :aria-describedby="nameError ? `${nameId}-error` : undefined"
@@ -96,14 +101,14 @@ function another() {
       <label :for="noteId" class="label mt-2">Nota para el equipo (opcional)</label>
       <textarea
         :id="noteId"
-        v-model="note"
+        v-model="r$.$value.note"
         class="textarea w-full"
         rows="3"
         :maxlength="NOTE_MAX"
         :aria-describedby="noteHintId"
         placeholder="Por ejemplo: fotos del culto del domingo"
       />
-      <p :id="noteHintId" class="text-right text-xs text-base-content/70">{{ note.length }} / {{ NOTE_MAX }}</p>
+      <p :id="noteHintId" class="text-right text-xs text-base-content/70">{{ r$.$value.note.length }} / {{ NOTE_MAX }}</p>
     </fieldset>
 
     <div class="flex flex-col gap-3">

@@ -1,13 +1,10 @@
 <script setup lang="ts">
 import type { FileItem } from '#shared/types/api'
-import { fileName, folderName } from '#shared/validation/files'
 import type { useItemActions } from '~/composables/useItemActions'
 import { baseName } from '~/composables/useItemActions'
 
 const props = defineProps<{ actions: ReturnType<typeof useItemActions> }>()
 
-const folderField = folderName()
-const fileField = fileName()
 const dialog = computed(() => props.actions.dialog.value)
 </script>
 
@@ -16,7 +13,7 @@ const dialog = computed(() => props.actions.dialog.value)
     v-if="dialog?.type === 'create'"
     title="Nueva carpeta"
     label="Nombre de la carpeta"
-    :field="folderField"
+    :rules="folderNameRules"
     confirm-label="Crear carpeta"
     :loading="actions.busy.value"
     :server-error="actions.serverError.value"
@@ -29,7 +26,7 @@ const dialog = computed(() => props.actions.dialog.value)
     label="Nombre nuevo"
     :initial="baseName(dialog.item, dialog.kind)"
     :suffix="dialog.kind === 'file' ? `.${(dialog.item as FileItem).extension}` : ''"
-    :field="dialog.kind === 'folder' ? folderField : fileField"
+    :rules="dialog.kind === 'folder' ? folderNameRules : fileNameRules"
     confirm-label="Renombrar"
     :loading="actions.busy.value"
     :server-error="actions.serverError.value"

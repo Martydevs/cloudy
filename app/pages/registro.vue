@@ -1,7 +1,5 @@
 <script setup lang="ts">
 import type { FormField } from '~/components/auth/AuthForm.vue'
-import type { Infer } from '#shared/validation/core'
-import { registerInput } from '#shared/validation/auth'
 
 definePageMeta({ layout: 'auth', access: 'guest-only' })
 useHead({ title: 'Crear cuenta · Cloudy' })
@@ -17,7 +15,7 @@ const { signUp } = useAuthClient()
 const loading = ref(false)
 const serverError = ref('')
 
-async function onSubmit(data: Infer<typeof registerInput>) {
+async function onSubmit(data: RegisterForm) {
   loading.value = true
   serverError.value = ''
   try {
@@ -37,7 +35,7 @@ async function onSubmit(data: Infer<typeof registerInput>) {
   <AuthForm
     legend="Crear cuenta"
     :fields="fields"
-    :validator="registerInput"
+    :rules="registerRules"
     submit-label="Crear cuenta"
     :loading="loading"
     :server-error="serverError"

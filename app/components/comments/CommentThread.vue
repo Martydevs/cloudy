@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { COMMENT_MAX_LENGTH, commentInput } from '#shared/validation/comments'
+import type { RegleExternalErrorTree } from '@regle/core'
+import { COMMENT_MAX_LENGTH } from '#shared/validation/comments'
 
 const props = defineProps<{ fileId: string }>()
 
@@ -8,38 +9,38 @@ const thread = useCommentThread(() => props.fileId, root)
 const { comments, error: loadError, status } = thread
 const toast = useToast()
 
-const body = ref('')
-const touched = ref(false)
+// Un 422 del servidor se muestra en el campo y se borra en cuanto cambia el texto.
+const externalErrors = ref<RegleExternalErrorTree<CommentForm>>({})
+const { r$ } = useRegle({ body: '' }, commentRules, { externalErrors })
 const sending = ref(false)
-const fieldError = ref('')
 const formError = ref('')
 const titleId = useId()
 const inputId = useId()
 const hintId = useId()
 const errorId = useId()
 
-const result = computed(() => commentInput({ body: body.value }))
-const error = computed(() => fieldError.value || (touched.value && !result.value.ok ? result.value.errors.body : ''))
-const length = computed(() => body.value.trim().length)
+const error = computed(() => r$.$errors.body[0] ?? '')
+const length = computed(() => r$.$value.body.trim().length)
 
-watch(body, () => {
-  fieldError.value = ''
-})
+/** Salir del campo vacío no marca error: la persona solo pasó por él. */
+function onBlur() {
+  if (r$.$value.body.length > 0) r$.body.$touch()
+  else r$.body.$reset()
+}
 
 async function submit() {
-  touched.value = true
   formError.value = ''
-  if (!result.value.ok) return
+  const { valid, data } = await r$.$validate()
+  if (!valid) return
   sending.value = true
   try {
-    await thread.post(result.value.data.body)
-    body.value = ''
-    touched.value = false
+    await thread.post(data.body.trim())
+    r$.$reset({ toState: { body: '' } })
     toast.success(messages.comments.published)
   }
   catch (err) {
     const statusCode = (err as { statusCode?: number }).statusCode
-    if (statusCode === 422) fieldError.value = serverMessage(err, messages.comments.review)
+    if (statusCode === 422) externalErrors.value = { body: externalErrorsFrom(err).body ?? [serverMessage(err, messages.comments.review)] }
     else if (statusCode === 409) formError.value = messages.comments.fileInTrash
     else formError.value = serverMessage(err, messages.comments.publishFailed)
   }
@@ -84,13 +85,13 @@ async function submit() {
         <label :for="inputId" class="text-sm font-medium">Escribe un comentario</label>
         <textarea
           :id="inputId"
-          v-model="body"
+          v-model="r$.$value.body"
           rows="3"
           class="textarea w-full"
           :class="{ 'textarea-error': error }"
           :aria-invalid="error ? 'true' : undefined"
           :aria-describedby="error ? `${hintId} ${errorId}` : hintId"
-          @blur="touched = body.length > 0"
+          @blur="onBlur"
           @keydown.ctrl.enter.prevent="submit"
           @keydown.meta.enter.prevent="submit"
         />

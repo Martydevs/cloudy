@@ -3,8 +3,11 @@ import { MAX_GUEST_FILES } from '../constants/files'
 import { array, nullable, object, optional, str, uuid } from './core'
 import { uploadInput } from './files'
 
-export const senderName = () => str({ max: 80 })
-export const note = () => optional(str({ min: 0, max: 500 }))
+export const SENDER_NAME_MAX = 80
+export const NOTE_MAX = 500
+
+export const senderName = () => str({ max: SENDER_NAME_MAX })
+export const note = () => optional(str({ min: 0, max: NOTE_MAX }))
 
 /** Un archivo del envío: igual que `uploadInput` pero sin carpeta ni miniatura; `withTextSource` pide la copia JPEG de una HEIC (feature 002). */
 export const guestFile = (input: unknown) => {

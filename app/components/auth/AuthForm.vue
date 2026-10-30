@@ -1,5 +1,5 @@
-<script setup lang="ts" generic="T">
-import type { Validator } from '#shared/validation/core'
+<script setup lang="ts" generic="T extends Record<string, string>">
+import type { RegleComputedRules } from '@regle/core'
 
 export interface FormField {
   name: string
@@ -9,10 +9,15 @@ export interface FormField {
   hint?: string
 }
 
+// Por dentro el estado es un registro de textos: Regle no puede inferir sobre el genérico `T`, que solo se usa
+// en la prop `rules` y en el evento `submit`.
+type FormState = Record<string, string>
+
 const props = withDefaults(defineProps<{
   legend: string
   fields: FormField[]
-  validator: Validator<T>
+  /** Reglas sobre los campos (texto); `state` permite comparar campos, p. ej. confirmar la contraseña. */
+  rules: (state: T) => RegleComputedRules<FormState>
   submitLabel: string
   loading?: boolean
   serverError?: string
@@ -22,35 +27,38 @@ const props = withDefaults(defineProps<{
 const emit = defineEmits<{ submit: [data: T] }>()
 
 const formId = useId()
-const values = reactive<Record<string, string>>(
+const values = reactive<FormState>(
   Object.fromEntries(props.fields.map(f => [f.name, props.initial[f.name] ?? ''])),
 )
-const touched = reactive(new Set<string>())
+const { r$ } = useRegle(values, () => props.rules(values as T))
 // Antes de hidratar, un envío nativo recargaría la página; el botón espera a que Vue tome el control.
 const hydrated = ref(false)
 onMounted(() => {
   hydrated.value = true
 })
 
-const result = computed(() => props.validator({ ...values }))
-const errors = computed<Record<string, string>>(() => result.value.ok ? {} : result.value.errors)
-const visibleErrors = computed(() =>
-  Object.fromEntries(Object.entries(errors.value).filter(([name]) => touched.has(name))),
-)
-const hasVisibleErrors = computed(() => Object.keys(visibleErrors.value).length > 0)
-
 const inputId = (name: string) => `${formId}-${name}`
 const errorId = (name: string) => `${formId}-${name}-error`
+/** Primer error visible del campo (tras salir de él o enviar). */
+const errorOf = (name: string): string | undefined => r$.$errors[name]?.[0]
 
-function onSubmit() {
-  for (const field of props.fields) touched.add(field.name)
-  const res = result.value
-  if (!res.ok) {
-    const first = props.fields.find(f => res.errors[f.name])
-    if (first && import.meta.client) document.getElementById(inputId(first.name))?.focus()
+/** Como el servidor: recorta todo salvo las contraseñas y pasa los correos a minúsculas. */
+function normalize(data: FormState): T {
+  return Object.fromEntries(props.fields.map((field) => {
+    const raw = data[field.name] ?? ''
+    if (field.type === 'password') return [field.name, raw]
+    return [field.name, field.type === 'email' ? raw.trim().toLowerCase() : raw.trim()]
+  })) as T
+}
+
+async function onSubmit() {
+  const { valid, data } = await r$.$validate()
+  if (!valid) {
+    const first = props.fields.find(f => r$.$fields[f.name]?.$invalid)
+    if (first) document.getElementById(inputId(first.name))?.focus()
     return
   }
-  emit('submit', res.data)
+  emit('submit', normalize(data))
 }
 </script>
 
@@ -69,24 +77,24 @@ function onSubmit() {
         <label :for="inputId(field.name)" class="label text-sm font-medium text-base-content">{{ field.label }}</label>
         <input
           :id="inputId(field.name)"
-          v-model="values[field.name]"
+          v-model="r$.$value[field.name]"
           :name="field.name"
           :type="field.type ?? 'text'"
           :autocomplete="field.autocomplete"
           class="input w-full"
-          :class="{ 'input-error': visibleErrors[field.name] }"
-          :aria-invalid="visibleErrors[field.name] ? 'true' : undefined"
-          :aria-describedby="visibleErrors[field.name] ? errorId(field.name) : undefined"
-          @blur="touched.add(field.name)"
+          :class="{ 'input-error': errorOf(field.name) }"
+          :aria-invalid="errorOf(field.name) ? 'true' : undefined"
+          :aria-describedby="errorOf(field.name) ? errorId(field.name) : undefined"
+          @blur="r$.$fields[field.name]?.$touch()"
         >
-        <p v-if="visibleErrors[field.name]" :id="errorId(field.name)" class="text-sm text-error">
-          {{ visibleErrors[field.name] }}
+        <p v-if="errorOf(field.name)" :id="errorId(field.name)" class="text-sm text-error">
+          {{ errorOf(field.name) }}
         </p>
         <p v-else-if="field.hint" class="label text-sm">{{ field.hint }}</p>
       </div>
     </fieldset>
 
-    <button type="submit" class="btn btn-primary w-full" :disabled="!hydrated || loading || hasVisibleErrors">
+    <button type="submit" class="btn btn-primary w-full" :disabled="!hydrated || loading || r$.$error">
       <span v-if="loading" class="loading loading-spinner" aria-hidden="true" />
       {{ submitLabel }}
     </button>

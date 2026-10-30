@@ -1,8 +1,6 @@
 <script setup lang="ts">
 import type { FormField } from '~/components/auth/AuthForm.vue'
 import type { Profile } from '#shared/types/api'
-import type { Infer } from '#shared/validation/core'
-import { changePasswordInput, profileNameInput } from '#shared/validation/auth'
 
 definePageMeta({ layout: 'dashboard', access: 'private' })
 useHead({ title: 'Mi perfil · Cloudy' })
@@ -21,7 +19,7 @@ const passwordFields: FormField[] = [
 
 const savingName = ref(false)
 const nameError = ref('')
-async function saveName(data: Infer<typeof profileNameInput>) {
+async function saveName(data: ProfileNameForm) {
   savingName.value = true
   nameError.value = ''
   try {
@@ -42,7 +40,7 @@ async function saveName(data: Infer<typeof profileNameInput>) {
 const savingPassword = ref(false)
 const passwordError = ref('')
 const passwordFormKey = ref(0)
-async function savePassword(data: Infer<typeof changePasswordInput>) {
+async function savePassword(data: ChangePasswordForm) {
   savingPassword.value = true
   passwordError.value = ''
   try {
@@ -86,7 +84,7 @@ async function savePassword(data: Infer<typeof changePasswordInput>) {
           v-if="profile"
           legend="Nombre visible"
           :fields="nameFields"
-          :validator="profileNameInput"
+          :rules="profileNameRules"
           :initial="{ name: profile.name }"
           submit-label="Guardar nombre"
           :loading="savingName"
@@ -102,7 +100,7 @@ async function savePassword(data: Infer<typeof changePasswordInput>) {
           :key="passwordFormKey"
           legend="Cambiar contraseña"
           :fields="passwordFields"
-          :validator="changePasswordInput"
+          :rules="changePasswordRules"
           submit-label="Cambiar contraseña"
           :loading="savingPassword"
           :server-error="passwordError"

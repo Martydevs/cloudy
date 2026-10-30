@@ -1,8 +1,7 @@
 <script setup lang="ts">
 // Subir (feature 003, FR-002/FR-013): el invitado pide acceso con su nombre, ve en vivo la decisión del equipo
 // y, aprobado, hace un envío desde este mismo navegador. Nunca muestra nombres del equipo.
-import { check } from '#shared/validation/core'
-import { senderName as senderNameField } from '#shared/validation/submissions'
+import { SENDER_NAME_MAX } from '#shared/validation/submissions'
 
 definePageMeta({ layout: 'public', access: 'public' })
 useHead({ title: 'Subir archivos · Cloudy' })
@@ -10,14 +9,13 @@ useHead({ title: 'Subir archivos · Cloudy' })
 const access = useGuestAccess()
 const { state, senderName, minutesLeft } = access
 
-const name = ref(senderName.value ?? '')
-const nameError = ref('')
+const { r$ } = useRegle({ name: senderName.value ?? '' }, () => ({ name: senderNameRules() }))
+const nameError = computed(() => r$.$errors.name[0] ?? '')
 const nameId = useId()
-watch(name, () => {
-  nameError.value = ''
-})
+// El error del nombre desaparece en cuanto la persona corrige el campo.
+watch(() => r$.$value.name, () => r$.name.$reset())
 watch(senderName, (value) => {
-  if (value && !name.value) name.value = value
+  if (value && !r$.$value.name) r$.$value.name = value
 })
 
 // El formulario sigue montado desde que empieza un envío hasta que la persona pide otro acceso: una subida
@@ -41,9 +39,9 @@ function onDenied(message: string) {
 }
 
 async function ask() {
-  nameError.value = check(senderNameField(), name.value) ?? ''
-  if (nameError.value) return
-  await access.request(name.value.trim())
+  const { valid, data } = await r$.$validate()
+  if (!valid) return
+  await access.request(data.name.trim())
 }
 
 function restart() {
@@ -149,12 +147,12 @@ const ended = computed(() => (state.value === 'rejected' || state.value === 'exp
         <label :for="nameId" class="label">Tu nombre</label>
         <input
           :id="nameId"
-          v-model="name"
+          v-model="r$.$value.name"
           type="text"
           class="input w-full"
           :class="{ 'input-error': nameError }"
           autocomplete="name"
-          maxlength="80"
+          :maxlength="SENDER_NAME_MAX"
           required
           :aria-invalid="!!nameError || undefined"
           :aria-describedby="nameError ? `${nameId}-error` : undefined"

@@ -1,11 +1,11 @@
 <script setup lang="ts">
-import type { Field } from '#shared/validation/core'
+import type { NameRules } from '~/utils/form-rules'
 
 const props = withDefaults(defineProps<{
   title: string
   label: string
   initial?: string
-  field: Field<string>
+  rules: NameRules
   confirmLabel?: string
   /** Texto fijo que se muestra después del campo (p. ej. la extensión, que no cambia). */
   suffix?: string
@@ -17,23 +17,23 @@ const emit = defineEmits<{ submit: [value: string], close: [] }>()
 
 const dialog = useTemplateRef<HTMLDialogElement>('dialog')
 const input = useTemplateRef<HTMLInputElement>('input')
-const value = ref(props.initial)
-const touched = ref(false)
+const { r$ } = useRegle({ name: props.initial }, () => props.rules())
 const titleId = useId()
 const inputId = useId()
 const errorId = useId()
 
-const result = computed(() => props.field(value.value))
-const error = computed(() => (touched.value && !result.value.ok ? result.value.error : ''))
+const error = computed(() => r$.$errors.name[0] ?? '')
 
 onMounted(() => {
+  // Cada apertura empieza limpia: sin valores ni errores de un uso anterior.
+  r$.$reset({ toState: { name: props.initial } })
   dialog.value?.showModal()
   nextTick(() => input.value?.select())
 })
 
-function submit() {
-  touched.value = true
-  if (result.value.ok) emit('submit', result.value.value)
+async function submit() {
+  const { valid, data } = await r$.$validate()
+  if (valid) emit('submit', data.name.trim())
 }
 
 function close() {
@@ -55,13 +55,13 @@ function close() {
         <input
           :id="inputId"
           ref="input"
-          v-model="value"
+          v-model="r$.$value.name"
           type="text"
           class="input w-full"
           :class="{ 'input-error': error }"
           :aria-invalid="error ? 'true' : undefined"
           :aria-describedby="error ? errorId : undefined"
-          @blur="touched = true"
+          @blur="r$.name.$touch()"
         >
         <span v-if="suffix" class="shrink-0 text-base-content/70">{{ suffix }}</span>
       </div>

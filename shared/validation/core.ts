@@ -6,12 +6,17 @@ export type Validator<T> = (input: unknown) => Result<T>
 export type FieldResult<T> = { ok: true, value: T } | { ok: false, error: string }
 export type Field<T> = (input: unknown) => FieldResult<T>
 
-export type Infer<V> = V extends Validator<infer T> ? T : never
-
-const REQUIRED = 'Este campo es obligatorio'
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+// Textos y límites que también usan las reglas de Regle de los formularios (`app/regle-config.ts`).
+export const REQUIRED_MESSAGE = 'Este campo es obligatorio'
+export const minMessage = (n: number) => `Debe tener al menos ${n} caracteres`
+export const maxMessage = (n: number) => `Debe tener como máximo ${n} caracteres`
+export const EMAIL_MESSAGE = 'Escribe un correo electrónico válido'
+export const PASSWORD_MISMATCH_MESSAGE = 'Las contraseñas no coinciden'
 // Suficiente para la UI; Neon Auth hace la validación definitiva.
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+export const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+export const EMAIL_MAX = 254
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 const fail = (error: string): FieldResult<never> => ({ ok: false, error })
 const pass = <T>(value: T): FieldResult<T> => ({ ok: true, value })
@@ -27,11 +32,11 @@ export interface StrOptions {
 
 export function str({ min = 1, max, trim = true, pattern, message }: StrOptions = {}): Field<string> {
   return (input) => {
-    if (typeof input !== 'string') return fail(REQUIRED)
+    if (typeof input !== 'string') return fail(REQUIRED_MESSAGE)
     const value = trim ? input.trim() : input
-    if (value.length === 0 && min > 0) return fail(REQUIRED)
-    if (value.length < min) return fail(`Debe tener al menos ${min} caracteres`)
-    if (max !== undefined && value.length > max) return fail(`Debe tener como máximo ${max} caracteres`)
+    if (value.length === 0 && min > 0) return fail(REQUIRED_MESSAGE)
+    if (value.length < min) return fail(minMessage(min))
+    if (max !== undefined && value.length > max) return fail(maxMessage(max))
     if (pattern && !pattern.test(value)) return fail(message ?? 'Formato no válido')
     return pass(value)
   }
@@ -40,9 +45,9 @@ export function str({ min = 1, max, trim = true, pattern, message }: StrOptions 
 /** Correo válido, normalizado a minúsculas. */
 export function email(): Field<string> {
   return (input) => {
-    if (typeof input !== 'string' || input.trim() === '') return fail(REQUIRED)
+    if (typeof input !== 'string' || input.trim() === '') return fail(REQUIRED_MESSAGE)
     const value = input.trim().toLowerCase()
-    if (value.length > 254 || !EMAIL_RE.test(value)) return fail('Escribe un correo electrónico válido')
+    if (value.length > EMAIL_MAX || !EMAIL_RE.test(value)) return fail(EMAIL_MESSAGE)
     return pass(value)
   }
 }
@@ -99,7 +104,7 @@ export function nullable<T>(field: Field<T>): Field<T | null> {
 
 export function array<T>(field: Field<T>, { min = 0, max, label = 'elementos' }: { min?: number, max?: number, label?: string } = {}): Field<T[]> {
   return (input) => {
-    if (!Array.isArray(input)) return fail(REQUIRED)
+    if (!Array.isArray(input)) return fail(REQUIRED_MESSAGE)
     if (input.length < min) return fail(`Agrega al menos ${min} ${label}`)
     if (max !== undefined && input.length > max) return fail(`Puedes agregar como máximo ${max} ${label}`)
     const values: T[] = []
@@ -142,13 +147,8 @@ export function object<S extends Schema>(
 }
 
 /** Regla `refine` para confirmar un campo (p. ej. contraseña) contra otro. */
-export function sameAs(field: string, confirmField: string, message = 'Las contraseñas no coinciden') {
+export function sameAs(field: string, confirmField: string, message = PASSWORD_MISMATCH_MESSAGE) {
   return (raw: Record<string, unknown>) =>
     (raw[confirmField] ?? '') !== '' && raw[field] !== raw[confirmField] ? { [confirmField]: message } : null
 }
 
-/** Adapta un `Field` para usarlo como validador de un solo valor. */
-export function check<T>(field: Field<T>, input: unknown): string | null {
-  const res = field(input)
-  return res.ok ? null : res.error
-}

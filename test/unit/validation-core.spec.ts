@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { array, bool, check, email, int, nullable, object, oneOf, optional, sameAs, str, uuid } from '../../shared/validation/core'
+import { array, bool, email, int, nullable, object, oneOf, optional, sameAs, str, uuid } from '../../shared/validation/core'
 
 describe('str', () => {
   it('recorta y valida los límites', () => {
@@ -72,10 +72,6 @@ describe('optional, nullable, array, check', () => {
     expect(array(int(), { max: 1 })([1, 2]).ok).toBe(false)
     expect(array(int())([1, 'x'])).toEqual({ ok: false, error: '2: Debe ser un número entero' })
     expect(array(int())('x').ok).toBe(false)
-  })
-  it('check devuelve el mensaje o null', () => {
-    expect(check(str(), 'a')).toBeNull()
-    expect(check(str(), '')).toBe('Este campo es obligatorio')
   })
 })
 
