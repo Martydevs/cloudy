@@ -52,18 +52,22 @@ describe('GET /api/dashboard', () => {
       storageKey: 'files/f1', thumbKey: null, uploadStatus: 'ready', origin: 'team', uploadedBy: 'u1', guestName: null,
       submissionId: null, createdAt: created, updatedAt: created, deletedAt: null, deletedBy: null, trashRootId: null, uploaderName: 'Ana',
     }]
-    // `execute` corre al armar el lote; luego se resuelven los select en orden.
-    installNitro([
+    // `execute` corre al armar el lote (envíos por revisar y solicitudes de acceso); luego se resuelven los select en orden.
+    const fake = installNitro([
       { rows: [{ count: 2 }] },
+      { rows: [{ count: 3 }] },
       recent,
       [{ category: 'image', count: 3, bytes: '30' }, { category: 'audio', count: 1, bytes: '5' }],
       [{ activeBytes: '35', trashBytes: '7' }],
     ])
     const handler = await loadHandler('api/dashboard.get.ts')
     const summary = await handler(makeEvent())
+    // Solo las solicitudes abiertas y vigentes cuentan (feature 003).
+    expect(sqlText(fake.db.execute.mock.calls[1]![0])).toContain(`status = 'open' AND expires_at > now()`)
     expect(summary).toEqual({
       recentFiles: [expect.objectContaining({ id: 'f1', uploadedBy: { id: 'u1', name: 'Ana' } })],
       pendingCount: 2,
+      openAccessRequests: 3,
       totalsByCategory: {
         image: { count: 3, bytes: 30 },
         audio: { count: 1, bytes: 5 },
@@ -76,17 +80,19 @@ describe('GET /api/dashboard', () => {
   })
 
   it('sin datos devuelve ceros y exige rol', async () => {
-    installNitro([{ rows: [] }, [], [], []])
+    installNitro([{ rows: [] }, { rows: [] }, [], [], []])
     const handler = await loadHandler('api/dashboard.get.ts')
-    expect(await handler(makeEvent())).toMatchObject({ pendingCount: 0, storage: { activeBytes: 0, trashBytes: 0 } })
+    expect(await handler(makeEvent())).toMatchObject({ pendingCount: 0, openAccessRequests: 0, storage: { activeBytes: 0, trashBytes: 0 } })
     await expectGuarded(handler)
   })
 })
 
 describe('GET /api/realtime/pulse', () => {
   const fresh = [{ id: 's2', sender_name: 'Luis', created_at: '2026-10-14T10:05:00.000Z', completed_at: '2026-10-14T10:06:00.000Z', file_count: 2 }]
-  // Cola por pulso: conteo de pendientes, nuevos desde el cursor, usuarios pendientes.
-  const pulse = (count: number, rows: unknown[], users: number) => [{ rows: [{ count }] }, { rows }, { rows: [{ count: users }] }]
+  // Cola por pulso: conteo de pendientes, nuevos desde el cursor, usuarios pendientes, solicitudes de acceso
+  // abiertas y nuevas desde el cursor (feature 003).
+  const pulse = (count: number, rows: unknown[], users: number, access = 0, accessRows: unknown[] = []) =>
+    [{ rows: [{ count }] }, { rows }, { rows: [{ count: users }] }, { rows: [{ count: access }] }, { rows: accessRows }]
 
   it('cuenta los pendientes y lista los nuevos desde el cursor por completed_at (T120a)', async () => {
     const fake = installNitro([...pulse(2, [], 0), ...pulse(2, fresh, 0)])
@@ -101,8 +107,27 @@ describe('GET /api/realtime/pulse', () => {
       pendingCount: 2,
       newSubmissions: [{ id: 's2', senderName: 'Luis', fileCount: 2, createdAt: '2026-10-14T10:05:00.000Z' }],
     })
-    const sinceSql = sqlText(fake.db.execute.mock.calls[4]![0])
+    const sinceSql = sqlText(fake.db.execute.mock.calls[6]![0])
     expect(sinceSql).toContain('completed_at >')
+    expect(sinceSql).toContain('2026-10-14T10:00:00.000Z')
+  })
+
+  it('cuenta las solicitudes de acceso abiertas y lista las nuevas desde el cursor (feature 003)', async () => {
+    const access = [{ id: 'r1', sender_name: 'Eva', created_at: '2026-10-14T10:03:00.000Z' }]
+    const fake = installNitro([...pulse(0, [], 0, 2, []), ...pulse(0, [], 0, 2, access)])
+    const handler = await loadHandler('api/realtime/pulse.get.ts')
+    expect(await handler(makeEvent())).toMatchObject({ openAccessRequests: 2, newAccessRequests: [] })
+    const countSql = sqlText(fake.db.execute.mock.calls[3]![0])
+    expect(countSql).toContain(`status = 'open' AND expires_at > now()`)
+    // Sin cursor la quinta consulta no devuelve filas.
+    expect(sqlText(fake.db.execute.mock.calls[4]![0])).toContain('WHERE false')
+
+    expect(await handler(makeEvent({ url: '/api/realtime/pulse?since=2026-10-14T10:00:00.000Z' }))).toMatchObject({
+      openAccessRequests: 2,
+      newAccessRequests: [{ id: 'r1', senderName: 'Eva', createdAt: '2026-10-14T10:03:00.000Z' }],
+    })
+    const sinceSql = sqlText(fake.db.execute.mock.calls[9]![0])
+    expect(sinceSql).toContain('created_at >')
     expect(sinceSql).toContain('2026-10-14T10:00:00.000Z')
   })
 
@@ -113,7 +138,7 @@ describe('GET /api/realtime/pulse', () => {
     expect(sqlText(fake.db.execute.mock.calls[2]![0])).toContain('profiles')
     // Un editor no consulta profiles: la tercera consulta es la constante 0.
     expect(await handler(makeEvent())).toMatchObject({ pendingUsers: 3 })
-    expect(sqlText(fake.db.execute.mock.calls[5]![0])).not.toContain('profiles')
+    expect(sqlText(fake.db.execute.mock.calls[7]![0])).not.toContain('profiles')
   })
 
   it('rechaza un cursor mal formado y exige rol', async () => {
@@ -152,16 +177,15 @@ describe('middleware de cabeceras de seguridad (T158)', () => {
   it('fija nosniff, referrer, frame y permisos en páginas y en /api/**', async () => {
     installNitro()
     const middleware = await loadHandler('middleware/security-headers.ts')
-    for (const url of ['/archivos', '/api/dashboard', '/api/files/x/content', '/api/auth/get-session', '/enviar']) {
+    for (const url of ['/archivos', '/api/dashboard', '/api/files/x/content', '/api/auth/get-session', '/enviar', '/upload']) {
       const event = makeEvent({ auth: undefined, url })
       await middleware(event)
       const headers = event.node.res.getHeaders()
       expect(headers['x-content-type-options'], url).toBe('nosniff')
       expect(headers['referrer-policy'], url).toBe('strict-origin-when-cross-origin')
       expect(headers['x-frame-options'], url).toBe('DENY')
-      expect(headers['permissions-policy'], url).toMatch(/camera=\(\)/)
-      expect(headers['permissions-policy'], url).toMatch(/microphone=\(\)/)
-      expect(headers['permissions-policy'], url).toMatch(/geolocation=\(\)/)
+      // La cámara solo para el propio origen (cámara de invitados, feature 003); el resto, bloqueado.
+      expect(headers['permissions-policy'], url).toBe('camera=(self), microphone=(), geolocation=(), payment=(), usb=(), display-capture=()')
     }
   })
 })

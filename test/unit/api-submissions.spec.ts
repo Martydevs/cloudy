@@ -95,6 +95,15 @@ describe('POST /api/public/submissions', () => {
     expect(inserts.at(-2)).toMatchObject({ senderName: 'Eva', note: null })
   })
 
+  it('el envío abierto queda con origen link y sin aprobador de acceso (feature 003)', async () => {
+    const fake = installNitro([[{ count: 1 }], [], []])
+    const handler = await loadHandler('api/public/submissions/index.post.ts')
+    await handler(makeEvent({ auth: undefined, body }))
+    const inserts = fake.calls.filter(c => c.method === 'values').map(c => c.args[0])
+    expect(inserts[0]).toMatchObject({ key: expect.stringMatching(/^guest:/) })
+    expect(inserts[1]).toMatchObject({ origin: 'link', accessGrantedBy: null })
+  })
+
   it('responde 429 al superar 5 envíos por hora, con el mensaje en español', async () => {
     installNitro([[{ count: 6 }]])
     const handler = await loadHandler('api/public/submissions/index.post.ts')
@@ -179,6 +188,43 @@ describe('GET /api/submissions', () => {
     expect(await handler(makeEvent({ url: '/api/submissions?status=rejected' }))).toEqual([])
     await expectStatus(Promise.resolve().then(() => handler(makeEvent({ url: '/api/submissions?status=x' }))), 422)
     await expectGuarded(handler)
+  })
+})
+
+describe('GET /api/submissions · origen y quién dio acceso (feature 003, US3)', () => {
+  it('devuelve origin y accessGrantedBy en la misma consulta, con LEFT JOIN a profiles (sin N+1)', async () => {
+    const fake = installNitro([[
+      submission({ origin: 'permission', accessGrantedBy: 'u2', grantedByName: 'Luis' }),
+      submission({ id: UUID2, senderName: 'Rut', origin: 'link', accessGrantedBy: null, grantedByName: null }),
+      // El perfil que dio acceso ya no existe: la FK quedó en NULL.
+      submission({ id: F2, senderName: 'Noé', origin: 'permission', accessGrantedBy: null, grantedByName: null }),
+    ], [guestFile(), guestFile({ id: 'a', submissionId: UUID2 }), guestFile({ id: 'b', submissionId: F2 })]])
+    const handler = await loadHandler('api/submissions/index.get.ts')
+    const list = await handler(makeEvent()) as { senderName: string, origin: string, accessGrantedBy: unknown }[]
+    expect(list.map(s => [s.senderName, s.origin, s.accessGrantedBy])).toEqual([
+      ['Eva', 'permission', { name: 'Luis' }],
+      ['Rut', 'link', null],
+      ['Noé', 'permission', null],
+    ])
+    expect(fake.calls.filter(c => c.method === 'select')).toHaveLength(2)
+    const join = fake.calls.find(c => c.method === 'leftJoin')!
+    expect(sqlText(join.args[1])).toContain('"profiles"."user_id" = "guest_submissions"."access_granted_by"')
+    expect(Object.keys(fake.calls.find(c => c.method === 'select')!.args[0] as object)).toContain('grantedByName')
+  })
+
+  it('aprobar y rechazar un envío por permiso funciona igual que uno por enlace', async () => {
+    const permitted = submission({ origin: 'permission', accessGrantedBy: 'u2' })
+    const approve = installNitro([[permitted], [guestFile()], [], { rows: [{ id: F1 }] }, [{ id: SUB }], [], []])
+    const approveHandler = await loadHandler('api/submissions/[id]/approve.post.ts')
+    await approveHandler(makeEvent({ method: 'POST', params: { id: SUB }, body: { folderId: null } }))
+    expect(approve.calls.find(c => c.method === 'set')?.args[0]).toMatchObject({ status: 'approved' })
+
+    const reject = installNitro([[{ ...permitted, status: 'rejected' }], [{ id: F1, storageKey: 'a', textSourceKey: null }], [], []])
+    const rejectHandler = await loadHandler('api/submissions/[id]/reject.post.ts')
+    const event = makeEvent({ method: 'POST', params: { id: SUB }, body: {} })
+    await rejectHandler(event)
+    expect(event.node.res.statusCode).toBe(204)
+    expect(reject.calls.find(c => c.method === 'set')?.args[0]).toMatchObject({ status: 'rejected' })
   })
 })
 

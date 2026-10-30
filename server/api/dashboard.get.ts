@@ -9,13 +9,15 @@ export default defineEventHandler(async (event): Promise<DashboardSummary> => {
   const db = useDb()
 
   // Una sola ida y vuelta: el driver HTTP ejecuta el lote en una transacción.
-  const [recent, pending, totals, storage] = await db.batch([
+  const [recent, pending, access, totals, storage] = await db.batch([
     db.select(fileColumns).from(files)
       .leftJoin(profiles, eq(files.uploadedBy, profiles.userId))
       .where(visibleFilesWhere())
       .orderBy(desc(files.createdAt))
       .limit(8),
     db.execute<{ count: number }>(sql`SELECT count(*)::int AS count FROM (${readyPendingSubmissionsSql()}) ready`),
+    // Solicitudes de acceso abiertas (feature 003): el inicio muestra "Solicitudes por atender".
+    db.execute<{ count: number }>(sql`SELECT count(*)::int AS count FROM (${openAccessRequestsSql()}) open_requests`),
     db.select({
       category: files.category,
       count: sql<number>`count(*)::int`,
@@ -37,6 +39,7 @@ export default defineEventHandler(async (event): Promise<DashboardSummary> => {
   return {
     recentFiles: recent.map(row => toFileItem(row)),
     pendingCount: pending.rows[0]?.count ?? 0,
+    openAccessRequests: access.rows[0]?.count ?? 0,
     totalsByCategory,
     storage: {
       activeBytes: Number(storage[0]?.activeBytes ?? 0),

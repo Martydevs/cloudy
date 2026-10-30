@@ -56,6 +56,15 @@ async function onSubmit(data: Infer<typeof loginInput>) {
           <NuxtLink to="/registro" class="link link-primary">Regístrate</NuxtLink>
         </p>
       </div>
+      <!-- Invitados (feature 003, FR-001): piden acceso en /upload sin cuenta. -->
+      <div class="divider my-1" />
+      <div class="flex flex-col items-center gap-2 text-center">
+        <p>¿Eres invitado?</p>
+        <NuxtLink to="/upload" class="btn btn-outline btn-block">
+          <Icon name="lucide:cloud-upload" class="size-4" aria-hidden="true" />
+          Enviar archivos
+        </NuxtLink>
+      </div>
     </template>
   </AuthForm>
 </template>

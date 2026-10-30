@@ -1,4 +1,5 @@
 // Envío de un invitado (FR-016): validar en local → presignar el lote → PUT de 3 en 3 → un solo `complete`.
+import { FetchError } from 'ofetch'
 import { getExtension, MAX_GUEST_FILES } from '#shared/constants/files'
 import { isImageTextEligible } from '#shared/constants/image-text'
 import type { GuestUploadTicket } from '#shared/types/api'
@@ -18,12 +19,22 @@ const CONCURRENCY = 3
 const wantsTextSource = (file: File | undefined) =>
   !!file && getExtension(file.name) === 'heic' && isImageTextEligible({ extension: 'heic', size: file.size })
 
-export function useGuestSubmission() {
+export const OPEN_SUBMISSIONS_URL = '/api/public/submissions'
+
+export interface GuestSubmissionOptions {
+  /** Creación del envío: el abierto (`/enviar`) o el de permiso (`/api/public/access/submissions`, feature 003). */
+  createUrl?: string
+}
+
+export function useGuestSubmission({ createUrl = OPEN_SUBMISSIONS_URL }: GuestSubmissionOptions = {}) {
   const items = ref<UploadItem[]>([])
   const sources = new Map<string, File>()
   const status = ref<SubmissionStatus>('idle')
   const error = ref('')
+  /** Código HTTP del último fallo (p. ej. 403/409 del envío con permiso), o `null`. */
+  const errorStatus = ref<number | null>(null)
   const result = ref<SubmissionResult | null>(null)
+  const open = createUrl === OPEN_SUBMISSIONS_URL
 
   const validCount = computed(() => items.value.filter(i => i.status === 'queued').length)
 
@@ -50,7 +61,8 @@ export function useGuestSubmission() {
     items.value = items.value.filter(i => i.id !== id)
   }
 
-  async function submit(form: { senderName: string, note: string }): Promise<SubmissionResult | null> {
+  /** `senderName` solo en el envío abierto: con permiso el nombre sale de la solicitud y no viaja en el cuerpo. */
+  async function submit(form: { senderName?: string, note: string }): Promise<SubmissionResult | null> {
     const queued = items.value.filter(i => i.status === 'queued')
     if (queued.length === 0) {
       error.value = 'Agrega al menos un archivo válido'
@@ -58,11 +70,12 @@ export function useGuestSubmission() {
     }
     status.value = 'submitting'
     error.value = ''
+    errorStatus.value = null
     try {
-      const ticket = await $fetch<{ submissionId: string, uploads: GuestUploadTicket[] }>('/api/public/submissions', {
+      const ticket = await $fetch<{ submissionId: string, uploads: GuestUploadTicket[] }>(createUrl, {
         method: 'POST',
         body: {
-          senderName: form.senderName,
+          ...(open ? { senderName: form.senderName } : {}),
           note: form.note || undefined,
           files: queued.map(item => ({
             name: item.name,
@@ -106,8 +119,11 @@ export function useGuestSubmission() {
     }
     catch (err) {
       for (const item of queued) patch(item.id, { status: 'queued', progress: 0 })
-      // El límite por hora de invitados tiene su propio texto; el resto sigue la regla general.
-      error.value = serverMessage(err, messages.guest.sendFailed, { 429: messages.guest.tooMany })
+      errorStatus.value = err instanceof FetchError ? err.response?.status ?? null : null
+      // El límite por hora del envío abierto tiene su propio texto; con permiso, los 403/409 los explica el servidor.
+      error.value = open
+        ? serverMessage(err, messages.guest.sendFailed, { 429: messages.guest.tooMany })
+        : serverMessage(err, messages.access.submitFailed)
       status.value = 'error'
       return null
     }
@@ -118,8 +134,9 @@ export function useGuestSubmission() {
     sources.clear()
     status.value = 'idle'
     error.value = ''
+    errorStatus.value = null
     result.value = null
   }
 
-  return { items, status, error, result, validCount, add, remove, submit, reset }
+  return { items, status, error, errorStatus, result, validCount, add, remove, submit, reset }
 }

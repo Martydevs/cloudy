@@ -14,7 +14,7 @@ const TEAM: Role[] = ['editor', 'admin']
 export const navItems: NavItem[] = [
   { to: '/', label: 'Inicio', icon: 'lucide:house', roles: TEAM },
   { to: '/archivos', label: 'Archivos', icon: 'lucide:folder', roles: TEAM },
-  { to: '/pendientes', label: 'Pendientes', icon: 'lucide:inbox', roles: TEAM },
+  { to: '/solicitudes', label: 'Solicitudes', icon: 'lucide:inbox', roles: TEAM },
   { to: '/papelera', label: 'Papelera', icon: 'lucide:trash-2', roles: TEAM },
   { to: '/usuarios', label: 'Usuarios', icon: 'lucide:users', roles: ['admin'] },
   { to: '/actividad', label: 'Actividad', icon: 'lucide:activity', roles: ['admin'] },

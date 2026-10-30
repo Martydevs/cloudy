@@ -80,6 +80,10 @@ fetching uses Nuxt `useFetch`, not VueUse.
 gzip per route. Index every filtered/sorted column; no N+1 queries; cursor pagination. **Never stream
 file binaries through server functions** (Vercel body limit ~4.5 MB): browsers upload/download
 directly with presigned URLs. Lazy-load thumbnails and non-critical components (`Lazy*`).
+Guest access (feature 003): the guest's browser holds two `httpOnly` cookies, `cloudy-guest-access` (random token;
+only its SHA-256 is stored) and `cloudy-guest-device` (per-browser rate-limit key). Limits: 3 new requests per
+30 min per browser, 30 per network (`hashSender(ip)`), and `ACCESS_SUBMIT_LIMIT` creations per approved request
+(`shared/constants/access.ts`). `/upload` polls `GET /api/public/access/current` every 5 s like the team pulse.
 
 **II. Functional & effective** — Deliver user stories as independent, shippable slices. YAGNI. Failed
 flows must leave no orphans or half-written rows and must tell the user what to do next.
@@ -175,6 +179,14 @@ Never print or commit their values.
   `server/utils/image-text.ts`; `test/unit/architecture.spec.ts` enforces it.
 - `scripts/storage-setup*` accepts an optional `CORS_EXTRA_ORIGINS` (comma-separated `https://` origins, or
   `http://localhost:*`) to add a preview alias without dropping the site domain.
+- Routes (feature 003): guests ask for access at `/upload` (public); the team's queue is `/solicitudes` (the old
+  `/pendientes` 301-redirects there via `routeRules`). `/enviar` (open link) still works.
+- `Permissions-Policy` opens only `camera=(self)` (guest camera, feature 003); everything else stays `()`.
+  `getUserMedia` needs a secure context: from a phone in dev use an HTTPS tunnel. `test/e2e/camera.spec.ts` uses
+  Chromium's `--use-fake-ui-for-media-stream` / `--use-fake-device-for-media-stream` and forces `(pointer: coarse)`.
+- `guest_access_requests.submission_id` is written **after** the submission row is inserted, in the same
+  `db.batch` (the FK is not deferrable). Access-request expiry uses Postgres `now()`, but `created_at` is stamped
+  with the server clock, like the pulse cursor: with Postgres' clock a skew of seconds would drop the live toast.
 
 ## Workflow
 

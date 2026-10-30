@@ -223,7 +223,7 @@ const GUEST_TEXT_LIMIT = { limit: 20, windowSec: 3600 }
  * Lee en segundo plano las imágenes aptas de un envío de invitado (research A6): hasta `concurrency` a la
  * vez, con un presupuesto compartido de `min(240 s, plazo real - 15 s)` y un cortacircuito propio de esta
  * ejecución. Cada trabajador reclama su imagen justo antes de leerla; lo que no se inicia queda pendiente
- * (`NULL`) y se lee al abrir Pendientes. Al modelo solo van los bytes (FR-019). Nunca lanza.
+ * (`NULL`) y se lee al abrir Solicitudes. Al modelo solo van los bytes (FR-019). Nunca lanza.
  */
 export async function readSubmissionImages(submissionId: string, { concurrency = 4, budgetMs }: { concurrency?: number, budgetMs?: number } = {}): Promise<void> {
   try {

@@ -7,9 +7,10 @@ const mobileOpen = ref(false)
 const collapsed = useLocalStorage('cloudy-sidebar-collapsed', false, { initOnMounted: true })
 const isDesktop = useBreakpoints(breakpointsTailwind).greaterOrEqual('lg')
 
-const { pendingCount, pendingUsers } = usePulse()
+const { pendingCount, pendingUsers, openAccessRequests } = usePulse()
 usePulsePolling()
-const badges = computed(() => ({ '/pendientes': pendingCount.value, '/usuarios': pendingUsers.value }))
+// Solicitudes suma envíos por revisar y solicitudes de acceso abiertas (feature 003).
+const badges = computed(() => ({ '/solicitudes': pendingCount.value + openAccessRequests.value, '/usuarios': pendingUsers.value }))
 
 const upload = useUploadDialog()
 

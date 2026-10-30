@@ -12,6 +12,7 @@ import {
   smallint,
   text,
   timestamp,
+  uniqueIndex,
   uuid,
 } from 'drizzle-orm/pg-core'
 
@@ -52,7 +53,12 @@ export const activityAction = pgEnum('activity_action', [
   'user.role_change',
   'user.remove',
   'file.text_edit',
+  'access.approve',
+  'access.reject',
 ])
+/** Solicitud de acceso de un invitado (feature 003). "Caducada" no es un valor: se deriva (research B3). */
+export const accessRequestStatus = pgEnum('access_request_status', ['open', 'approved', 'rejected', 'used'])
+export const submissionOrigin = pgEnum('submission_origin', ['link', 'permission'])
 
 // ---------------------------------------------------------------- profiles
 
@@ -124,8 +130,38 @@ export const guestSubmissions = pgTable('guest_submissions', {
   targetFolderId: uuid('target_folder_id').references(() => folders.id, { onDelete: 'set null' }),
   /** ≤ 300 car. */
   rejectionReason: text('rejection_reason'),
+  /** `link` = página abierta `/enviar`; `permission` = `/upload` con acceso aprobado (feature 003). */
+  origin: submissionOrigin('origin').notNull().default('link'),
+  /** Copiado de `guest_access_requests.decided_by` al crear un envío `permission`. */
+  accessGrantedBy: text('access_granted_by').references(() => profiles.userId, { onDelete: 'set null' }),
 }, t => [
   index('guest_submissions_status_created_idx').on(t.status, t.createdAt),
+])
+
+// ---------------------------------------------------------------- guest access requests (feature 003)
+
+export const guestAccessRequests = pgTable('guest_access_requests', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  /** 1–80 car. */
+  senderName: text('sender_name').notNull(),
+  /** hashSender(ip): SHA-256 de IP + sal; nunca la IP. */
+  senderKey: text('sender_key').notNull(),
+  /** SHA-256 del token de la cookie `cloudy-guest-access` (research B1). */
+  tokenHash: text('token_hash').notNull(),
+  status: accessRequestStatus('status').notNull().default('open'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  /** `created_at + 8 min` */
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  decidedBy: text('decided_by').references(() => profiles.userId, { onDelete: 'set null' }),
+  decidedAt: timestamp('decided_at', { withTimezone: true }),
+  /** Solo si `approved`: `decided_at + 30 min`. */
+  accessExpiresAt: timestamp('access_expires_at', { withTimezone: true }),
+  /** Se escribe solo después de insertar ese envío, en el mismo lote (research B4). */
+  submissionId: uuid('submission_id').references(() => guestSubmissions.id, { onDelete: 'set null' }),
+  usedAt: timestamp('used_at', { withTimezone: true }),
+}, t => [
+  uniqueIndex('guest_access_requests_token_idx').on(t.tokenHash),
+  index('guest_access_requests_status_created_idx').on(t.status, t.createdAt),
 ])
 
 export const guestSubmissionFiles = pgTable('guest_submission_files', {
@@ -242,9 +278,15 @@ export const filesRelations = relations(files, ({ one, many }) => ({
   comments: many(comments),
 }))
 
-export const guestSubmissionsRelations = relations(guestSubmissions, ({ many }) => ({
+export const guestSubmissionsRelations = relations(guestSubmissions, ({ one, many }) => ({
   files: many(guestSubmissionFiles),
   approvedFiles: many(files),
+  accessGranter: one(profiles, { fields: [guestSubmissions.accessGrantedBy], references: [profiles.userId] }),
+}))
+
+export const guestAccessRequestsRelations = relations(guestAccessRequests, ({ one }) => ({
+  decider: one(profiles, { fields: [guestAccessRequests.decidedBy], references: [profiles.userId] }),
+  submission: one(guestSubmissions, { fields: [guestAccessRequests.submissionId], references: [guestSubmissions.id] }),
 }))
 
 export const guestSubmissionFilesRelations = relations(guestSubmissionFiles, ({ one }) => ({

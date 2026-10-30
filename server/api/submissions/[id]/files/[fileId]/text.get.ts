@@ -1,4 +1,4 @@
-// Estado del texto de una imagen de un envío (feature 002, contracts/api): la tarjeta de Pendientes lo
+// Estado del texto de una imagen de un envío (feature 002, contracts/api): la tarjeta de Solicitudes lo
 // consulta mientras dura `reading`. No exige que el envío siga pendiente.
 import type { ImageText } from '#shared/types/api'
 

@@ -12,7 +12,7 @@ import { startOpenAIStub } from './openai-stub'
 
 const TABLES = [
   'profiles', 'folders', 'files', 'guest_submissions', 'guest_submission_files',
-  'comments', 'activity_log', 'rate_limits',
+  'comments', 'activity_log', 'rate_limits', 'guest_access_requests',
 ]
 
 declare module 'vitest' {

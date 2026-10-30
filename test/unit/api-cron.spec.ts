@@ -39,9 +39,14 @@ describe('GET /api/cron/cleanup', () => {
       [],
       // Ventanas de rate limit.
       [{ key: 'a' }, { key: 'b' }],
+      // Solicitudes de acceso terminadas o vencidas hace más de 24 h (feature 003).
+      [{ id: 'r1' }, { id: 'r2' }, { id: 'r3' }],
     ])
     const handler = await loadHandler('api/cron/cleanup.get.ts')
-    expect(await handler(authorized())).toEqual({ purgedTrash: 0, expiredSubmissions: 1, orphanUploads: 2, rateLimitRows: 2 })
+    expect(await handler(authorized())).toEqual({ purgedTrash: 0, expiredSubmissions: 1, orphanUploads: 2, rateLimitRows: 2, accessRequests: 3 })
+    const purge = sqlText(fake.calls.filter(c => c.method === 'where').at(-1)?.args[0])
+    expect(purge).toContain(`now() - interval '24 hours'`)
+    expect(purge).toContain('"guest_access_requests"."used_at"')
     expect(fake.calls.find(c => c.method === 'set')?.args[0]).toEqual({ status: 'expired' })
     expect(s3.deleteMany.mock.calls.map(c => c[0])).toEqual([
       // La copia JPEG de una HEIC (feature 002): la columna y la clave derivada del id, aunque esté vacía.
@@ -49,13 +54,13 @@ describe('GET /api/cron/cleanup', () => {
       [`pre/files/${UUID}`, `pre/thumbs/${UUID}.webp`, `pre/textsrc/${UUID}.jpg`],
       ['pre/guest/s2/b', 'pre/textsrc/g1.jpg'],
     ])
-    expect(fake.calls.filter(c => c.method === 'delete')).toHaveLength(5)
+    expect(fake.calls.filter(c => c.method === 'delete')).toHaveLength(6)
   })
 
   it('sin nada que limpiar devuelve ceros', async () => {
-    installNitro([{ rows: [] }, [], [], [], [], []])
+    installNitro([{ rows: [] }, [], [], [], [], [], []])
     const handler = await loadHandler('api/cron/cleanup.get.ts')
-    expect(await handler(authorized())).toEqual({ purgedTrash: 0, expiredSubmissions: 0, orphanUploads: 0, rateLimitRows: 0 })
+    expect(await handler(authorized())).toEqual({ purgedTrash: 0, expiredSubmissions: 0, orphanUploads: 0, rateLimitRows: 0, accessRequests: 0 })
     expect(s3.deleteMany).not.toHaveBeenCalled()
   })
 

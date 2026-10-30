@@ -1,5 +1,6 @@
 // Fase 2 del envío de un invitado: verifica cada archivo (tamaño real y firma), descarta los
-// inválidos y cierra el envío con `completed_at`, que dispara el aviso en vivo (T120a).
+// inválidos, consume el acceso si llegó por permiso (feature 003) y cierra el envío con `completed_at`,
+// que dispara el aviso en vivo (T120a).
 import { and, eq, inArray, isNull } from 'drizzle-orm'
 import { createError, getRequestIP } from 'h3'
 import { isImageTextEligible } from '#shared/constants/image-text'
@@ -50,6 +51,16 @@ export default defineEventHandler(async (event): Promise<{ status: 'pending', ac
       statusMessage: 'Unprocessable Entity',
       message: 'Ningún archivo llegó completo o con un formato válido. Vuelve a intentarlo.',
     })
+  }
+
+  // Envío con permiso (feature 003, research B4): se consume el acceso del mismo navegador antes de cerrar. Si ya
+  // se usó (o la reserva pasó a otro envío), este envío se descarta entero. Va después de verificar los archivos
+  // para que una subida fallida no gaste el acceso.
+  if (submission.origin === 'permission' && !await consumeForSubmission(id, readAccessTokenHash(event))) {
+    await deleteMany(files.filter(f => accepted.includes(f.id)).flatMap(f => [f.storageKey, textSourceKeyFor(f.id)]))
+    await db.delete(guestSubmissionFiles).where(eq(guestSubmissionFiles.submissionId, id))
+    await db.delete(guestSubmissions).where(eq(guestSubmissions.id, id))
+    throw createError({ statusCode: 409, statusMessage: 'Conflict', message: ACCESS_MESSAGES.used })
   }
 
   await db.batch([

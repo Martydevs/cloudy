@@ -32,7 +32,8 @@ describe('AppSidebar', () => {
     setRole('editor')
     const wrapper = await mountSuspended(AppSidebar, { props: { collapsed: false } })
     const items = labels(wrapper)
-    expect(items).toEqual(expect.arrayContaining(['Inicio', 'Archivos', 'Pendientes', 'Papelera']))
+    expect(items).toEqual(expect.arrayContaining(['Inicio', 'Archivos', 'Solicitudes', 'Papelera']))
+    expect(items).not.toContain('Pendientes')
     expect(items.join(' ')).not.toMatch(/Usuarios|Actividad|Mi perfil/)
   })
 
@@ -52,13 +53,13 @@ describe('AppSidebar', () => {
 
   it('contraída oculta los textos y muestra avisos teletransportados', async () => {
     setRole('editor')
-    const wrapper = await mountSuspended(AppSidebar, { props: { collapsed: true, badges: { '/pendientes': 2 } } })
+    const wrapper = await mountSuspended(AppSidebar, { props: { collapsed: true, badges: { '/solicitudes': 2 } } })
     const archivos = wrapper.findAll('nav li').find(li => li.find('a').attributes('aria-label') === 'Archivos')
     expect(archivos).toBeDefined()
     expect(archivos!.attributes('data-tip')).toBeUndefined()
     expect(archivos!.find('a span.nav-label').exists()).toBe(false)
     // Contraída, el contador se superpone al ícono.
-    expect(wrapper.find('a[href="/pendientes"] .badge').text()).toBe('2')
+    expect(wrapper.find('a[href="/solicitudes"] .badge').text()).toBe('2')
     // El nav no abre un scroll horizontal: el globo ya no ensancha la lista.
     expect(wrapper.get('nav').classes()).toContain('overflow-x-clip')
 
@@ -74,10 +75,10 @@ describe('AppSidebar', () => {
 
   it('muestra los contadores por sección y los oculta en 0 (T134a)', async () => {
     setRole('admin')
-    const withCount = await mountSuspended(AppSidebar, { props: { collapsed: false, badges: { '/pendientes': 3, '/usuarios': 1 } } })
-    expect(withCount.find('a[href="/pendientes"] .badge').text()).toBe('3')
+    const withCount = await mountSuspended(AppSidebar, { props: { collapsed: false, badges: { '/solicitudes': 3, '/usuarios': 1 } } })
+    expect(withCount.find('a[href="/solicitudes"] .badge').text()).toBe('3')
     expect(withCount.find('a[href="/usuarios"] .badge').text()).toBe('1')
-    const empty = await mountSuspended(AppSidebar, { props: { collapsed: false, badges: { '/pendientes': 0 } } })
+    const empty = await mountSuspended(AppSidebar, { props: { collapsed: false, badges: { '/solicitudes': 0 } } })
     expect(empty.find('.badge').exists()).toBe(false)
     const none = await mountSuspended(AppSidebar, { props: { collapsed: false } })
     expect(none.find('.badge').exists()).toBe(false)
@@ -152,15 +153,15 @@ describe('AppSidebar', () => {
     setRole('editor')
     const tip = () => document.body.querySelector('[aria-hidden="true"].fixed')
     const wrapper = await mountSuspended(AppSidebar, { attachTo: document.body, props: { collapsed: true } })
-    const item = wrapper.findAll('nav li').find(li => li.find('a').attributes('aria-label') === 'Pendientes')!
+    const item = wrapper.findAll('nav li').find(li => li.find('a').attributes('aria-label') === 'Solicitudes')!
 
     // Tabular hasta el enlace lo muestra; mover el foco dentro del mismo ítem no lo quita.
     await item.trigger('focusin')
     await nextTick()
-    expect(tip()?.textContent).toBe('Pendientes')
+    expect(tip()?.textContent).toBe('Solicitudes')
     item.element.dispatchEvent(new FocusEvent('focusout', { relatedTarget: item.find('a').element, bubbles: true }))
     await nextTick()
-    expect(tip()?.textContent).toBe('Pendientes')
+    expect(tip()?.textContent).toBe('Solicitudes')
     // Salir del ítem sí lo quita.
     item.element.dispatchEvent(new FocusEvent('focusout', { relatedTarget: document.body, bubbles: true }))
     await nextTick()
