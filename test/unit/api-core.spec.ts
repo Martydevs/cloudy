@@ -90,19 +90,26 @@ describe('GET /api/dashboard', () => {
 describe('GET /api/realtime/pulse', () => {
   const fresh = [{ id: 's2', sender_name: 'Luis', created_at: '2026-10-14T10:05:00.000Z', completed_at: '2026-10-14T10:06:00.000Z', file_count: 2 }]
   // Cola por pulso: conteo de pendientes, nuevos desde el cursor, usuarios pendientes, solicitudes de acceso
-  // abiertas y nuevas desde el cursor (feature 003).
-  const pulse = (count: number, rows: unknown[], users: number, access = 0, accessRows: unknown[] = []) =>
-    [{ rows: [{ count }] }, { rows }, { rows: [{ count: users }] }, { rows: [{ count: access }] }, { rows: accessRows }]
+  // abiertas y nuevas desde el cursor (feature 003) y, al final, el perfil de quien sondea: va en el mismo
+  // batch y el doble resuelve los `execute` al construirlos y el `select` al esperarlo.
+  const pulse = (count: number, rows: unknown[], users: number, access = 0, accessRows: unknown[] = [], profile: unknown[] = [profileRow()]) =>
+    [{ rows: [{ count }] }, { rows }, { rows: [{ count: users }] }, { rows: [{ count: access }] }, { rows: accessRows }, profile]
+  // El middleware deja solo la sesión en el pulso (perfil diferido): `auth` sin resolver.
+  const pulseEvent = (url = '/api/realtime/pulse', user: { id: string, email: string, name: string } | null = authAs().user) => {
+    const event = makeEvent({ auth: undefined, url })
+    event.context.sessionUser = user
+    return event
+  }
 
   it('cuenta los pendientes y lista los nuevos desde el cursor por completed_at (T120a)', async () => {
     const fake = installNitro([...pulse(2, [], 0), ...pulse(2, fresh, 0)])
     const handler = await loadHandler('api/realtime/pulse.get.ts')
-    const first = await handler(makeEvent())
+    const first = await handler(pulseEvent())
     expect(first).toMatchObject({ pendingCount: 2, newSubmissions: [], pendingUsers: 0 })
     expect(typeof (first as { cursor: string }).cursor).toBe('string')
     expect(sqlText(fake.db.execute.mock.calls[0]![0])).toContain('completed_at IS NOT NULL')
 
-    const next = await handler(makeEvent({ url: '/api/realtime/pulse?since=2026-10-14T10:00:00.000Z' }))
+    const next = await handler(pulseEvent('/api/realtime/pulse?since=2026-10-14T10:00:00.000Z'))
     expect(next).toMatchObject({
       pendingCount: 2,
       newSubmissions: [{ id: 's2', senderName: 'Luis', fileCount: 2, createdAt: '2026-10-14T10:05:00.000Z' }],
@@ -116,13 +123,13 @@ describe('GET /api/realtime/pulse', () => {
     const access = [{ id: 'r1', sender_name: 'Eva', created_at: '2026-10-14T10:03:00.000Z' }]
     const fake = installNitro([...pulse(0, [], 0, 2, []), ...pulse(0, [], 0, 2, access)])
     const handler = await loadHandler('api/realtime/pulse.get.ts')
-    expect(await handler(makeEvent())).toMatchObject({ openAccessRequests: 2, newAccessRequests: [] })
+    expect(await handler(pulseEvent())).toMatchObject({ openAccessRequests: 2, newAccessRequests: [] })
     const countSql = sqlText(fake.db.execute.mock.calls[3]![0])
     expect(countSql).toContain(`status = 'open' AND expires_at > now()`)
     // Sin cursor la quinta consulta no devuelve filas.
     expect(sqlText(fake.db.execute.mock.calls[4]![0])).toContain('WHERE false')
 
-    expect(await handler(makeEvent({ url: '/api/realtime/pulse?since=2026-10-14T10:00:00.000Z' }))).toMatchObject({
+    expect(await handler(pulseEvent('/api/realtime/pulse?since=2026-10-14T10:00:00.000Z'))).toMatchObject({
       openAccessRequests: 2,
       newAccessRequests: [{ id: 'r1', senderName: 'Eva', createdAt: '2026-10-14T10:03:00.000Z' }],
     })
@@ -132,20 +139,41 @@ describe('GET /api/realtime/pulse', () => {
   })
 
   it('solo el admin recibe el conteo de usuarios pendientes (T134a)', async () => {
-    const fake = installNitro([...pulse(0, [], 3), ...pulse(0, [], 3)])
+    const fake = installNitro([...pulse(0, [], 3, 0, [], [profileRow({ role: 'admin' })]), ...pulse(0, [], 3)])
     const handler = await loadHandler('api/realtime/pulse.get.ts')
-    expect(await handler(makeEvent({ auth: authAs({ role: 'admin' }) }))).toMatchObject({ pendingUsers: 3 })
-    expect(sqlText(fake.db.execute.mock.calls[2]![0])).toContain('profiles')
-    // Un editor no consulta profiles: la tercera consulta es la constante 0.
-    expect(await handler(makeEvent())).toMatchObject({ pendingUsers: 3 })
-    expect(sqlText(fake.db.execute.mock.calls[7]![0])).not.toContain('profiles')
+    expect(await handler(pulseEvent())).toMatchObject({ pendingUsers: 3 })
+    expect(sqlText(fake.db.execute.mock.calls[2]![0])).toContain(`FROM profiles WHERE status = 'pending'`)
+    // El rol se conoce después del batch: a un editor no se le expone el conteo.
+    expect(await handler(pulseEvent())).toMatchObject({ pendingUsers: 0 })
   })
 
-  it('rechaza un cursor mal formado y exige rol', async () => {
-    installNitro()
+  it('un solo viaje a Neon: el perfil va en el batch de los conteos', async () => {
+    const fake = installNitro(pulse(0, [], 0))
     const handler = await loadHandler('api/realtime/pulse.get.ts')
-    await expectStatus(Promise.resolve().then(() => handler(makeEvent({ url: '/api/realtime/pulse?since=ayer' }))), 422)
-    await expectGuarded(handler)
+    const event = pulseEvent()
+    await handler(event)
+    expect(fake.db.batch).toHaveBeenCalledTimes(1)
+    expect(fake.db.batch.mock.calls[0]![0]).toHaveLength(6)
+    expect(fake.calls.filter(c => c.method === 'select')).toHaveLength(1)
+    expect(event.context.auth?.profile.userId).toBe('u1')
+  })
+
+  it('rechaza un cursor mal formado y exige sesión activa con rol', async () => {
+    const fake = installNitro([
+      ...pulse(0, [], 0, 0, [], [profileRow({ status: 'pending', role: null })]),
+      ...pulse(0, [], 0, 0, [], [profileRow({ status: 'disabled' })]),
+      // Sin perfil aún: se crea como el middleware (pendiente) y tampoco pasa el guard.
+      ...pulse(0, [], 0, 0, [], []), [], { rows: [{ user_id: 'u1' }] }, [profileRow({ status: 'pending', role: null })],
+    ])
+    const handler = await loadHandler('api/realtime/pulse.get.ts')
+    await expectStatus(Promise.resolve().then(() => handler(pulseEvent('/api/realtime/pulse?since=ayer'))), 422)
+    // Sin sesión, 401 antes de consultar.
+    await expectStatus(Promise.resolve().then(() => handler(pulseEvent('/api/realtime/pulse', null))), 401)
+    expect(fake.db.batch).not.toHaveBeenCalled()
+    await expectStatus(Promise.resolve().then(() => handler(pulseEvent())), 403)
+    await expectStatus(Promise.resolve().then(() => handler(pulseEvent())), 403)
+    await expectStatus(Promise.resolve().then(() => handler(pulseEvent())), 403)
+    expect(sqlText(fake.db.execute.mock.calls.at(-1)![0])).toContain('INSERT INTO profiles')
   })
 })
 
@@ -170,6 +198,25 @@ describe('middleware de sesión', () => {
       expect(skipped.context.auth).toBeUndefined()
     }
     expect(getAuthUser).toHaveBeenCalledTimes(2)
+    expect(ensureProfile).toHaveBeenCalledTimes(1)
+  })
+
+  it('en el pulso deja solo la sesión: el perfil va en el batch del endpoint', async () => {
+    const user = { id: 'u1', email: 'a@x.org', name: 'A' }
+    const getAuthUser = vi.fn().mockResolvedValueOnce(user).mockResolvedValueOnce(null)
+    const ensureProfile = vi.fn()
+    installNitro([], { getAuthUser, ensureProfile })
+    const middleware = await loadHandler('middleware/session.ts')
+
+    const signedIn = makeEvent({ auth: undefined, url: '/api/realtime/pulse?since=2026-10-14T10:00:00.000Z' })
+    await middleware(signedIn)
+    expect(signedIn.context.sessionUser).toEqual(user)
+    expect(signedIn.context.auth).toBeUndefined()
+
+    const anonymous = makeEvent({ auth: undefined, url: '/api/realtime/pulse' })
+    await middleware(anonymous)
+    expect(anonymous.context.sessionUser).toBeNull()
+    expect(ensureProfile).not.toHaveBeenCalled()
   })
 })
 

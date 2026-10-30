@@ -16,6 +16,8 @@ export interface AuthContext {
 declare module 'h3' {
   interface H3EventContext {
     auth?: AuthContext | null
+    /** Solo en rutas con el perfil diferido (`server/middleware/session.ts`): la sesión sin perfil todavía. */
+    sessionUser?: AuthUser | null
   }
 }
 
@@ -61,12 +63,31 @@ export async function ensureProfile(user: AuthUser): Promise<ProfileRow> {
   return created
 }
 
+const unauthorized = () => createError({ statusCode: 401, statusMessage: 'Unauthorized', message: 'Inicia sesión para continuar' })
+
 export function requireSession(event: H3Event): AuthContext {
   const auth = event.context.auth
-  if (!auth) {
-    throw createError({ statusCode: 401, statusMessage: 'Unauthorized', message: 'Inicia sesión para continuar' })
-  }
+  if (!auth) throw unauthorized()
   return auth
+}
+
+/**
+ * Perfil diferido (el pulso, sondeado cada 5 s): el middleware solo resolvió la sesión y el endpoint lee el
+ * perfil con `profileQuery` dentro de su propio `db.batch`, un viaje a Neon menos. Sin sesión, 401 antes de consultar.
+ */
+export function requireSessionUser(event: H3Event): AuthUser {
+  const user = event.context.sessionUser
+  if (!user) throw unauthorized()
+  return user
+}
+
+export function profileQuery(userId: string) {
+  return useDb().select().from(profiles).where(eq(profiles.userId, userId)).limit(1)
+}
+
+/** Completa `event.context.auth` con el perfil leído en el batch (o lo crea, como el middleware); después va el guard. */
+export async function attachProfile(event: H3Event, user: AuthUser, row: ProfileRow | undefined): Promise<void> {
+  event.context.auth = { user, profile: row ?? await ensureProfile(user) }
 }
 
 export function requireActive(event: H3Event): AuthContext & { profile: ProfileRow & { role: Role } } {
