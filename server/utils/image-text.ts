@@ -122,12 +122,15 @@ export async function readImageText(target: ImageTextTarget, row: ClaimedImageTe
 
 /**
  * Lectura de una imagen del equipo (en segundo plano al completar la subida y como respaldo al abrirla):
- * reclama desde `NULL` o una lectura vencida; con una lectura vigente o un estado terminal no hace nada.
+ * reclama desde `NULL` o una lectura vencida; con una lectura vigente, un estado terminal o sin clave no hace nada.
  * Nunca lanza.
  */
 export async function readFileImage(fileId: string): Promise<void> {
   const target: ImageTextTarget = { table: 'files', id: fileId }
   try {
+    // Sin clave de OpenRouter no se reclama ni se descarga nada: la imagen queda pendiente (`NULL`), como en el pool
+    // de invitados, y se lee sola al configurar la clave en lugar de quedar como `failed`.
+    if (!resolveImageTextModel(useRuntimeConfig())) return
     const claimed = await claimImageText(target)
     if (claimed) await readImageText(target, claimed)
   }

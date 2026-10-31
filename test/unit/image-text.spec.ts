@@ -12,7 +12,7 @@ const s3 = vi.hoisted(() => ({
 }))
 vi.mock('../../server/utils/storage', () => ({ key: (path: string) => `pre/${path}`, ...s3 }))
 
-const ai = vi.hoisted(() => ({ extractImageText: vi.fn() }))
+const ai = vi.hoisted(() => ({ extractImageText: vi.fn(), resolveImageTextModel: vi.fn() }))
 vi.mock('#server/ai', async () => {
   const schemas = await import('../../server/ai/image-text/schemas')
   const breaker = await import('../../server/ai/breaker')
@@ -20,7 +20,7 @@ vi.mock('#server/ai', async () => {
     extractImageText: ai.extractImageText,
     imageSourceSchema: schemas.imageSourceSchema,
     createProviderBreaker: breaker.createProviderBreaker,
-    resolveImageTextModel: () => null,
+    resolveImageTextModel: ai.resolveImageTextModel,
   }
 })
 
@@ -63,6 +63,8 @@ beforeEach(() => {
   s3.readRange.mockReset()
   s3.deleteMany.mockClear()
   ai.extractImageText.mockReset()
+  ai.resolveImageTextModel.mockReset()
+  ai.resolveImageTextModel.mockReturnValue({ modelId: 'modelo' })
   ai.extractImageText.mockResolvedValue({ status: 'ready', text: 'Oremos por Ana' })
   vi.spyOn(console, 'warn').mockImplementation(() => {})
   vi.spyOn(console, 'error').mockImplementation(() => {})
@@ -200,6 +202,15 @@ describe('readFileImage', () => {
     expect(queries(fake)[0]).toContain('UPDATE "files" t')
     expect(queries(fake)[0]).not.toContain(`IN ('failed'`)
     expect(ai.extractImageText).toHaveBeenCalledTimes(1)
+  })
+
+  it('sin clave de OpenRouter no reclama, no descarga y no marca la imagen como failed', async () => {
+    ai.resolveImageTextModel.mockReturnValue(null)
+    const fake = installNitro([{ rows: [claimedRaw()] }])
+    await readFileImage(UUID)
+    expect(fake.calls).toHaveLength(0)
+    expect(s3.readRange).not.toHaveBeenCalled()
+    expect(ai.extractImageText).not.toHaveBeenCalled()
   })
 
   it('con una lectura vigente o un estado terminal no hace nada', async () => {
