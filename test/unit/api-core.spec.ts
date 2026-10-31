@@ -119,6 +119,18 @@ describe('GET /api/realtime/pulse', () => {
     expect(sinceSql).toContain('2026-10-14T10:00:00.000Z')
   })
 
+  it('el cursor solapa 10 s hacia atrás solo cuando ya había uno, para no perder filas que se confirman tarde', async () => {
+    installNitro([...pulse(0, [], 0), ...pulse(0, [], 0)])
+    const handler = await loadHandler('api/realtime/pulse.get.ts')
+    const before = Date.now()
+    const first = await handler(pulseEvent()) as { cursor: string }
+    expect(Date.parse(first.cursor)).toBeGreaterThanOrEqual(before)
+    const next = await handler(pulseEvent('/api/realtime/pulse?since=2026-10-14T10:00:00.000Z')) as { cursor: string }
+    const lag = Date.now() - Date.parse(next.cursor)
+    expect(lag).toBeGreaterThanOrEqual(10_000)
+    expect(lag).toBeLessThan(11_000)
+  })
+
   it('cuenta las solicitudes de acceso abiertas y lista las nuevas desde el cursor (feature 003)', async () => {
     const access = [{ id: 'r1', sender_name: 'Eva', created_at: '2026-10-14T10:03:00.000Z' }]
     const fake = installNitro([...pulse(0, [], 0, 2, []), ...pulse(0, [], 0, 2, access)])

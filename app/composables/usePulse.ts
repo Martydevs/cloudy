@@ -28,6 +28,16 @@ export function usePulsePolling() {
   const visibility = useDocumentVisibility()
   const online = useOnline()
   let inFlight = false
+  // El cursor se solapa (`PULSE_OVERLAP_MS`): cada envío o solicitud se anuncia una sola vez.
+  const announced = new Set<string>()
+  function unannounced<T extends { id: string }>(items: T[] = []): T[] {
+    if (announced.size > 500) announced.clear()
+    return items.filter((item) => {
+      if (announced.has(item.id)) return false
+      announced.add(item.id)
+      return true
+    })
+  }
 
   async function poll() {
     if (inFlight || visibility.value !== 'visible' || !online.value) return
@@ -35,15 +45,17 @@ export function usePulsePolling() {
     try {
       const pulse = await api<Pulse>('/api/realtime/pulse', { query: cursor.value ? { since: cursor.value } : {} })
       pendingCount.value = pulse.pendingCount
-      newSubmissions.value = pulse.newSubmissions
+      const freshSubmissions = unannounced(pulse.newSubmissions)
+      const freshRequests = unannounced(pulse.newAccessRequests)
+      newSubmissions.value = freshSubmissions
       pendingUsers.value = pulse.pendingUsers ?? 0
       openAccessRequests.value = pulse.openAccessRequests ?? 0
       cursor.value = pulse.cursor
       // Aviso en vivo de cada envío nuevo (FR-018) y de cada solicitud de acceso (feature 003, FR-007), con enlace a Solicitudes.
-      for (const submission of pulse.newSubmissions) {
+      for (const submission of freshSubmissions) {
         toast.info(messages.submissions.received(submission.senderName, submission.fileCount), { action: { label: 'Ver', to: '/solicitudes' } })
       }
-      for (const request of pulse.newAccessRequests ?? []) {
+      for (const request of freshRequests) {
         toast.info(messages.access.requested(request.senderName), { action: { label: 'Ver', to: '/solicitudes' } })
       }
     }

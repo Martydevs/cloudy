@@ -324,6 +324,31 @@ describe('usePulsePolling', () => {
     wrapper.unmount()
   })
 
+  it('con el cursor solapado, un envío o una solicitud que vuelve en el pulso siguiente se anuncia una sola vez', async () => {
+    useToast().toasts.value = []
+    const request = { id: 'r1', senderName: 'Eva', createdAt: '2026-10-14T10:00:00.000Z' }
+    const submission = { id: 's1', senderName: 'Luis', fileCount: 2, createdAt: '2026-10-14T10:00:00.000Z' }
+    mockApi('GET', '/api/realtime/pulse', () => ({
+      cursor: '2026-10-14T10:00:00.000Z', pendingCount: 1, newSubmissions: [submission], openAccessRequests: 1, newAccessRequests: [request],
+    }))
+    const Probe = defineComponent({
+      setup() {
+        const { poll } = usePulsePolling()
+        return () => h('button', { onClick: poll }, 'pulso')
+      },
+    })
+    const wrapper = await mountSuspended(Probe)
+    await flush(10)
+    await wrapper.get('button').trigger('click')
+    await flush(10)
+    const messages = useToast().toasts.value.map(t => t.message)
+    expect(messages.filter(m => m.includes('Eva'))).toHaveLength(1)
+    expect(messages.filter(m => m.includes('Luis'))).toHaveLength(1)
+    // La lista de envíos nuevos solo trae lo que aún no se anunció.
+    expect(usePulse().newSubmissions.value).toEqual([])
+    wrapper.unmount()
+  })
+
   it('no sondea con la pestaña oculta ni sin conexión, sondea al volver y, desmontado, refreshPulse no hace nada', async () => {
     mockApi('GET', '/api/realtime/pulse', { cursor: '2026-10-14T10:00:00.000Z', pendingCount: 1, newSubmissions: [] })
     const Probe = defineComponent({

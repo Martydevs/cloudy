@@ -2,6 +2,7 @@
 // pendientes y solicitudes de acceso abiertas (feature 003, research B6). Un solo viaje a Neon: el perfil de
 // quien sondea va en el mismo batch (perfil diferido, `server/middleware/session.ts`) y el guard corre después.
 import { sql } from 'drizzle-orm'
+import { PULSE_OVERLAP_MS } from '#shared/constants/files'
 import type { Pulse } from '#shared/types/api'
 import { isoSince, object } from '#shared/validation/core'
 
@@ -34,7 +35,8 @@ export default defineEventHandler(async (event): Promise<Pulse> => {
   const { profile } = requireRole(event, 'editor')
 
   return {
-    cursor: now.toISOString(),
+    // Con cursor previo el nuevo se atrasa `PULSE_OVERLAP_MS` (ver la constante); el primer pulso no mira atrás.
+    cursor: new Date(sinceDate ? now.getTime() - PULSE_OVERLAP_MS : now.getTime()).toISOString(),
     pendingCount: count.rows[0]?.count ?? 0,
     // Solo el admin gestiona usuarios (FR-021): a los demás no se les expone el conteo.
     pendingUsers: profile.role === 'admin' ? users.rows[0]?.count ?? 0 : 0,
