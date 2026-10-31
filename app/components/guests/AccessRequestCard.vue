@@ -14,7 +14,16 @@ const { timeAgo, now } = useRelativeTime()
 const busy = ref(false)
 const titleId = useId()
 
-const minutesLeft = computed(() => Math.max(1, Math.round((Date.parse(props.request.expiresAt) - now()) / 60_000)))
+// Reloj reactivo: `now()` no lo es y el computed se quedaría con el primer valor. Durante la hidratación vale la hora del
+// render del servidor (sin desajustes) y, ya montada, la real, cada medio minuto.
+const clock = ref(now())
+onMounted(() => {
+  clock.value = Date.now()
+})
+useIntervalFn(() => {
+  clock.value = Date.now()
+}, 30_000)
+const minutesLeft = computed(() => Math.max(1, Math.round((Date.parse(props.request.expiresAt) - clock.value) / 60_000)))
 
 async function decide(verb: 'approve' | 'reject') {
   const name = props.request.senderName
