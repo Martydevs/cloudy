@@ -40,7 +40,7 @@ async function onSubmit(data: LoginForm) {
   <AuthForm
     legend="Iniciar sesión"
     :fields="fields"
-    :rules="loginRules"
+    :schema="loginSchema"
     submit-label="Iniciar sesión"
     :loading="loading"
     :server-error="serverError"

@@ -13,13 +13,19 @@ export default defineNuxtConfig({
     '@nuxt/image',
     '@nuxt/test-utils/module',
     '@regle/nuxt',
-    // El plugin del setupFile de Regle solo instala sus devtools y la config para `useRegleSchema` (no se usa),
-    // pero mete Regle en el JS inicial de todas las rutas. En producción se quita: los `useRegle` auto-importados
-    // ya llevan la config, y Regle viaja solo en los chunks de las vistas con formularios (Constitución I).
+    // El plugin de @regle/nuxt solo instala los devtools, pero mete Regle en el JS inicial de todas las rutas. En
+    // producción se quita (la configuración global vive en `useFormSchema`, no en el plugin) y Regle viaja solo en los
+    // chunks de las vistas con formularios (Constitución I). Si tras el filtro sobrevive algún plugin de Regle (el
+    // módulo cambió el nombre del archivo), el build falla en lugar de volver a cargar Regle en todas las rutas.
     (_options, nuxt) => {
       if (nuxt.options.dev) return
       nuxt.hook('app:resolve', (app) => {
-        app.plugins = app.plugins.filter(plugin => !plugin.src.replaceAll('\\', '/').endsWith('/regle-plugin.ts'))
+        const isRegle = (src: string) => /(^|\/)@?regle[-./]/i.test(src.replaceAll('\\', '/'))
+        app.plugins = app.plugins.filter(plugin => !isRegle(plugin.src))
+        const left = app.plugins.filter(plugin => /regle/i.test(plugin.src))
+        if (left.length > 0) {
+          throw new Error(`[cloudy] Quedó un plugin de Regle en el arranque (${left.map(p => p.src).join(', ')}): ajusta el filtro de nuxt.config.ts`)
+        }
       })
     },
     Sonda({ enabled: analyze, server: true, gzip: true }),
@@ -89,10 +95,6 @@ export default defineNuxtConfig({
         fallbacks: ['Roboto', 'Segoe UI', 'Helvetica Neue', 'Arial', 'Noto Sans'],
       },
     ],
-  },
-  // Mensajes en español, reglas propias y `autoDirty: false` para todos los formularios.
-  regle: {
-    setupFile: '~/regle-config.ts',
   },
   nitro: {
     // Necesario para `useEvent()` en el adaptador de Neon Auth (research R1).

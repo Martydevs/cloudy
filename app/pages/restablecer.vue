@@ -47,7 +47,7 @@ async function onSubmit(data: ResetForm) {
     v-else
     legend="Restablecer contraseña"
     :fields="fields"
-    :rules="resetRules"
+    :schema="resetSchema"
     submit-label="Guardar contraseña"
     :loading="loading"
     :server-error="serverError"

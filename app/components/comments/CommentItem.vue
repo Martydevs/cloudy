@@ -13,7 +13,7 @@ const { confirm } = useConfirm()
 const editing = ref(false)
 // Un 422 del servidor se muestra en el campo y se borra en cuanto cambia el texto.
 const externalErrors = ref<RegleExternalErrorTree<CommentForm>>({})
-const { r$ } = useRegle({ body: '' }, commentRules, { externalErrors })
+const { r$ } = useFormSchema({ body: '' }, commentSchema, { externalErrors })
 const saving = ref(false)
 const textarea = useTemplateRef<HTMLTextAreaElement>('textarea')
 const editButton = useTemplateRef<HTMLButtonElement>('editButton')

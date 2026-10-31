@@ -9,7 +9,7 @@ useHead({ title: 'Subir archivos · Cloudy' })
 const access = useGuestAccess()
 const { state, senderName, minutesLeft } = access
 
-const { r$ } = useRegle({ name: senderName.value ?? '' }, () => ({ name: senderNameRules() }))
+const { r$ } = useFormSchema({ name: senderName.value ?? '' }, accessRequestSchema)
 const nameError = computed(() => r$.$errors.name[0] ?? '')
 const nameId = useId()
 // El error del nombre desaparece en cuanto la persona corrige el campo.

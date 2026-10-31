@@ -11,7 +11,7 @@ const toast = useToast()
 
 // Un 422 del servidor se muestra en el campo y se borra en cuanto cambia el texto.
 const externalErrors = ref<RegleExternalErrorTree<CommentForm>>({})
-const { r$ } = useRegle({ body: '' }, commentRules, { externalErrors })
+const { r$ } = useFormSchema({ body: '' }, commentSchema, { externalErrors })
 const sending = ref(false)
 const formError = ref('')
 const titleId = useId()

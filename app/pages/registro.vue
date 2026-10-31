@@ -35,7 +35,7 @@ async function onSubmit(data: RegisterForm) {
   <AuthForm
     legend="Crear cuenta"
     :fields="fields"
-    :rules="registerRules"
+    :schema="registerSchema"
     submit-label="Crear cuenta"
     :loading="loading"
     :server-error="serverError"

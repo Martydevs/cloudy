@@ -1,5 +1,5 @@
 <script setup lang="ts" generic="T extends Record<string, string>">
-import type { RegleComputedRules } from '@regle/core'
+import type { ZodMiniType } from 'zod/mini'
 
 export interface FormField {
   name: string
@@ -10,14 +10,14 @@ export interface FormField {
 }
 
 // Por dentro el estado es un registro de textos: Regle no puede inferir sobre el genérico `T`, que solo se usa
-// en la prop `rules` y en el evento `submit`.
+// en la prop `schema` y en el evento `submit`.
 type FormState = Record<string, string>
 
 const props = withDefaults(defineProps<{
   legend: string
   fields: FormField[]
-  /** Reglas sobre los campos (texto); `state` permite comparar campos, p. ej. confirmar la contraseña. */
-  rules: (state: T) => RegleComputedRules<FormState>
+  /** Esquema zod de los campos (texto); puede comparar campos, p. ej. confirmar la contraseña. */
+  schema: ZodMiniType<T, T>
   submitLabel: string
   loading?: boolean
   serverError?: string
@@ -30,7 +30,7 @@ const formId = useId()
 const values = reactive<FormState>(
   Object.fromEntries(props.fields.map(f => [f.name, props.initial[f.name] ?? ''])),
 )
-const { r$ } = useRegle(values, () => props.rules(values as T))
+const { r$ } = useFormSchema(values, props.schema as unknown as ZodMiniType<FormState, FormState>)
 // Antes de hidratar, un envío nativo recargaría la página; el botón espera a que Vue tome el control.
 const hydrated = ref(false)
 onMounted(() => {

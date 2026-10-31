@@ -9,7 +9,7 @@ import FolderPicker from '~/components/files/FolderPicker.vue'
 import ItemDialogs from '~/components/files/ItemDialogs.vue'
 import NameDialog from '~/components/files/NameDialog.vue'
 import UploadDialog from '~/components/upload/UploadDialog.vue'
-import { fileNameRules, folderNameRules } from '~/utils/form-rules'
+import { fileNameSchema, folderNameSchema } from '~/utils/form-schemas'
 import { failWith, flush, mockApi } from './helpers/api'
 
 const tree = [
@@ -29,7 +29,7 @@ beforeEach(() => {
 describe('NameDialog', () => {
   it('valida en línea, deshabilita el envío con errores y emite el nombre limpio', async () => {
     const wrapper = await mountSuspended(NameDialog, {
-      props: { title: 'Nueva carpeta', label: 'Nombre de la carpeta', rules: folderNameRules, confirmLabel: 'Crear carpeta' },
+      props: { title: 'Nueva carpeta', label: 'Nombre de la carpeta', schema: folderNameSchema, confirmLabel: 'Crear carpeta' },
       attachTo: document.body,
     })
     const input = wrapper.get('input')
@@ -50,7 +50,7 @@ describe('NameDialog', () => {
 
   it('cerrar con el foco en el campo no lanza errores (el blur llega con el componente ya desmontado)', async () => {
     const wrapper = await mountSuspended(NameDialog, {
-      props: { title: 'Renombrar carpeta', label: 'Nombre', rules: folderNameRules, initial: 'Domingo' },
+      props: { title: 'Renombrar carpeta', label: 'Nombre', schema: folderNameSchema, initial: 'Domingo' },
       attachTo: document.body,
     })
     const input = wrapper.get('input').element
@@ -72,7 +72,7 @@ describe('NameDialog', () => {
   })
 
   it('respeta el máximo de caracteres tras recortar (carpeta 120, archivo 200)', async () => {
-    const folder = await mountSuspended(NameDialog, { props: { title: 'Nueva carpeta', label: 'Nombre', rules: folderNameRules } })
+    const folder = await mountSuspended(NameDialog, { props: { title: 'Nueva carpeta', label: 'Nombre', schema: folderNameSchema } })
     await folder.get('input').setValue(` ${'a'.repeat(120)} `)
     await folder.get('form').trigger('submit')
     await flush()
@@ -83,7 +83,7 @@ describe('NameDialog', () => {
     expect(folder.text()).toContain('Debe tener como máximo 120 caracteres')
     expect(folder.emitted('submit')).toHaveLength(1)
 
-    const file = await mountSuspended(NameDialog, { props: { title: 'Renombrar', label: 'Nombre', rules: fileNameRules } })
+    const file = await mountSuspended(NameDialog, { props: { title: 'Renombrar', label: 'Nombre', schema: fileNameSchema } })
     await file.get('input').setValue('a'.repeat(201))
     await file.get('input').trigger('blur')
     expect(file.text()).toContain('Debe tener como máximo 200 caracteres')
@@ -91,7 +91,7 @@ describe('NameDialog', () => {
 
   it('al enviar vacío marca el error; muestra sufijo y error del servidor; Cancelar emite close', async () => {
     const wrapper = await mountSuspended(NameDialog, {
-      props: { title: 'Renombrar', label: 'Nombre nuevo', rules: folderNameRules, suffix: '.jpg', serverError: 'Ya existe' },
+      props: { title: 'Renombrar', label: 'Nombre nuevo', schema: folderNameSchema, suffix: '.jpg', serverError: 'Ya existe' },
     })
     await wrapper.get('input').setValue('')
     await wrapper.get('form').trigger('submit')

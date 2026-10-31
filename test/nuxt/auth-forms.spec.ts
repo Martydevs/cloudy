@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { mountSuspended } from '@nuxt/test-utils/runtime'
 import type { VueWrapper } from '@vue/test-utils'
 import AuthForm from '~/components/auth/AuthForm.vue'
-import { type FormRules, loginRules, registerRules } from '~/utils/form-rules'
+import { loginSchema, registerSchema } from '~/utils/form-schemas'
 import { flush } from './helpers/api'
 import LoginPage from '~/pages/login.vue'
 import RegistroPage from '~/pages/registro.vue'
@@ -21,7 +21,6 @@ async function fillAndBlur(wrapper: VueWrapper, label: string, value: string) {
 }
 
 // Fuera de una plantilla `mountSuspended` no infiere el genérico de AuthForm: se pasa como registro de textos.
-const asFormRules = <S extends Record<string, string>>(rules: FormRules<S>) => rules as unknown as FormRules<Record<string, string>>
 
 function submitButton(wrapper: VueWrapper) {
   return wrapper.get('button[type="submit"]')
@@ -114,7 +113,7 @@ describe('AuthForm', () => {
         { name: 'email', label: 'Correo electrónico', type: 'email' as const },
         { name: 'password', label: 'Contraseña', type: 'password' as const },
         { name: 'confirm', label: 'Confirmar contraseña', type: 'password' as const },
-      ], rules: asFormRules(registerRules), submitLabel: 'Crear cuenta', initial: { name: 'Ana' } },
+      ], schema: registerSchema, submitLabel: 'Crear cuenta', initial: { name: 'Ana' } },
       attachTo: document.body,
     })
     await field(wrapper, 'Contraseña').setValue('12345678')
@@ -127,7 +126,7 @@ describe('AuthForm', () => {
 
   it('emite los datos como el servidor: recorta, correo en minúsculas y contraseña intacta', async () => {
     const wrapper = await mountSuspended(AuthForm, {
-      props: { legend: 'Iniciar sesión', fields: loginFields, rules: asFormRules(loginRules), submitLabel: 'Entrar' },
+      props: { legend: 'Iniciar sesión', fields: loginFields, schema: loginSchema, submitLabel: 'Entrar' },
     })
     await field(wrapper, 'Correo electrónico').setValue('  Ana@Iglesia.ORG ')
     await field(wrapper, 'Contraseña').setValue(' clave ')
