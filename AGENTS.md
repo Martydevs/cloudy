@@ -4,7 +4,7 @@ Cloudy is the internal media drive for a Christian church's multimedia & audio p
 members (admins and editors) upload, organize, preview, comment on and recover media files. Guests
 send material from a public page into an approval queue that the team reviews live.
 
-**Governance**: `.specify/memory/constitution.md` (v1.0.1) is the source of truth and overrides this
+**Governance**: `.specify/memory/constitution.md` (v1.1.0) is the source of truth and overrides this
 file. Keep this guide aligned with it whenever the constitution is amended.
 
 **Active feature**: `specs/003-guest-upload-access-code/` (builds on `specs/001-shared-media-drive/` and
@@ -21,8 +21,9 @@ file. Keep this guide aligned with it whenever the constitution is amended.
 | File storage | Neon Object Storage (S3-compatible, path-style) via `@aws-sdk/client-s3` + `@aws-sdk/s3-request-presigner` |
 | UI | Tailwind CSS 4 + daisyUI 5 (themes `cloudy` dark default, `cloudy-light`) · `@nuxt/icon` with **lucide** only · `@nuxt/fonts` (DM Sans) · `@nuxt/image` |
 | Utilities | `@vueuse/nuxt` (auto-imported) |
+| Forms | Regle (`@regle/schemas`) over zod schemas (`zod/mini`) in `app/utils/form-schemas.ts`, always through `useFormSchema` (`app/utils/form-schema.ts`) · `@regle/nuxt` (auto-imports and its plugin, loaded normally) |
 | Tests | Vitest projects `unit` / `nuxt` / `e2e` · `@nuxt/test-utils` · `playwright-core` (Chromium) |
-| AI | AI SDK v7 (`generateText` + `Output.object`) · OpenRouter as the only provider via `@openrouter/ai-sdk-provider`, preset `@preset/image-content-extraction` (the preset picks model and routing) · isolated in `server/ai/` |
+| AI | AI SDK v7 (`generateText` + `Output.object`) · OpenRouter as the only provider via `@openrouter/ai-sdk-provider`, preset `@preset/image-content-extraction` (the preset picks model and routing and carries the system prompt: the code sends only the user prompt in `server/ai/image-text/prompt.ts`) · isolated in `server/ai/` |
 | Deploy | Vercel (Nitro `vercel` preset, SSR, Vercel Cron) |
 
 Do not add dependencies or external services without a justification in the feature plan's
@@ -45,7 +46,7 @@ bun run storage:setup    # bucket CORS, development · storage:setup:test · sto
 ```
 
 `bun run analyze` builds with [Sonda](https://sonda.dev) enabled and writes interactive bundle reports
-(client + server) to `.sonda/`. Sonda is off in normal builds; use it to check the 200 KB per-route budget.
+(client + server) to `.sonda/`. Sonda is off in normal builds; use it to check the 250 KB per-route budget.
 
 ## Project layout
 
@@ -76,14 +77,14 @@ fetching uses Nuxt `useFetch`, not VueUse.
 
 ## Rules by principle
 
-**I. Performance** — Mobile 4G budgets: LCP ≤ 2.5 s, INP ≤ 200 ms, CLS ≤ 0.1, initial JS ≤ 200 KB
+**I. Performance** — Mobile 4G budgets: LCP ≤ 2.5 s, INP ≤ 200 ms, CLS ≤ 0.1, initial JS ≤ 250 KB
 gzip per route. Index every filtered/sorted column; no N+1 queries; cursor pagination. **Never stream
 file binaries through server functions** (Vercel body limit ~4.5 MB): browsers upload/download
-directly with presigned URLs. Lazy-load thumbnails and non-critical components (`Lazy*`).
+directly with presigned URLs. Lazy-load thumbnails and non-critical components at the component level (`Lazy*` behind `v-if` for UI that only appears after an action or a later state, e.g. `LazyItemDialogs`, `LazyGuestUploadForm`).
 Guest access (feature 003): the guest's browser holds two `httpOnly` cookies, `cloudy-guest-access` (random token;
 only its SHA-256 is stored) and `cloudy-guest-device` (per-browser rate-limit key). Limits: 3 new requests per
 30 min per browser, 30 per network (`hashSender(ip)`), and `ACCESS_SUBMIT_LIMIT` creations per approved request
-(`shared/constants/access.ts`). `/upload` polls `GET /api/public/access/current` every 5 s like the team pulse.
+(`shared/constants/access.ts`). Closing a send (`complete`) allows 60 per hour per network, in line with the request limit, since many guests share one Wi-Fi. `/upload` polls `GET /api/public/access/current` every 5 s like the team pulse; the team pulse cursor overlaps by `PULSE_OVERLAP_MS` and the client announces each id once.
 
 **II. Functional & effective** — Deliver user stories as independent, shippable slices. YAGNI. Failed
 flows must leave no orphans or half-written rows and must tell the user what to do next.
@@ -98,6 +99,9 @@ logic in composables. No `any` without a justifying comment. Shared rules live o
 Every endpoint validates input and calls the session/role guard server-side — hiding UI is not
 authorization. Neon Auth, storage, AI and background work are accessed **only** through `server/utils/auth.ts`,
 `server/utils/storage.ts`, `server/ai/` (via `server/utils/image-text.ts`) and `server/utils/background.ts`. No demo code, dead code or secrets. Typecheck and build must pass.
+Forms validate with a zod schema from `app/utils/form-schemas.ts` through `useFormSchema` — never `useRegle`/`useRegleSchema`
+directly (`test/unit/architecture.spec.ts` enforces it). Schemas mirror `shared/validation` (messages and limits come from there);
+the server stays the authority and `test/nuxt/form-schemas.spec.ts` checks both agree.
 
 **V. Testing** — Unit tests for pure logic and business rules; component tests for stateful/role-
 dependent components; e2e for every user story and every protected route (no session + wrong role).
@@ -172,6 +176,13 @@ Never print or commit their values.
   preset) or 3 transient failures in a row; images not started stay pending. With no key nothing is called. E2E run
   against a local chat-completions stub (`test/e2e/setup/openrouter-stub.ts`) through `NUXT_OPENROUTER_BASE_URL`, so
   they never call OpenRouter.
+- Regle: `useRegleSchema` only exposes `$validate`/`$pending` at the root (fields keep `$touch`, `$reset`, `$errors`). The plugin
+  `@regle/nuxt` registers loads normally, so Regle travels in the shared entry chunk of every route (heaviest route ≈ 158 KiB gzip).
+  `zod/mini` keeps the Regle + zod code small.
+- The Neon auth client also normalizes `USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL` (sign-up, 422) to `validation_failed` and
+  `INVALID_PASSWORD` (change password, 400) to `invalid_credentials`; `useAuthClient` maps both back to Better Auth's codes.
+- `useFetch` shares its data by key and `refresh()` runs the *first* instance's options: state every instance must see (the guest
+  clock skew in `useGuestAccess`) lives in `useState`, not in a local ref.
 - Nitro's `event.waitUntil` is not wired on Vercel Node: background work uses `waitUntil` from
   `@vercel/functions`, only through `server/utils/background.ts`.
 - `heic-to` only works in the browser: load it with a dynamic `import()` (`app/utils/heic-copy.ts`).

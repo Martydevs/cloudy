@@ -13,15 +13,6 @@ export default defineNuxtConfig({
     '@nuxt/image',
     '@nuxt/test-utils/module',
     '@regle/nuxt',
-    // El plugin del setupFile de Regle solo instala sus devtools y la config para `useRegleSchema` (no se usa),
-    // pero mete Regle en el JS inicial de todas las rutas. En producción se quita: los `useRegle` auto-importados
-    // ya llevan la config, y Regle viaja solo en los chunks de las vistas con formularios (Constitución I).
-    (_options, nuxt) => {
-      if (nuxt.options.dev) return
-      nuxt.hook('app:resolve', (app) => {
-        app.plugins = app.plugins.filter(plugin => !plugin.src.replaceAll('\\', '/').endsWith('/regle-plugin.ts'))
-      })
-    },
     Sonda({ enabled: analyze, server: true, gzip: true }),
   ],
   // Sonda mide desde los source maps; `hidden` los genera sin enlazarlos desde los bundles.
@@ -89,10 +80,6 @@ export default defineNuxtConfig({
         fallbacks: ['Roboto', 'Segoe UI', 'Helvetica Neue', 'Arial', 'Noto Sans'],
       },
     ],
-  },
-  // Mensajes en español, reglas propias y `autoDirty: false` para todos los formularios.
-  regle: {
-    setupFile: '~/regle-config.ts',
   },
   nitro: {
     // Necesario para `useEvent()` en el adaptador de Neon Auth (research R1).

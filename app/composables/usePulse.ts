@@ -15,6 +15,18 @@ export function usePulse() {
 // Solo en el cliente: el sondeo vive en el layout y las páginas piden un pulso extra tras una acción.
 let pollNow: (() => Promise<void>) | null = null
 
+// El cursor se solapa (`PULSE_OVERLAP_MS`): cada envío o solicitud se anuncia una sola vez. A nivel de módulo (el sondeo
+// solo corre en el cliente) para que un remontaje del layout no repita los avisos de los últimos segundos.
+const announced = new Set<string>()
+function unannounced<T extends { id: string }>(items: T[] = []): T[] {
+  if (announced.size > 500) announced.clear()
+  return items.filter((item) => {
+    if (announced.has(item.id)) return false
+    announced.add(item.id)
+    return true
+  })
+}
+
 /** Pulso inmediato (p. ej. tras aprobar a un usuario) para no esperar hasta 5 s. */
 export function refreshPulse() {
   return pollNow?.() ?? Promise.resolve()
@@ -35,15 +47,17 @@ export function usePulsePolling() {
     try {
       const pulse = await api<Pulse>('/api/realtime/pulse', { query: cursor.value ? { since: cursor.value } : {} })
       pendingCount.value = pulse.pendingCount
-      newSubmissions.value = pulse.newSubmissions
+      const freshSubmissions = unannounced(pulse.newSubmissions)
+      const freshRequests = unannounced(pulse.newAccessRequests)
+      newSubmissions.value = freshSubmissions
       pendingUsers.value = pulse.pendingUsers ?? 0
       openAccessRequests.value = pulse.openAccessRequests ?? 0
       cursor.value = pulse.cursor
       // Aviso en vivo de cada envío nuevo (FR-018) y de cada solicitud de acceso (feature 003, FR-007), con enlace a Solicitudes.
-      for (const submission of pulse.newSubmissions) {
+      for (const submission of freshSubmissions) {
         toast.info(messages.submissions.received(submission.senderName, submission.fileCount), { action: { label: 'Ver', to: '/solicitudes' } })
       }
-      for (const request of pulse.newAccessRequests ?? []) {
+      for (const request of freshRequests) {
         toast.info(messages.access.requested(request.senderName), { action: { label: 'Ver', to: '/solicitudes' } })
       }
     }

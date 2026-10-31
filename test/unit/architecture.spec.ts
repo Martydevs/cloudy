@@ -88,15 +88,20 @@ describe('arquitectura de la feature 002', () => {
     expect(users).toEqual(['server/utils/background.ts'])
   })
 
-  it('app/ nunca importa useRegle ni inferRules de @regle/core (saltaría la configuración global en español)', () => {
-    const named = /import\s*\{([^}]*)\}\s*from\s*['"]@regle\/core['"]/g
+  it('los formularios validan solo con useFormSchema (esquemas zod): nada en app/ usa useRegle ni useRegleSchema directo', () => {
+    // Los de Regle arrancarían con los modificadores por defecto (errores mientras se escribe) y sin esquemas zod.
+    const direct = /\b(useRegle|useRegleSchema|inferRules)\b/
     const offenders = files
-      .filter(f => f.path.startsWith('app/'))
-      .filter(f => [...f.code.matchAll(named)].some(m => /\b(useRegle|inferRules)\b/.test(m[1]!)))
+      .filter(f => f.path.startsWith('app/') && f.path !== 'app/utils/form-schema.ts')
+      .filter(f => direct.test(f.code))
       .map(f => f.path)
     expect(offenders).toEqual([])
-    // Las reglas y el setupFile sí importan de @regle/core (createRule, tipos): el filtro no los marca.
-    expect(files.find(f => f.path === 'app/regle-config.ts')!.code).toMatch(/from '@regle\/core'/)
+    // El único punto que toca la API de Regle es el que fija la configuración de todos los formularios.
+    expect(files.find(f => f.path === 'app/utils/form-schema.ts')!.code).toMatch(/defineRegleSchemaConfig[\s\S]*from '@regle\/schemas'|from '@regle\/schemas'[\s\S]*defineRegleSchemaConfig/)
+  })
+
+  it('ninguna regla de @regle/rules en app/: los esquemas viven en app/utils/form-schemas.ts', () => {
+    expect(files.filter(f => f.path.startsWith('app/') && imports(f.code).includes('@regle/rules')).map(f => f.path)).toEqual([])
   })
 
   it('heic-to solo se carga con import() dinámico desde app/utils/heic-copy.ts', () => {

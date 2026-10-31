@@ -46,6 +46,17 @@ describe('GET /api/folders/:id/children', () => {
     expect(result.breadcrumbs).toEqual([{ id: null, name: 'Archivos' }, { id: UUID, name: 'Domingo' }])
   })
 
+  it('con cursor las migas se piden de la raíz (sin recorrer los ancestros); sin cursor, de la carpeta', async () => {
+    const fake = installNitro([...children([], [folder()], [fileRow()], []), ...children([{ id: UUID, name: 'Domingo', depth: 0 }], [folder()], [fileRow()], [])])
+    const handler = await loadHandler('api/folders/[id]/children.get.ts')
+    const cursor = Buffer.from(JSON.stringify({ v: 'foto.jpg', id: 'f1' })).toString('base64url')
+    await handler(makeEvent({ params: { id: UUID }, url: `/api/x?cursor=${cursor}` }))
+    await handler(makeEvent({ params: { id: UUID }, url: '/api/x' }))
+    const crumbs = fake.db.execute.mock.calls.map(call => sqlText(call[0]))
+    expect(crumbs[0]).not.toContain(UUID)
+    expect(crumbs[1]).toContain(UUID)
+  })
+
   it('con filtro de tipo o cursor no repite las subcarpetas', async () => {
     const fake = installNitro([...children([], [], [fileRow()], []), ...children([], [], [fileRow()], [])])
     const handler = await loadHandler('api/folders/[id]/children.get.ts')

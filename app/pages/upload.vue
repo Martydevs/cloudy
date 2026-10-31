@@ -9,7 +9,7 @@ useHead({ title: 'Subir archivos · Cloudy' })
 const access = useGuestAccess()
 const { state, senderName, minutesLeft } = access
 
-const { r$ } = useRegle({ name: senderName.value ?? '' }, () => ({ name: senderNameRules() }))
+const { r$ } = useFormSchema({ name: senderName.value ?? '' }, accessRequestSchema)
 const nameError = computed(() => r$.$errors.name[0] ?? '')
 const nameId = useId()
 // El error del nombre desaparece en cuanto la persona corrige el campo.
@@ -100,7 +100,7 @@ const ended = computed(() => (state.value === 'rejected' || state.value === 'exp
           <span>{{ messages.access.state.window(minutesLeft) }}</span>
         </span>
       </p>
-      <GuestUploadForm
+      <LazyGuestUploadForm
         create-url="/api/public/access/submissions"
         :sender-name="senderName"
         @submitting="onSubmitting"
@@ -110,7 +110,7 @@ const ended = computed(() => (state.value === 'rejected' || state.value === 'exp
         <template #done-actions>
           <button type="button" class="btn btn-primary" @click="restart">{{ messages.access.state.another }}</button>
         </template>
-      </GuestUploadForm>
+      </LazyGuestUploadForm>
     </template>
 
     <section v-else-if="state === 'waiting'" class="card border border-base-300 bg-base-100">

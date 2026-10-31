@@ -62,6 +62,7 @@ export function renewAccessCookie(event: H3Event) {
 /** Textos del servidor (contracts/api.md); el cliente los muestra con `serverMessage()` y no los duplica. */
 export const ACCESS_MESSAGES = {
   used: 'Tu acceso ya se usó. Pide uno nuevo para enviar más archivos',
+  replaced: 'Empezaste otro envío con este acceso y este quedó reemplazado. Vuelve a enviar tus archivos',
   accessExpired: 'Tu acceso caducó. Pide acceso de nuevo',
   waiting: 'Tu solicitud todavía no está aprobada',
   needed: 'Necesitas pedir acceso para enviar archivos',
@@ -222,12 +223,23 @@ export async function deniedAccessState(tokenHash: string): Promise<Exclude<Acce
 }
 
 /**
+ * Resultado de `consumeForSubmission`. `consumed` y `already` dejan cerrar el envío; el resto lo descarta:
+ * `used` (lo gastó otro envío), `replaced` (la reserva pasó a otro envío del mismo acceso) o `lost` (sin cookie o
+ * sin solicitud).
+ */
+export type ConsumeResult = 'consumed' | 'already' | 'used' | 'replaced' | 'lost'
+
+/**
  * Consume el acceso al completar el envío (research B4): solo desde `approved`, con ese envío reservado y el token
  * del mismo navegador. La vigencia no se vuelve a comprobar: solo cuenta al iniciar el envío.
+ *
+ * Es idempotente para el mismo envío: si ya lo consumió (un reintento tras fallar el cierre, o un cierre
+ * simultáneo) devuelve `already` en lugar de tratarlo como perdido, para no borrar un envío entregado.
  */
-export async function consumeForSubmission(submissionId: string, tokenHash: string | null): Promise<boolean> {
-  if (!tokenHash) return false
-  const rows = await useDb().update(guestAccessRequests)
+export async function consumeForSubmission(submissionId: string, tokenHash: string | null): Promise<ConsumeResult> {
+  if (!tokenHash) return 'lost'
+  const db = useDb()
+  const rows = await db.update(guestAccessRequests)
     .set({ status: 'used', usedAt: sql`now()` })
     .where(and(
       eq(guestAccessRequests.submissionId, submissionId),
@@ -235,7 +247,16 @@ export async function consumeForSubmission(submissionId: string, tokenHash: stri
       eq(guestAccessRequests.status, 'approved'),
     ))
     .returning({ id: guestAccessRequests.id })
-  return rows.length > 0
+  if (rows.length > 0) return 'consumed'
+
+  const [current] = await db
+    .select({ status: guestAccessRequests.status, submissionId: guestAccessRequests.submissionId })
+    .from(guestAccessRequests)
+    .where(eq(guestAccessRequests.tokenHash, tokenHash))
+    .limit(1)
+  if (current?.status === 'used') return current.submissionId === submissionId ? 'already' : 'used'
+  if (current?.status === 'approved') return 'replaced'
+  return 'lost'
 }
 
 /** Solicitudes abiertas y vigentes (pulso y dashboard); con `since`, solo las creadas después. */

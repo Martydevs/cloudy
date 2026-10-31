@@ -274,6 +274,6 @@ const TYPE_FILTERS: { value: FileCategory | undefined, label: string }[] = [
       </div>
     </template>
 
-    <ItemDialogs :actions="actions" />
+    <LazyItemDialogs v-if="actions.dialog.value" :actions="actions" />
   </div>
 </template>

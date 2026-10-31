@@ -43,7 +43,8 @@ export default defineEventHandler(async (event): Promise<FolderChildren> => {
     visibleFolderQuery(folderId),
     filesQuery,
     subfoldersQuery,
-    breadcrumbsQuery(folderId),
+    // Las migas solo van en la primera página: con cursor se piden de la raíz (sin filas, sin recursión).
+    breadcrumbsQuery(cursor ? null : folderId),
   ])
   const folder = folderRows[0]
   if (folderId && !folder) throw folderNotFound()

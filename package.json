@@ -35,7 +35,6 @@
     "@openrouter/ai-sdk-provider": "^3.1.0",
     "@regle/core": "^1.29.5",
     "@regle/nuxt": "^1.29.5",
-    "@regle/rules": "^1.29.5",
     "@regle/schemas": "^1.29.5",
     "@tailwindcss/vite": "^4.3.3",
     "@vercel/functions": "^3.10.1",

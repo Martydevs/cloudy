@@ -3,15 +3,26 @@
 // que dispara el aviso en vivo (T120a).
 import { and, eq, inArray, isNull } from 'drizzle-orm'
 import { createError, getRequestIP } from 'h3'
+import { ACCESS_NETWORK_LIMIT } from '#shared/constants/access'
 import { isImageTextEligible } from '#shared/constants/image-text'
 import { guestSubmissionFiles, guestSubmissions } from '../../../../db/schema'
 import { deleteMany, head, readRange } from '../../../../utils/storage'
 
+// Un cierre por envío. El tope por red sigue al de las solicitudes de acceso (30 cada 30 min): con permiso no hay
+// límite por IP al crear, y muchos invitados comparten la misma red (el Wi-Fi de la iglesia en un evento).
+const COMPLETE_LIMIT = { limit: ACCESS_NETWORK_LIMIT.limit * (3600 / ACCESS_NETWORK_LIMIT.windowSec), windowSec: 3600 }
+
+/** Mensaje del 409 según por qué el acceso ya no cubre este envío. */
+const DISCARD_MESSAGE = {
+  used: ACCESS_MESSAGES.used,
+  lost: ACCESS_MESSAGES.used,
+  replaced: ACCESS_MESSAGES.replaced,
+} as const
+
 export default defineEventHandler(async (event): Promise<{ status: 'pending', accepted: number, rejected: number }> => {
-  // El id del envío es la capacidad (no hay sesión); el límite por IP, holgado para un invitado
-  // legítimo (un cierre por envío, 5 envíos/h), frena a quien lo use para leer el bucket a ciegas.
+  // El id del envío es la capacidad (no hay sesión); el límite por IP frena a quien lo use para leer el bucket a ciegas.
   const ip = getRequestIP(event, { xForwardedFor: true }) ?? 'unknown'
-  await hitRateLimit(event, `guest-complete:${hashSender(ip)}`, { limit: 10, windowSec: 3600 })
+  await hitRateLimit(event, `guest-complete:${hashSender(ip)}`, COMPLETE_LIMIT)
 
   const id = paramId(event)
   const db = useDb()
@@ -53,14 +64,18 @@ export default defineEventHandler(async (event): Promise<{ status: 'pending', ac
     })
   }
 
-  // Envío con permiso (feature 003, research B4): se consume el acceso del mismo navegador antes de cerrar. Si ya
-  // se usó (o la reserva pasó a otro envío), este envío se descarta entero. Va después de verificar los archivos
-  // para que una subida fallida no gaste el acceso.
-  if (submission.origin === 'permission' && !await consumeForSubmission(id, readAccessTokenHash(event))) {
-    await deleteMany(files.filter(f => accepted.includes(f.id)).flatMap(f => [f.storageKey, textSourceKeyFor(f.id)]))
-    await db.delete(guestSubmissionFiles).where(eq(guestSubmissionFiles.submissionId, id))
-    await db.delete(guestSubmissions).where(eq(guestSubmissions.id, id))
-    throw createError({ statusCode: 409, statusMessage: 'Conflict', message: ACCESS_MESSAGES.used })
+  // Envío con permiso (feature 003, research B4): se consume el acceso del mismo navegador antes de cerrar. Si lo gastó
+  // otro envío o la reserva pasó a otro, este envío se descarta entero. Si ya lo consumió este mismo envío (un
+  // reintento tras fallar el cierre, o un cierre simultáneo) se sigue y se cierra, sin borrar lo entregado. Va
+  // después de verificar los archivos para que una subida fallida no gaste el acceso.
+  if (submission.origin === 'permission') {
+    const consumed = await consumeForSubmission(id, readAccessTokenHash(event))
+    if (consumed !== 'consumed' && consumed !== 'already') {
+      await deleteMany(files.filter(f => accepted.includes(f.id)).flatMap(f => [f.storageKey, textSourceKeyFor(f.id)]))
+      await db.delete(guestSubmissionFiles).where(eq(guestSubmissionFiles.submissionId, id))
+      await db.delete(guestSubmissions).where(eq(guestSubmissions.id, id))
+      throw createError({ statusCode: 409, statusMessage: 'Conflict', message: DISCARD_MESSAGE[consumed] })
+    }
   }
 
   await db.batch([

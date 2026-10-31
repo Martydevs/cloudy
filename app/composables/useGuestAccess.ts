@@ -12,7 +12,19 @@ const CURRENT = '/api/public/access/current'
 const minutesOf = (seconds: number) => Math.max(1, Math.ceil(seconds / 60))
 
 export function useGuestAccess() {
-  const { data, error, status, refresh: refetch } = useFetch<GuestAccess>(CURRENT, { key: 'guest-access' })
+  // Diferencia entre el reloj del servidor y el del dispositivo, leída de la cabecera `Date` de cada respuesta del
+  // cliente. Hasta la primera respuesta es `null` y el estado lo manda solo el servidor: un teléfono con la hora
+  // mal puesta no debe adelantar ni atrasar el "caducó" (las vigencias son del servidor, research B3).
+  // `useState` y no un `ref` local: `useFetch` comparte los datos por clave y su `refresh` usa el `onResponse` de la
+  // primera instancia, así que el valor tiene que ser común a todas.
+  const clockSkew = useState<number | null>('guest-clock-skew', () => null)
+  function trackClock({ response }: { response: { headers: Headers } }) {
+    if (import.meta.server) return
+    const serverTime = Date.parse(response.headers.get('date') ?? '')
+    clockSkew.value = Number.isNaN(serverTime) ? 0 : serverTime - Date.now()
+  }
+
+  const { data, error, status, refresh: refetch } = useFetch<GuestAccess>(CURRENT, { key: 'guest-access', onResponse: trackClock })
   // Se deriva de `data` (no se copia en el setup): en SSR los datos llegan después del setup y los watchers no
   // corren, así que una copia pintaría el esqueleto y desajustaría la hidratación. `local` es lo que respondió el
   // POST o "pedir de nuevo", hasta el siguiente sondeo; `lastGood`, lo que se ve si un sondeo falla (Nuxt vacía `data`).
@@ -43,14 +55,14 @@ export function useGuestAccess() {
   const state = computed<AccessState>(() => {
     const current = access.value?.state ?? 'none'
     // Con un envío en curso solo el servidor cambia el estado: la vigencia cuenta al iniciar, no al terminar.
-    if (uploading.value || expiresAtMs.value === null || now.value <= expiresAtMs.value) return current
+    if (uploading.value || expiresAtMs.value === null || clockSkew.value === null || now.value + clockSkew.value <= expiresAtMs.value) return current
     if (current === 'waiting') return 'expired'
     if (current === 'approved') return 'accessExpired'
     return current
   })
 
   // Minuto más cercano (mínimo 1): recién pedida, una solicitud de 8 min dice "8", no "9" por unos milisegundos.
-  const minutesLeft = computed(() => (expiresAtMs.value === null ? 0 : Math.max(1, Math.round((expiresAtMs.value - now.value) / 60_000))))
+  const minutesLeft = computed(() => (expiresAtMs.value === null ? 0 : Math.max(1, Math.round((expiresAtMs.value - (now.value + (clockSkew.value ?? 0))) / 60_000))))
   const loading = computed(() => !access.value && status.value === 'pending')
   const loadError = computed(() => !access.value && !!error.value)
 
@@ -63,7 +75,7 @@ export function useGuestAccess() {
     requesting.value = true
     requestError.value = ''
     try {
-      local.value = await $fetch<GuestAccess>('/api/public/access', { method: 'POST', body: { senderName } })
+      local.value = await $fetch<GuestAccess>('/api/public/access', { method: 'POST', body: { senderName }, onResponse: trackClock })
       return true
     }
     catch (err) {
@@ -110,6 +122,9 @@ export function useGuestAccess() {
   const polling = useIntervalFn(poll, POLL_INTERVAL_MS, { immediate: false })
   const terminal = computed(() => TERMINAL_ACCESS_STATES.includes(state.value))
   onMounted(() => {
+    // Tras el SSR no hay respuesta del cliente de la que leer la hora del servidor: se consulta una vez al montar para
+    // conocer el desfase antes de que el reloj local pueda marcar la caducidad.
+    if (clockSkew.value === null) poll()
     watch(terminal, (stop) => {
       if (stop) polling.pause()
       else polling.resume()

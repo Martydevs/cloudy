@@ -38,9 +38,23 @@ export function useAuthClient() {
   const { refreshMe, clearMe } = useMe()
   const loggingOut = useState('auth-logging-out', () => false)
 
+  /**
+   * Un correo ya registrado llega de Better Auth como `USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL` (422), pero el
+   * cliente de Neon no conoce ese código y **lanza** `validation_failed`; solo el mensaje lo distingue. Sin esto la
+   * página mostraba el error genérico en lugar de «Ya existe una cuenta con ese correo».
+   */
   async function signUp(input: { name: string, email: string, password: string }) {
     const client = await getClient()
-    unwrap(await client.signUp.email(input))
+    try {
+      unwrap(await client.signUp.email(input))
+    }
+    catch (error) {
+      const { code, message, status } = (error ?? {}) as { code?: string, message?: string, status?: number }
+      const exists = code === 'user_already_exists' || code === 'email_exists'
+        || (code === 'validation_failed' && /already exists/i.test(message ?? ''))
+      if (exists) throw new AuthRequestError(message ?? 'User already exists', status ?? 422, 'USER_ALREADY_EXISTS')
+      throw error
+    }
     return refreshMe()
   }
 
@@ -98,9 +112,21 @@ export function useAuthClient() {
     }
   }
 
+  /**
+   * Una contraseña actual incorrecta llega de Better Auth como `INVALID_PASSWORD` (400), pero el cliente de Neon
+   * **lanza** `invalid_credentials` (401): la página mostraba «Correo o contraseña incorrectos» en lugar de «La
+   * contraseña actual no es correcta». Aquí se devuelve el código de Better Auth, que es el que entiende `perfil.vue`.
+   */
   async function changePassword(input: { currentPassword: string, newPassword: string }) {
     const client = await getClient()
-    unwrap(await client.changePassword({ ...input, revokeOtherSessions: false }))
+    try {
+      unwrap(await client.changePassword({ ...input, revokeOtherSessions: false }))
+    }
+    catch (error) {
+      const { code, message, status } = (error ?? {}) as { code?: string, message?: string, status?: number }
+      if (code === 'invalid_credentials') throw new AuthRequestError(message ?? 'Invalid password', status ?? 400, 'INVALID_PASSWORD')
+      throw error
+    }
   }
 
   async function updateUser(input: { name: string }) {

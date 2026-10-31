@@ -47,7 +47,7 @@ async function onSubmit(data: ForgotForm) {
     v-else
     legend="Recuperar contraseña"
     :fields="fields"
-    :rules="forgotRules"
+    :schema="forgotSchema"
     submit-label="Enviar enlace"
     :loading="loading"
     :server-error="serverError"

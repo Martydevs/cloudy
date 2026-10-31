@@ -140,9 +140,10 @@ describe('/upload · estados', () => {
     await flush()
     expect(wrapper.get('.alert-success').text()).toContain('¡Listo! Ya puedes enviar tus archivos')
     expect(wrapper.text()).toContain('Tienes 30 min para empezar el envío')
+    // `LazyGuestUploadForm`: el formulario llega en su propio chunk cuando se aprueba la solicitud.
+    await vi.waitFor(() => expect(wrapper.findComponent(DropZone).exists()).toBe(true))
     expect(wrapper.find('input[type="text"]').exists()).toBe(false)
     expect(wrapper.text()).toContain('Eva')
-    expect(wrapper.findComponent(DropZone).exists()).toBe(true)
     expect(wrapper.get('[role="status"]').text()).toBe('¡Listo! Ya puedes enviar tus archivos')
   })
 
@@ -179,6 +180,25 @@ describe('/upload · estados', () => {
     const before = currentCalls()
     await vi.waitFor(() => expect(wrapper.text()).toContain('Tu solicitud caducó sin que nadie la atendiera'), { timeout: 4000 })
     expect(currentCalls()).toBe(before)
+  })
+
+  it('un teléfono con el reloj adelantado no marca la solicitud como caducada: manda la hora del servidor', async () => {
+    useState<number | null>('guest-clock-skew').value = null
+    const serverNow = Date.now()
+    mockApi('GET', CURRENT, (event) => {
+      setResponseHeader(event, 'date', new Date(serverNow).toUTCString())
+      return access('waiting', { expiresAt: new Date(serverNow + 8 * 60_000).toISOString() })
+    })
+    // El reloj del dispositivo va 10 minutos por delante de la vigencia que dio el servidor.
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(serverNow + 10 * 60_000)
+    const wrapper = await mountSuspended(UploadPage)
+    await flush(20)
+    expect(wrapper.text()).toContain('Esperando')
+    expect(wrapper.text()).not.toContain('Tu solicitud caducó')
+    // El desfase aprendido es la diferencia entre ambos relojes.
+    expect(Math.round(useState<number | null>('guest-clock-skew').value! / 60_000)).toBe(-10)
+    wrapper.unmount()
   })
 
   it('al vencer expiresAt pasa de approved a accessExpired sin esperar al sondeo', async () => {

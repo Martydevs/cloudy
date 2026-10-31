@@ -304,7 +304,13 @@ test/
 
 ## Complexity Tracking
 
-Sin violaciones de la constitución ni dependencias o servicios nuevos: no aplica.
+La feature en sí no añade dependencias ni servicios. Esta rama sí incorporó dos cambios de dependencias (Constitución II),
+registrados aquí con su justificación:
+
+| Dependencia | Por qué | Costo y alternativa descartada |
+|-------------|---------|--------------------------------|
+| `@regle/core`, `@regle/nuxt`, `@regle/schemas` + `zod/mini` (zod ya era dependencia por `server/ai`) | Un solo contrato de validación por formulario, con errores al salir del campo o al enviar y en español, en lugar de validar a mano en cada componente. La persona responsable definió `@regle/schemas` como la base de todos los formularios de la interfaz. | El plugin de `@regle/nuxt` se carga con normalidad, así que Regle viaja en el chunk de entrada de todas las rutas; aun así la ruta más pesada (`/archivos/:folderId`) queda en ≈ 158 KiB gzip, bajo el presupuesto de 250 KB (Constitución v1.1.0). `@regle/rules` ya no es dependencia directa. |
+| `@openrouter/ai-sdk-provider` (sustituye a `@ai-sdk/openai` y `@ai-sdk/google`) | OpenRouter como único proveedor de IA para la lectura de imágenes; el preset elige modelo y enrutamiento. | Se eliminan dos proveedores y el respaldo con Gemini: menos superficie, una sola clave. |
 
 ## Siguientes pasos
 

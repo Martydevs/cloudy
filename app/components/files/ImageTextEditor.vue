@@ -5,7 +5,7 @@ import { MAX_IMAGE_TEXT_LENGTH } from '#shared/constants/image-text'
 const props = defineProps<{ modelValue: string, saving?: boolean }>()
 const emit = defineEmits<{ save: [text: string], cancel: [] }>()
 
-const { r$ } = useRegle({ text: props.modelValue }, imageTextRules)
+const { r$ } = useFormSchema({ text: props.modelValue }, imageTextSchema)
 const inputId = useId()
 const counterId = useId()
 const textarea = useTemplateRef<HTMLTextAreaElement>('textarea')

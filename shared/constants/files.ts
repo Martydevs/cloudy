@@ -42,6 +42,11 @@ export const TRASH_RETENTION_DAYS = 30
 export const SUBMISSION_TTL_DAYS = 7
 export const UPLOAD_ORPHAN_HOURS = 24
 export const POLL_INTERVAL_MS = 5000
+/**
+ * Solape del cursor del pulso: una fila estampada antes de que otro pulso tomara su cursor puede confirmarse después
+ * y quedar fuera de `> since`. El cliente descarta los ids que ya avisó.
+ */
+export const PULSE_OVERLAP_MS = 10_000
 
 /** Extensiones admitidas con punto, para el atributo `accept` de los selectores. */
 export const ACCEPT_ATTRIBUTE = Object.keys(ALLOWED_TYPES).map(ext => `.${ext}`).join(',')

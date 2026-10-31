@@ -1,11 +1,11 @@
 <script setup lang="ts">
-import type { NameRules } from '~/utils/form-rules'
+import type { NameSchema } from '~/utils/form-schemas'
 
 const props = withDefaults(defineProps<{
   title: string
   label: string
   initial?: string
-  rules: NameRules
+  schema: NameSchema
   confirmLabel?: string
   /** Texto fijo que se muestra después del campo (p. ej. la extensión, que no cambia). */
   suffix?: string
@@ -17,7 +17,7 @@ const emit = defineEmits<{ submit: [value: string], close: [] }>()
 
 const dialog = useTemplateRef<HTMLDialogElement>('dialog')
 const input = useTemplateRef<HTMLInputElement>('input')
-const { r$ } = useRegle({ name: props.initial }, () => props.rules())
+const { r$ } = useFormSchema({ name: props.initial }, props.schema)
 const titleId = useId()
 const inputId = useId()
 const errorId = useId()

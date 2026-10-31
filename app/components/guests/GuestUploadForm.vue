@@ -1,7 +1,6 @@
 <script setup lang="ts">
 // Formulario de envío de invitados (extraído de /enviar, feature 003): nombre, nota, selector, cola y
 // confirmación. Con `senderName` el nombre viene de la solicitud aprobada y es de solo lectura.
-import { applyIf, required } from '@regle/rules'
 import { MAX_GUEST_FILES } from '#shared/constants/files'
 import { NOTE_MAX, SENDER_NAME_MAX } from '#shared/validation/submissions'
 import type { SubmissionResult } from '~/composables/useGuestSubmission'
@@ -20,11 +19,8 @@ const noteId = useId()
 const noteHintId = useId()
 const fixedName = computed(() => !!props.senderName)
 
-const { r$ } = useRegle({ name: '', note: '' }, () => ({
-  // Con el nombre fijo de la solicitud aprobada no hay campo que validar.
-  name: { ...senderNameRules(), required: applyIf(() => !fixedName.value, required) },
-  note: noteRules(),
-}))
+const state = { name: '', note: '' }
+const { r$ } = useFormSchema(state, computed(() => inferFormSchema(state, guestSubmissionSchema(fixedName.value))))
 const nameError = computed(() => r$.$errors.name[0] ?? '')
 
 const submission = useGuestSubmission({ createUrl: props.createUrl })

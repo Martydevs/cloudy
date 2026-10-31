@@ -32,6 +32,21 @@ beforeEach(() => {
 })
 
 describe('AccessRequestCard', () => {
+  it('la cuenta regresiva avanza sola con el tiempo, sin esperar a que cambie la solicitud', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'Date'] })
+    try {
+      const wrapper = await mountSuspended(AccessRequestCard, { props: { request: request() } })
+      expect(wrapper.text()).toContain('caduca en 6 min')
+      await vi.advanceTimersByTimeAsync(3 * 60_000)
+      await nextTick()
+      expect(wrapper.text()).toContain('caduca en 3 min')
+      wrapper.unmount()
+    }
+    finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('muestra el nombre, hace cuánto y cuánto le queda', async () => {
     const wrapper = await mountSuspended(AccessRequestCard, { props: { request: request() } })
     expect(wrapper.get('h3').text()).toBe('Rut')

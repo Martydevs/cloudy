@@ -239,6 +239,27 @@ describe('useAuthClient', () => {
     await expect(useAuthClient().resetPassword({ newPassword: '12345678', token: 't' })).rejects.toMatchObject({ code: 'network_error' })
   })
 
+  it('un correo ya registrado llega como USER_ALREADY_EXISTS aunque el cliente de Neon lance validation_failed', async () => {
+    // Better Auth responde 422 USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL; el cliente de Neon no lo conoce y lo normaliza.
+    auth.client.signUp.email.mockRejectedValueOnce(Object.assign(new Error('User already exists. Use another email.'), { status: 422, code: 'validation_failed' }))
+    await expect(useAuthClient().signUp({ name: 'Ana', email: 'a@x.org', password: '12345678' })).rejects.toMatchObject({ code: 'USER_ALREADY_EXISTS', status: 422 })
+    auth.client.signUp.email.mockRejectedValueOnce(Object.assign(new Error('User already exists'), { status: 409, code: 'user_already_exists' }))
+    await expect(useAuthClient().signUp({ name: 'Ana', email: 'a@x.org', password: '12345678' })).rejects.toMatchObject({ code: 'USER_ALREADY_EXISTS', status: 409 })
+    // Otro 422 o cualquier otro error se propaga tal cual.
+    auth.client.signUp.email.mockRejectedValueOnce(Object.assign(new Error('Invalid input'), { status: 422, code: 'validation_failed' }))
+    await expect(useAuthClient().signUp({ name: 'Ana', email: 'a@x.org', password: '12345678' })).rejects.toMatchObject({ code: 'validation_failed' })
+    auth.client.signUp.email.mockRejectedValueOnce(new Error('red'))
+    await expect(useAuthClient().signUp({ name: 'Ana', email: 'a@x.org', password: '12345678' })).rejects.toThrow('red')
+  })
+
+  it('una contraseña actual incorrecta llega como INVALID_PASSWORD aunque el cliente de Neon lance invalid_credentials', async () => {
+    // Better Auth responde 400 INVALID_PASSWORD; el cliente de Neon lo normaliza a invalid_credentials (401).
+    auth.client.changePassword.mockRejectedValueOnce(Object.assign(new Error('Invalid login credentials'), { status: 401, code: 'invalid_credentials' }))
+    await expect(useAuthClient().changePassword({ currentPassword: 'mala', newPassword: '12345678' })).rejects.toMatchObject({ code: 'INVALID_PASSWORD' })
+    auth.client.changePassword.mockRejectedValueOnce(Object.assign(new Error('red'), { status: 503, code: 'network_error' }))
+    await expect(useAuthClient().changePassword({ currentPassword: 'a', newPassword: '12345678' })).rejects.toMatchObject({ code: 'network_error' })
+  })
+
   it('la página de restablecer muestra «El enlace caducó o ya se usó» y «Pedir un enlace nuevo» con un token usado', async () => {
     auth.client.resetPassword.mockRejectedValueOnce(Object.assign(new Error('Invalid or expired session token'), { status: 401, code: 'bad_jwt' }))
     const { default: RestablecerPage } = await import('~/pages/restablecer.vue')
@@ -321,6 +342,31 @@ describe('usePulsePolling', () => {
     await wrapper.get('button').trigger('click')
     await flush(10)
     expect(pendingCount.value).toBe(2)
+    wrapper.unmount()
+  })
+
+  it('con el cursor solapado, un envío o una solicitud que vuelve en el pulso siguiente se anuncia una sola vez', async () => {
+    useToast().toasts.value = []
+    const request = { id: 'r1', senderName: 'Eva', createdAt: '2026-10-14T10:00:00.000Z' }
+    const submission = { id: 's1', senderName: 'Luis', fileCount: 2, createdAt: '2026-10-14T10:00:00.000Z' }
+    mockApi('GET', '/api/realtime/pulse', () => ({
+      cursor: '2026-10-14T10:00:00.000Z', pendingCount: 1, newSubmissions: [submission], openAccessRequests: 1, newAccessRequests: [request],
+    }))
+    const Probe = defineComponent({
+      setup() {
+        const { poll } = usePulsePolling()
+        return () => h('button', { onClick: poll }, 'pulso')
+      },
+    })
+    const wrapper = await mountSuspended(Probe)
+    await flush(10)
+    await wrapper.get('button').trigger('click')
+    await flush(10)
+    const messages = useToast().toasts.value.map(t => t.message)
+    expect(messages.filter(m => m.includes('Eva'))).toHaveLength(1)
+    expect(messages.filter(m => m.includes('Luis'))).toHaveLength(1)
+    // La lista de envíos nuevos solo trae lo que aún no se anunció.
+    expect(usePulse().newSubmissions.value).toEqual([])
     wrapper.unmount()
   })
 

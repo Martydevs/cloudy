@@ -108,21 +108,30 @@ describe('Inicio', () => {
     expect(wrapper.find('a[href="/archivos"]').text()).toBe('Ver todos')
   })
 
-  it('el contador de pendientes toma el mayor entre el pulso y el resumen; sin perfil saluda a secas', async () => {
+  it('el contador usa el resumen hasta el primer pulso y desde entonces el pulso, que también baja; sin perfil saluda a secas', async () => {
+    usePulse().cursor.value = null
     mockApi('GET', '/api/dashboard', summary({ pendingCount: 2 }))
     usePulse().pendingCount.value = 5
     const wrapper = await mountSuspended(HomePage)
     await flush()
+    // Sin pulso todavía (cursor nulo) manda el resumen del servidor.
+    expect(wrapper.get('.stat-value').text()).toBe('2')
+
+    // Con el primer pulso manda el pulso.
+    usePulse().cursor.value = '2026-10-14T10:00:00.000Z'
+    await nextTick()
     expect(wrapper.get('.stat-value').text()).toBe('5')
+    // Bajar a 0 (se atendieron o caducaron) se ve: el resumen viejo no lo tapa.
     usePulse().pendingCount.value = 0
     await nextTick()
-    expect(wrapper.get('.stat-value').text()).toBe('2')
+    expect(wrapper.get('.stat-value').text()).toBe('0')
 
     // "Solicitudes por atender" suma envíos por revisar y solicitudes de acceso (feature 003).
     usePulse().openAccessRequests.value = 4
     await nextTick()
     expect(wrapper.get('.stat-value').text()).toBe('4')
     usePulse().openAccessRequests.value = 0
+    usePulse().cursor.value = null
     clearNuxtData()
     mockApi('GET', '/api/dashboard', summary({ pendingCount: 2, openAccessRequests: 3 }))
     const summed = await mountSuspended(HomePage)
