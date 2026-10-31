@@ -48,6 +48,29 @@ describe('NameDialog', () => {
     wrapper.unmount()
   })
 
+  it('cerrar con el foco en el campo no lanza errores (el blur llega con el componente ya desmontado)', async () => {
+    const wrapper = await mountSuspended(NameDialog, {
+      props: { title: 'Renombrar carpeta', label: 'Nombre', rules: folderNameRules, initial: 'Domingo' },
+      attachTo: document.body,
+    })
+    const input = wrapper.get('input').element
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const uncaught = vi.fn()
+    window.addEventListener('error', uncaught)
+
+    wrapper.unmount()
+    input.dispatchEvent(new Event('blur'))
+    await flush()
+
+    window.removeEventListener('error', uncaught)
+    expect(uncaught).not.toHaveBeenCalled()
+    expect(warn).not.toHaveBeenCalled()
+    expect(error).not.toHaveBeenCalled()
+    warn.mockRestore()
+    error.mockRestore()
+  })
+
   it('respeta el máximo de caracteres tras recortar (carpeta 120, archivo 200)', async () => {
     const folder = await mountSuspended(NameDialog, { props: { title: 'Nueva carpeta', label: 'Nombre', rules: folderNameRules } })
     await folder.get('input').setValue(` ${'a'.repeat(120)} `)

@@ -61,7 +61,7 @@ function close() {
           :class="{ 'input-error': error }"
           :aria-invalid="error ? 'true' : undefined"
           :aria-describedby="error ? errorId : undefined"
-          @blur="r$.name.$touch()"
+          @blur="r$.name?.$touch()"
         >
         <span v-if="suffix" class="shrink-0 text-base-content/70">{{ suffix }}</span>
       </div>
