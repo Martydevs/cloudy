@@ -1,14 +1,14 @@
 // Lectura del texto de una imagen con el AI SDK (research A1): valida la entrada, hace una sola llamada a
 // OpenRouter, valida la salida y nunca lanza. Sin BD ni storage.
-import { generateText, Output } from 'ai'
 import type { LanguageModel } from 'ai'
+import { generateText, Output } from 'ai'
 import type { ProviderBreaker } from '../breaker'
-import { classifyProviderError } from '../errors'
 import type { ClassifiedError, ProviderErrorCode } from '../errors'
+import { classifyProviderError } from '../errors'
 import { resolveImageTextModel } from '../providers/openrouter'
-import { IMAGE_EXTRACTION_INSTRUCTION, IMAGE_EXTRACTION_PROMPT } from './prompt'
-import { imageTextOutputSchema, modelImageSchema } from './schemas'
+import { IMAGE_EXTRACTION_PROMPT } from './prompt'
 import type { ModelImage } from './schemas'
+import { imageTextOutputSchema, modelImageSchema } from './schemas'
 
 /** Cada intento de la llamada. */
 const ATTEMPT_TIMEOUT_MS = 30_000
@@ -52,7 +52,6 @@ export async function extractImageText(options: ExtractImageTextOptions): Promis
   try {
     const result = await generateText({
       model,
-      instructions: IMAGE_EXTRACTION_INSTRUCTION,
       output: Output.object({ schema: imageTextOutputSchema }),
       messages: [{
         role: 'user',
