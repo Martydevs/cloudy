@@ -27,6 +27,7 @@ afterEach(() => {
 const TOKEN = 'b'.repeat(43)
 const DEVICE = 'd'.repeat(43)
 const HASH = hashAccessToken(TOKEN)
+const OTHER = '22222222-2222-4222-8222-222222222222'
 const soon = () => new Date(Date.now() + 5 * 60_000)
 const past = () => new Date(Date.now() - 1000)
 
@@ -279,13 +280,35 @@ describe('POST /api/public/submissions/:id/complete con permiso', () => {
     expect(s3.deleteMany).not.toHaveBeenCalled()
   })
 
-  it('si el acceso ya se usó → 409 y descarta objetos y filas del envío', async () => {
-    const { fake, run } = await complete([[{ count: 1 }], [submission()], [file], [], [], []])
+  it('si otro envío ya gastó el acceso → 409 y descarta objetos y filas del envío', async () => {
+    const { fake, run } = await complete([[{ count: 1 }], [submission()], [file], [], [{ status: 'used', submissionId: OTHER }], [], []])
     const error = await expectStatus(run(), 409)
     expect(error.message).toBe('Tu acceso ya se usó. Pide uno nuevo para enviar más archivos')
     expect(s3.deleteMany).toHaveBeenCalledWith(['pre/guest/s/a', 'pre/textsrc/f1.jpg'])
     expect(fake.calls.filter(c => c.method === 'delete')).toHaveLength(2)
     expect(fake.db.batch).not.toHaveBeenCalled()
+  })
+
+  it('si la reserva pasó a otro envío del mismo acceso → 409 con su propio mensaje y descarta este envío', async () => {
+    const { run } = await complete([[{ count: 1 }], [submission()], [file], [], [{ status: 'approved', submissionId: OTHER }], [], []])
+    const error = await expectStatus(run(), 409)
+    expect(error.message).toBe('Empezaste otro envío con este acceso y este quedó reemplazado. Vuelve a enviar tus archivos')
+    expect(s3.deleteMany).toHaveBeenCalled()
+  })
+
+  it('un reintento de un envío que ya consumió el acceso (falló el cierre) lo cierra sin borrar nada', async () => {
+    const { fake, run } = await complete([[{ count: 1 }], [submission()], [file], [], [{ status: 'used', submissionId: SUB }], [], []])
+    expect(await run()).toEqual({ status: 'pending', accepted: 1, rejected: 0 })
+    expect(s3.deleteMany).not.toHaveBeenCalled()
+    expect(fake.calls.filter(c => c.method === 'delete')).toHaveLength(0)
+    expect(fake.db.batch).toHaveBeenCalled()
+  })
+
+  it('el tope por red admite a un grupo grande en la misma IP: 30 cierres pasan y el 61 recibe 429', async () => {
+    const { run } = await complete([[{ count: 30 }], [submission()], [file], [{ id: UUID }], [], []])
+    expect(await run()).toEqual({ status: 'pending', accepted: 1, rejected: 0 })
+    const { run: limited } = await complete([[{ count: 61 }]])
+    await expectStatus(limited(), 429)
   })
 
   it('sin la cookie → 409 y descarte, sin consultar la solicitud', async () => {

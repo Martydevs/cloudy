@@ -258,22 +258,40 @@ describe('createGuestSubmission con permiso (research B4)', () => {
 })
 
 describe('consumeForSubmission', () => {
-  it('pasa a used solo desde approved con ese envío y ese token; la segunda vez devuelve false', async () => {
-    const fake = installNitro([[{ id: UUID }], []])
+  const OTHER = '22222222-2222-4222-8222-222222222222'
+
+  it('pasa a used solo desde approved con ese envío y ese token', async () => {
+    const fake = installNitro([[{ id: UUID }]])
     const hash = hashAccessToken(TOKEN)
-    expect(await consumeForSubmission(UUID, hash)).toBe(true)
+    expect(await consumeForSubmission(UUID, hash)).toBe('consumed')
     expect(fake.calls.find(c => c.method === 'set')?.args[0]).toMatchObject({ status: 'used' })
     const where = sqlText(fake.calls.find(c => c.method === 'where')?.args[0])
     expect(where).toContain('"submission_id"')
     expect(where).toContain('"token_hash"')
     expect(where).toContain('"approved"')
     expect(where).toContain(hash)
-    expect(await consumeForSubmission(UUID, hash)).toBe(false)
+  })
+
+  it('es idempotente: si ya lo consumió este mismo envío devuelve already', async () => {
+    installNitro([[], [{ status: 'used', submissionId: UUID }]])
+    expect(await consumeForSubmission(UUID, hashAccessToken(TOKEN))).toBe('already')
+  })
+
+  it('distingue por qué no se pudo: lo gastó otro envío, la reserva pasó a otro o no hay solicitud', async () => {
+    const hash = hashAccessToken(TOKEN)
+    installNitro([[], [{ status: 'used', submissionId: OTHER }]])
+    expect(await consumeForSubmission(UUID, hash)).toBe('used')
+    installNitro([[], [{ status: 'approved', submissionId: OTHER }]])
+    expect(await consumeForSubmission(UUID, hash)).toBe('replaced')
+    installNitro([[], []])
+    expect(await consumeForSubmission(UUID, hash)).toBe('lost')
+    installNitro([[], [{ status: 'rejected', submissionId: null }]])
+    expect(await consumeForSubmission(UUID, hash)).toBe('lost')
   })
 
   it('sin cookie no toca la base', async () => {
     const fake = installNitro()
-    expect(await consumeForSubmission(UUID, null)).toBe(false)
+    expect(await consumeForSubmission(UUID, null)).toBe('lost')
     expect(fake.calls).toHaveLength(0)
   })
 })
