@@ -101,6 +101,6 @@ const ORIGIN_LABELS = { team: 'Equipo', guest: 'Invitado' } as const
       </aside>
     </div>
 
-    <ItemDialogs :actions="actions" />
+    <LazyItemDialogs v-if="actions.dialog.value" :actions="actions" />
   </div>
 </template>

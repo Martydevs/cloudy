@@ -140,9 +140,10 @@ describe('/upload · estados', () => {
     await flush()
     expect(wrapper.get('.alert-success').text()).toContain('¡Listo! Ya puedes enviar tus archivos')
     expect(wrapper.text()).toContain('Tienes 30 min para empezar el envío')
+    // `LazyGuestUploadForm`: el formulario llega en su propio chunk cuando se aprueba la solicitud.
+    await vi.waitFor(() => expect(wrapper.findComponent(DropZone).exists()).toBe(true))
     expect(wrapper.find('input[type="text"]').exists()).toBe(false)
     expect(wrapper.text()).toContain('Eva')
-    expect(wrapper.findComponent(DropZone).exists()).toBe(true)
     expect(wrapper.get('[role="status"]').text()).toBe('¡Listo! Ya puedes enviar tus archivos')
   })
 

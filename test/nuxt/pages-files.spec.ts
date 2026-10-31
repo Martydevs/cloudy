@@ -74,7 +74,8 @@ describe('FileExplorer · los cuatro estados', () => {
     expect(useUploadDialog().isOpen.value).toBe(true)
     useUploadDialog().close()
     await buttons(wrapper, 'Nueva carpeta').at(-1)!.trigger('click')
-    expect(wrapper.find('dialog h2').text()).toBe('Nueva carpeta')
+    // `LazyItemDialogs`: el diálogo llega en su propio chunk al abrirse.
+    await vi.waitFor(() => expect(wrapper.find('dialog h2').text()).toBe('Nueva carpeta'))
   })
 
   it('vacío por filtro de tipo ofrece quitar el filtro', async () => {

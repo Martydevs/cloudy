@@ -13,21 +13,6 @@ export default defineNuxtConfig({
     '@nuxt/image',
     '@nuxt/test-utils/module',
     '@regle/nuxt',
-    // El plugin de @regle/nuxt solo instala los devtools, pero mete Regle en el JS inicial de todas las rutas. En
-    // producción se quita (la configuración global vive en `useFormSchema`, no en el plugin) y Regle viaja solo en los
-    // chunks de las vistas con formularios (Constitución I). Si tras el filtro sobrevive algún plugin de Regle (el
-    // módulo cambió el nombre del archivo), el build falla en lugar de volver a cargar Regle en todas las rutas.
-    (_options, nuxt) => {
-      if (nuxt.options.dev) return
-      nuxt.hook('app:resolve', (app) => {
-        const isRegle = (src: string) => /(^|\/)@?regle[-./]/i.test(src.replaceAll('\\', '/'))
-        app.plugins = app.plugins.filter(plugin => !isRegle(plugin.src))
-        const left = app.plugins.filter(plugin => /regle/i.test(plugin.src))
-        if (left.length > 0) {
-          throw new Error(`[cloudy] Quedó un plugin de Regle en el arranque (${left.map(p => p.src).join(', ')}): ajusta el filtro de nuxt.config.ts`)
-        }
-      })
-    },
     Sonda({ enabled: analyze, server: true, gzip: true }),
   ],
   // Sonda mide desde los source maps; `hidden` los genera sin enlazarlos desde los bundles.

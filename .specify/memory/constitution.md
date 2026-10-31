@@ -1,4 +1,16 @@
 <!--
+Sync Impact Report (1.1.0, 2026-10-31)
+- Version change: 1.0.1 → 1.1.0 (MINOR: the initial-JS budget per route is relaxed; no principle added or removed)
+- Modified principles: I. Rendimiento medible: initial JS per route goes from ≤ 200 KB to ≤ 250 KB compressed,
+  and lazy loading of non-critical UI is stated at the component level (`Lazy*` with `v-if`, so a component
+  that only appears after an action or a later state is not in the route's first JS).
+- Reason: the `@regle/nuxt` plugin now loads normally (Regle travels in the shared entry chunk); the heaviest
+  route measured 158.5 KiB gzip, so the new limit leaves room without filtering framework plugins.
+- Added/removed sections: none
+- Templates checked: ✅ plan/spec/tasks templates need no change
+- Follow-up: AGENTS.md updated (budget and version). Earlier feature docs keep their 200 KB results as
+  historical records. No migration plan needed: the change only loosens an obligation and every route fits.
+
 Sync Impact Report (1.0.1, 2026-10-20)
 - Version change: 1.0.0 → 1.0.1 (PATCH: clarification, no change in obligations)
 - Modified principles: IV. Calidad de código: the "single wrapper module" rule now names IA and background
@@ -43,8 +55,9 @@ Cloudy MUST sentirse instantánea en un teléfono de gama media con red móvil. 
 cumplir estos presupuestos, salvo que su plan justifique una excepción:
 
 - Core Web Vitals en móvil (perfil 4G simulado): LCP ≤ 2.5 s, INP ≤ 200 ms, CLS ≤ 0.1.
-- JavaScript inicial por ruta ≤ 200 KB comprimido; lo no crítico se carga de forma diferida
-  (componentes `Lazy*`, imports dinámicos).
+- JavaScript inicial por ruta ≤ 250 KB comprimido; lo no crítico se carga de forma diferida a
+  nivel de componente (componentes `Lazy*` con `v-if` para lo que solo aparece tras una acción o
+  un estado posterior, imports dinámicos).
 - Listados y búsquedas MUST responder en < 2 s con 5 000 elementos; toda columna usada para
   filtrar u ordenar MUST tener índice, y quedan prohibidas las consultas N+1.
 - Los archivos binarios grandes MUST NOT pasar por funciones del servidor: se suben y descargan
@@ -196,4 +209,4 @@ se sienta confiable.
   operativa para agentes y personas vive en `AGENTS.md`, que MUST mantenerse alineado con esta
   constitución.
 
-**Version**: 1.0.1 | **Ratified**: 2026-10-14 | **Last Amended**: 2026-10-20
+**Version**: 1.1.0 | **Ratified**: 2026-10-14 | **Last Amended**: 2026-10-31
