@@ -15,6 +15,18 @@ export function usePulse() {
 // Solo en el cliente: el sondeo vive en el layout y las páginas piden un pulso extra tras una acción.
 let pollNow: (() => Promise<void>) | null = null
 
+// El cursor se solapa (`PULSE_OVERLAP_MS`): cada envío o solicitud se anuncia una sola vez. A nivel de módulo (el sondeo
+// solo corre en el cliente) para que un remontaje del layout no repita los avisos de los últimos segundos.
+const announced = new Set<string>()
+function unannounced<T extends { id: string }>(items: T[] = []): T[] {
+  if (announced.size > 500) announced.clear()
+  return items.filter((item) => {
+    if (announced.has(item.id)) return false
+    announced.add(item.id)
+    return true
+  })
+}
+
 /** Pulso inmediato (p. ej. tras aprobar a un usuario) para no esperar hasta 5 s. */
 export function refreshPulse() {
   return pollNow?.() ?? Promise.resolve()
@@ -28,16 +40,6 @@ export function usePulsePolling() {
   const visibility = useDocumentVisibility()
   const online = useOnline()
   let inFlight = false
-  // El cursor se solapa (`PULSE_OVERLAP_MS`): cada envío o solicitud se anuncia una sola vez.
-  const announced = new Set<string>()
-  function unannounced<T extends { id: string }>(items: T[] = []): T[] {
-    if (announced.size > 500) announced.clear()
-    return items.filter((item) => {
-      if (announced.has(item.id)) return false
-      announced.add(item.id)
-      return true
-    })
-  }
 
   async function poll() {
     if (inFlight || visibility.value !== 'visible' || !online.value) return
