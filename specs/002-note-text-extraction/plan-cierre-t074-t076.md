@@ -78,8 +78,7 @@ Necesita **las 20 fotos reales** de la persona (notas adhesivas y peticiones de 
    termina la subida hasta `ready` (objetivo: 90 % < 30 s). Incluir una imagen sin texto (`paisaje.jpg`) marcada como vacía.
 4. Latencia del lado invitado: envíos de 1, 4 y 8 imágenes aptas desde `/enviar`, anotando el tiempo hasta `ready` de
    cada una (SC-001 aplica a ≤ 4; para 8 se registra sin umbral).
-5. Si no se cumple: ajustar solo el system prompt del preset `@preset/image-content-extraction` en OpenRouter (ya no vive en el repo: `server/ai/image-text/prompt.ts` solo guarda `IMAGE_EXTRACTION_PROMPT`) y repetir; si solo
-   falla el respaldo, probar otro `GEMINI_DEFAULT_MODEL` (el principal no cambia). Cada ajuste necesita test unitario
+5. Si no se cumple: ajustar solo el system prompt del preset `@preset/image-content-extraction` en OpenRouter (ya no vive en el repo: `server/ai/image-text/prompt.ts` solo guarda `IMAGE_EXTRACTION_PROMPT`) y repetir. Cada ajuste necesita test unitario
    y `bun run typecheck` + `bun run test:unit`.
 6. Anotar la tabla por proveedor en `quickstart.md` §6 «Calidad real» y marcar T075.
 
