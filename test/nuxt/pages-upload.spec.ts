@@ -52,6 +52,13 @@ describe('/upload · pedir acceso', () => {
     expect(wrapper.find('[aria-busy="true"]').exists()).toBe(true)
   })
 
+  it('muestra el enlace para volver a iniciar sesión', async () => {
+    mockApi('GET', CURRENT, access('none'))
+    const wrapper = await mountSuspended(UploadPage)
+    await flush()
+    expect(wrapper.get('a[href="/login"]').text()).toBe('Volver a iniciar sesión')
+  })
+
   it('none: campo con etiqueta y "Pedir acceso"; sin nombre no llama a la API', async () => {
     mockApi('GET', CURRENT, access('none'))
     const wrapper = await mountSuspended(UploadPage)

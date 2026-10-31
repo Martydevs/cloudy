@@ -167,6 +167,10 @@ const ended = computed(() => (state.value === 'rejected' || state.value === 'exp
           <Icon v-else name="lucide:hand" class="size-4" aria-hidden="true" />
           Pedir acceso
         </button>
+        <NuxtLink to="/login" class="link link-primary inline-flex min-h-11 items-center justify-center gap-2 self-center">
+          <Icon name="lucide:arrow-left" class="size-4" aria-hidden="true" />
+          Volver a iniciar sesión
+        </NuxtLink>
       </fieldset>
     </form>
   </div>
