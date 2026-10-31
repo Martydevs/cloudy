@@ -21,8 +21,9 @@ file. Keep this guide aligned with it whenever the constitution is amended.
 | File storage | Neon Object Storage (S3-compatible, path-style) via `@aws-sdk/client-s3` + `@aws-sdk/s3-request-presigner` |
 | UI | Tailwind CSS 4 + daisyUI 5 (themes `cloudy` dark default, `cloudy-light`) · `@nuxt/icon` with **lucide** only · `@nuxt/fonts` (DM Sans) · `@nuxt/image` |
 | Utilities | `@vueuse/nuxt` (auto-imported) |
+| Forms | Regle (`@regle/schemas`) over zod schemas (`zod/mini`) in `app/utils/form-schemas.ts`, always through `useFormSchema` (`app/utils/form-schema.ts`) · `@regle/nuxt` for auto-imports only |
 | Tests | Vitest projects `unit` / `nuxt` / `e2e` · `@nuxt/test-utils` · `playwright-core` (Chromium) |
-| AI | AI SDK v7 (`generateText` + `Output.object`) · OpenRouter as the only provider via `@openrouter/ai-sdk-provider`, preset `@preset/image-content-extraction` (the preset picks model and routing) · isolated in `server/ai/` |
+| AI | AI SDK v7 (`generateText` + `Output.object`) · OpenRouter as the only provider via `@openrouter/ai-sdk-provider`, preset `@preset/image-content-extraction` (the preset picks model and routing and carries the system prompt: the code sends only the user prompt in `server/ai/image-text/prompt.ts`) · isolated in `server/ai/` |
 | Deploy | Vercel (Nitro `vercel` preset, SSR, Vercel Cron) |
 
 Do not add dependencies or external services without a justification in the feature plan's
@@ -83,7 +84,7 @@ directly with presigned URLs. Lazy-load thumbnails and non-critical components (
 Guest access (feature 003): the guest's browser holds two `httpOnly` cookies, `cloudy-guest-access` (random token;
 only its SHA-256 is stored) and `cloudy-guest-device` (per-browser rate-limit key). Limits: 3 new requests per
 30 min per browser, 30 per network (`hashSender(ip)`), and `ACCESS_SUBMIT_LIMIT` creations per approved request
-(`shared/constants/access.ts`). `/upload` polls `GET /api/public/access/current` every 5 s like the team pulse.
+(`shared/constants/access.ts`). Closing a send (`complete`) allows 60 per hour per network, in line with the request limit, since many guests share one Wi-Fi. `/upload` polls `GET /api/public/access/current` every 5 s like the team pulse; the team pulse cursor overlaps by `PULSE_OVERLAP_MS` and the client announces each id once.
 
 **II. Functional & effective** — Deliver user stories as independent, shippable slices. YAGNI. Failed
 flows must leave no orphans or half-written rows and must tell the user what to do next.
@@ -98,6 +99,9 @@ logic in composables. No `any` without a justifying comment. Shared rules live o
 Every endpoint validates input and calls the session/role guard server-side — hiding UI is not
 authorization. Neon Auth, storage, AI and background work are accessed **only** through `server/utils/auth.ts`,
 `server/utils/storage.ts`, `server/ai/` (via `server/utils/image-text.ts`) and `server/utils/background.ts`. No demo code, dead code or secrets. Typecheck and build must pass.
+Forms validate with a zod schema from `app/utils/form-schemas.ts` through `useFormSchema` — never `useRegle`/`useRegleSchema`
+directly (`test/unit/architecture.spec.ts` enforces it). Schemas mirror `shared/validation` (messages and limits come from there);
+the server stays the authority and `test/nuxt/form-schemas.spec.ts` checks both agree.
 
 **V. Testing** — Unit tests for pure logic and business rules; component tests for stateful/role-
 dependent components; e2e for every user story and every protected route (no session + wrong role).
@@ -172,6 +176,11 @@ Never print or commit their values.
   preset) or 3 transient failures in a row; images not started stay pending. With no key nothing is called. E2E run
   against a local chat-completions stub (`test/e2e/setup/openrouter-stub.ts`) through `NUXT_OPENROUTER_BASE_URL`, so
   they never call OpenRouter.
+- Regle: `useRegleSchema` only exposes `$validate`/`$pending` at the root (fields keep `$touch`, `$reset`, `$errors`). In production
+  `nuxt.config.ts` removes the plugin `@regle/nuxt` registers (it only adds devtools) so Regle stays out of every route's JS; the
+  build fails if a Regle plugin survives that filter. `zod/mini` keeps the Regle + zod chunk around 23 KB gzip.
+- `useFetch` shares its data by key and `refresh()` runs the *first* instance's options: state every instance must see (the guest
+  clock skew in `useGuestAccess`) lives in `useState`, not in a local ref.
 - Nitro's `event.waitUntil` is not wired on Vercel Node: background work uses `waitUntil` from
   `@vercel/functions`, only through `server/utils/background.ts`.
 - `heic-to` only works in the browser: load it with a dynamic `import()` (`app/utils/heic-copy.ts`).

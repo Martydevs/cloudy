@@ -198,7 +198,7 @@ server/
 │   │   ├── google.ts                    # (movido desde ai/gemini.ts) googleClient(config) + GEMINI_DEFAULT_MODEL
 │   │   └── candidates.ts                # resolveImageTextCandidates(config): [OpenAI, Gemini] con clave
 │   ├── image-text/                      # el caso de uso de esta feature
-│   │   ├── prompt.ts                    # IMAGE_EXTRACTION_INSTRUCTION + IMAGE_EXTRACTION_PROMPT (una sola fuente)
+│   │   ├── prompt.ts                    # IMAGE_EXTRACTION_PROMPT (la instrucción salió del repo: el preset de OpenRouter lleva el system prompt)
 │   │   ├── schemas.ts                   # Zod: imageSourceSchema · modelImageSchema · imageTextOutputSchema
 │   │   └── extract.ts                   # extractImageText(): validar → principal (→ respaldo) → validar → ImageTextResult
 │   ├── errors.ts                        # classifyProviderError(): código, si activa el respaldo y si es persistente
