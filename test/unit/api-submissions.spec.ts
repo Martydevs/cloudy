@@ -133,8 +133,8 @@ describe('POST /api/public/submissions/:id/complete', () => {
     expect(sets[1]).toMatchObject({ completedAt: expect.any(Date) })
   })
 
-  it('responde 429 al superar 10 cierres por hora y no toca el envío', async () => {
-    const fake = installNitro([[{ count: 11 }]])
+  it('responde 429 al superar 60 cierres por hora desde la misma red y no toca el envío', async () => {
+    const fake = installNitro([[{ count: 61 }]])
     const handler = await loadHandler('api/public/submissions/[id]/complete.post.ts')
     const error = await expectStatus(Promise.resolve().then(() => handler(makeEvent({ auth: undefined, method: 'POST', params: { id: SUB } }))), 429)
     expect(error.message).toBe(RATE_LIMITED_MESSAGE)
