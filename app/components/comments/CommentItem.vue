@@ -1,6 +1,7 @@
 <script setup lang="ts">
+import type { RegleExternalErrorTree } from '@regle/core'
 import type { Comment } from '#shared/types/api'
-import { COMMENT_MAX_LENGTH, commentInput } from '#shared/validation/comments'
+import { COMMENT_MAX_LENGTH } from '#shared/validation/comments'
 
 const props = defineProps<{ comment: Comment }>()
 const emit = defineEmits<{ updated: [comment: Comment], deleted: [id: string] }>()
@@ -10,18 +11,18 @@ const toast = useToast()
 const { confirm } = useConfirm()
 
 const editing = ref(false)
-const draft = ref('')
-const touched = ref(false)
+// Un 422 del servidor se muestra en el campo y se borra en cuanto cambia el texto.
+const externalErrors = ref<RegleExternalErrorTree<CommentForm>>({})
+const { r$ } = useRegle({ body: '' }, commentRules, { externalErrors })
 const saving = ref(false)
-const serverError = ref('')
 const textarea = useTemplateRef<HTMLTextAreaElement>('textarea')
 const editButton = useTemplateRef<HTMLButtonElement>('editButton')
 const inputId = useId()
 const hintId = useId()
 const errorId = useId()
 
-const result = computed(() => commentInput({ body: draft.value }))
-const error = computed(() => serverError.value || (touched.value && !result.value.ok ? result.value.errors.body : ''))
+const error = computed(() => r$.$errors.body[0] ?? '')
+const length = computed(() => r$.$value.body.trim().length)
 const url = computed(() => `/api/comments/${props.comment.id}`)
 // Mismo texto que el resto de la app (`timeAgo`), con una hora de referencia que se refresca cada
 // 30 s: el hilo puede quedar abierto mucho tiempo.
@@ -29,9 +30,7 @@ const now = useNow({ scheduler: cb => useIntervalFn(cb, 30_000) })
 const ago = computed(() => timeAgo(props.comment.createdAt, now.value))
 
 function startEdit() {
-  draft.value = props.comment.body
-  touched.value = false
-  serverError.value = ''
+  r$.$reset({ toState: { body: props.comment.body }, clearExternalErrors: true })
   editing.value = true
   nextTick(() => textarea.value?.focus())
 }
@@ -52,13 +51,13 @@ function gone() {
 }
 
 async function save() {
-  touched.value = true
-  serverError.value = ''
-  if (!result.value.ok) return
-  if (result.value.data.body === props.comment.body) return stopEdit()
+  const { valid, data } = await r$.$validate()
+  if (!valid) return
+  const body = data.body.trim()
+  if (body === props.comment.body) return stopEdit()
   saving.value = true
   try {
-    const updated = await api<Comment>(url.value, { method: 'PATCH', body: { body: result.value.data.body } })
+    const updated = await api<Comment>(url.value, { method: 'PATCH', body: { body } })
     emit('updated', updated)
     toast.success(messages.comments.updated)
     stopEdit()
@@ -66,7 +65,7 @@ async function save() {
   catch (error) {
     const status = statusOf(error)
     if (status === 404) gone()
-    else if (status === 422) serverError.value = serverMessage(error, messages.comments.review)
+    else if (status === 422) externalErrors.value = { body: externalErrorsFrom(error).body ?? [serverMessage(error, messages.comments.review)] }
     else toast.error(serverMessage(error, messages.comments.saveFailed))
   }
   finally {
@@ -109,13 +108,13 @@ async function destroy() {
       <textarea
         :id="inputId"
         ref="textarea"
-        v-model="draft"
+        v-model="r$.$value.body"
         rows="3"
         class="textarea w-full"
         :class="{ 'textarea-error': error }"
         :aria-invalid="error ? 'true' : undefined"
         :aria-describedby="error ? `${hintId} ${errorId}` : hintId"
-        @blur="touched = true"
+        @blur="r$.body.$touch()"
         @keydown.esc.prevent="stopEdit"
         @keydown.ctrl.enter.prevent="save"
         @keydown.meta.enter.prevent="save"
@@ -125,8 +124,8 @@ async function destroy() {
         <span
           :id="hintId"
           class="ml-auto shrink-0"
-          :class="draft.trim().length > COMMENT_MAX_LENGTH ? 'text-error' : 'text-base-content/70'"
-        >{{ draft.trim().length }}/{{ COMMENT_MAX_LENGTH }}</span>
+          :class="length > COMMENT_MAX_LENGTH ? 'text-error' : 'text-base-content/70'"
+        >{{ length }}/{{ COMMENT_MAX_LENGTH }}</span>
       </div>
       <div class="flex justify-end gap-2">
         <button type="button" class="btn btn-ghost lg:btn-sm" @click="stopEdit">Cancelar</button>

@@ -1,4 +1,4 @@
-// Feature 002 · US1 — Texto extraído de las imágenes que sube el equipo, contra el stub de OpenAI (A9).
+// Feature 002 · US1 — Texto extraído de las imágenes que sube el equipo, contra el stub de OpenRouter (A9).
 // La lectura corre en segundo plano tras `complete`: las pruebas esperan el texto en el panel, no la
 // respuesta de la subida. El stub lee como nota toda imagen que no reconoce (`foto.jpg`, `imagen.png`).
 import { createPage, setup } from '@nuxt/test-utils/e2e'
@@ -19,7 +19,7 @@ import {
   viewports,
   waitForHydration,
 } from './setup/fixtures'
-import { NOTE_TEXT } from './setup/openai-stub'
+import { NOTE_TEXT } from './setup/openrouter-stub'
 
 await setup({ host: E2E_URL, browser: true })
 

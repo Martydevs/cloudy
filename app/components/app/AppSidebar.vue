@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// `badges`: contador por ruta (`item.to`), p. ej. envíos pendientes en /pendientes y cuentas por aprobar en /usuarios.
+// `badges`: contador por ruta (`item.to`), p. ej. envíos y solicitudes de acceso en /solicitudes y cuentas por aprobar en /usuarios.
 const props = defineProps<{ collapsed: boolean, badges?: Partial<Record<string, number>> }>()
 const emit = defineEmits<{ navigate: [], toggleCollapse: [] }>()
 

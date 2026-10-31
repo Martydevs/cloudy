@@ -11,13 +11,14 @@ export interface CleanupReport {
   expiredSubmissions: number
   orphanUploads: number
   rateLimitRows: number
+  accessRequests: number
 }
 
 export default defineEventHandler(async (event): Promise<CleanupReport> => {
   requireCron(event)
   const db = useDb()
   const now = Date.now()
-  const report: CleanupReport = { purgedTrash: 0, expiredSubmissions: 0, orphanUploads: 0, rateLimitRows: 0 }
+  const report: CleanupReport = { purgedTrash: 0, expiredSubmissions: 0, orphanUploads: 0, rateLimitRows: 0, accessRequests: 0 }
 
   // 0. Raíces con más de 30 días en la papelera: filas y objetos, en lotes de 500.
   report.purgedTrash = await purgeAll(new Date(now - TRASH_RETENTION_DAYS * 86_400_000))
@@ -81,6 +82,9 @@ export default defineEventHandler(async (event): Promise<CleanupReport> => {
     .where(lt(rateLimits.windowStart, new Date(now - 86_400_000)))
     .returning({ key: rateLimits.key })
   report.rateLimitRows = rate.length
+
+  // 5. Solicitudes de acceso terminadas o vencidas hace más de 24 h (feature 003, data-model "Retención").
+  report.accessRequests = await purgeStaleAccessRequests()
 
   return report
 })

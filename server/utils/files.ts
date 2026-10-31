@@ -114,10 +114,18 @@ export async function retryOnUniqueViolation<T>(fn: () => Promise<T>, attempts =
   }
 }
 
+/** La carpeta fuera de la papelera (0 o 1 fila), para componer en un `db.batch`; `null` no devuelve filas. */
+export function visibleFolderQuery(id: string | null) {
+  return useDb().select().from(folders).where(id ? and(eq(folders.id, id), isNull(folders.deletedAt)) : sql`false`).limit(1)
+}
+
+export const folderNotFound = () =>
+  createError({ statusCode: 404, statusMessage: 'No encontrado', message: 'La carpeta no existe o está en la papelera' })
+
 /** Carpeta visible (no en papelera) o 404. */
 export async function getVisibleFolder(id: string): Promise<FolderRow> {
-  const [folder] = await useDb().select().from(folders).where(and(eq(folders.id, id), isNull(folders.deletedAt))).limit(1)
-  if (!folder) throw createError({ statusCode: 404, statusMessage: 'No encontrado', message: 'La carpeta no existe o está en la papelera' })
+  const [folder] = await visibleFolderQuery(id)
+  if (!folder) throw folderNotFound()
   return folder
 }
 
@@ -138,9 +146,13 @@ export function folderItemCountSql(): SQL<number> {
 
 /** Ancestros de la carpeta, desde la raíz, con un CTE recursivo. */
 export async function buildBreadcrumbs(folderId: string | null): Promise<Breadcrumb[]> {
-  const root: Breadcrumb = { id: null, name: 'Archivos' }
-  if (!folderId) return [root]
-  const result = await useDb().execute<{ id: string, name: string, depth: number }>(sql`
+  if (!folderId) return toBreadcrumbs([])
+  return toBreadcrumbs((await breadcrumbsQuery(folderId)).rows)
+}
+
+/** Ancestros de la carpeta (la propia incluida), de la raíz hacia abajo, para componer en un `db.batch`. */
+export function breadcrumbsQuery(folderId: string | null) {
+  return useDb().execute<{ id: string, name: string, depth: number }>(sql`
     WITH RECURSIVE ancestors AS (
       SELECT id, name, parent_id, 0 AS depth FROM folders WHERE id = ${folderId}
       UNION ALL
@@ -148,7 +160,10 @@ export async function buildBreadcrumbs(folderId: string | null): Promise<Breadcr
     )
     SELECT id, name, depth FROM ancestors ORDER BY depth DESC
   `)
-  return [root, ...result.rows.map(r => ({ id: r.id, name: r.name }))]
+}
+
+export function toBreadcrumbs(rows: { id: string, name: string }[]): Breadcrumb[] {
+  return [{ id: null, name: 'Archivos' }, ...rows.map(r => ({ id: r.id, name: r.name }))]
 }
 
 /** Nombres de las carpetas ancestro (incluida la propia) de cada carpeta pedida. */

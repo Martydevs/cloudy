@@ -22,6 +22,9 @@ export const ACTIVITY_LABELS: Record<string, string> = {
   'user.disable': 'desactivó la cuenta de',
   'user.role_change': 'cambió el rol de',
   'user.remove': 'eliminó la cuenta de',
+  // Solicitudes de acceso de invitados (feature 003, FR-011).
+  'access.approve': 'dio acceso a',
+  'access.reject': 'rechazó la solicitud de',
 }
 
 /** Opciones del filtro, en el orden del enum. */
@@ -34,6 +37,7 @@ export const ACTIVITY_ICONS: Record<string, string> = {
   submission: 'lucide:inbox',
   comment: 'lucide:message-square',
   user: 'lucide:user',
+  access: 'lucide:door-open',
 }
 
 export function activityLabel(action: string): string {

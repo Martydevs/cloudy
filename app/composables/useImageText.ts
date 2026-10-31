@@ -4,7 +4,7 @@ import type { ImageText } from '#shared/types/api'
 import { TEXT_POLL_INTERVAL_MS } from '#shared/constants/image-text'
 
 export interface UseImageTextOptions {
-  /** Estado que ya vino en un listado (tarjeta de Pendientes); evita el primer `GET`. */
+  /** Estado que ya vino en un listado (tarjeta de Solicitudes); evita el primer `GET`. */
   initial?: ImageText | null
   /** Lee como respaldo si la imagen sigue pendiente. */
   autoRead?: boolean

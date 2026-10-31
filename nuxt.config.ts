@@ -12,6 +12,16 @@ export default defineNuxtConfig({
     '@vueuse/nuxt/module',
     '@nuxt/image',
     '@nuxt/test-utils/module',
+    '@regle/nuxt',
+    // El plugin del setupFile de Regle solo instala sus devtools y la config para `useRegleSchema` (no se usa),
+    // pero mete Regle en el JS inicial de todas las rutas. En producción se quita: los `useRegle` auto-importados
+    // ya llevan la config, y Regle viaja solo en los chunks de las vistas con formularios (Constitución I).
+    (_options, nuxt) => {
+      if (nuxt.options.dev) return
+      nuxt.hook('app:resolve', (app) => {
+        app.plugins = app.plugins.filter(plugin => !plugin.src.replaceAll('\\', '/').endsWith('/regle-plugin.ts'))
+      })
+    },
     Sonda({ enabled: analyze, server: true, gzip: true }),
   ],
   // Sonda mide desde los source maps; `hidden` los genera sin enlazarlos desde los bundles.
@@ -23,12 +33,9 @@ export default defineNuxtConfig({
     databaseUrl: '',
     neonRealtimeUrl: '',
     neonRealtimeSecret: '',
-    openaiApikey: '',
-    openaiOrg: '',
-    openaiProj: '',
-    // Vacío = API de OpenAI; solo los e2e lo apuntan a un stub local (research A9).
-    openaiBaseUrl: '',
-    googleApikey: '',
+    openrouterApikey: '',
+    // Vacío = API de OpenRouter; solo los e2e lo apuntan a un stub local.
+    openrouterBaseUrl: '',
     neonAuthBaseUrl: '',
     neonAuthCookieSecret: '',
     awsEndpointUrlS3: '',
@@ -43,6 +50,10 @@ export default defineNuxtConfig({
     public: {
       siteUrl: '',
     },
+  },
+  // Pendientes pasó a llamarse Solicitudes (feature 003, FR-024): los accesos guardados siguen funcionando.
+  routeRules: {
+    '/pendientes': { redirect: { to: '/solicitudes', statusCode: 301 } },
   },
   // Los componentes se nombran por archivo (`ThemeToggle`, no `AppThemeToggle`); las carpetas solo agrupan.
   components: [{ path: '~/components', pathPrefix: false }],
@@ -78,6 +89,10 @@ export default defineNuxtConfig({
         fallbacks: ['Roboto', 'Segoe UI', 'Helvetica Neue', 'Arial', 'Noto Sans'],
       },
     ],
+  },
+  // Mensajes en español, reglas propias y `autoDirty: false` para todos los formularios.
+  regle: {
+    setupFile: '~/regle-config.ts',
   },
   nitro: {
     // Necesario para `useEvent()` en el adaptador de Neon Auth (research R1).

@@ -7,11 +7,12 @@ import { mountSuspended } from '@nuxt/test-utils/runtime'
 import { nextTick } from 'vue'
 import type { Component } from 'vue'
 import type { DashboardSummary, Me } from '#shared/types/api'
+import AccessRequestList from '~/components/guests/AccessRequestList.vue'
 import ActividadPage from '~/pages/actividad.vue'
 import FilesIndexPage from '~/pages/archivos/index.vue'
 import HomePage from '~/pages/index.vue'
 import PapeleraPage from '~/pages/papelera.vue'
-import PendientesPage from '~/pages/pendientes.vue'
+import SolicitudesPage from '~/pages/solicitudes.vue'
 import UsuariosPage from '~/pages/usuarios.vue'
 import { buttonsWithText, calls, failWith, flush, mockApi, resetCalls } from './helpers/api'
 
@@ -25,6 +26,7 @@ const setMe = (changes: Partial<Me['profile']> = {}) => {
 const emptySummary: DashboardSummary = {
   recentFiles: [],
   pendingCount: 0,
+  openAccessRequests: 0,
   totalsByCategory: {
     image: { count: 0, bytes: 0 }, audio: { count: 0, bytes: 0 }, video: { count: 0, bytes: 0 },
     presentation: { count: 0, bytes: 0 }, document: { count: 0, bytes: 0 },
@@ -64,12 +66,20 @@ const rows: Row[] = [
     emptyCopy: 'Esta carpeta está vacía',
   },
   {
-    name: 'Pendientes',
-    page: PendientesPage,
+    name: 'Solicitudes',
+    page: SolicitudesPage,
     endpoint: '/api/submissions',
     emptyPayload: [],
     errorCopy: 'No pudimos cargar los envíos',
-    emptyCopy: 'No hay envíos pendientes',
+    emptyCopy: 'No hay envíos por revisar',
+  },
+  {
+    name: 'Solicitudes de acceso',
+    page: AccessRequestList,
+    endpoint: '/api/access-requests',
+    emptyPayload: [],
+    errorCopy: 'No pudimos cargar las solicitudes de acceso',
+    emptyCopy: 'Nadie está pidiendo acceso ahora',
   },
   {
     name: 'Papelera',
@@ -104,9 +114,11 @@ beforeEach(() => {
   // Usuarios y Actividad son de admin; el resto también se renderiza con ese rol.
   setMe({ role: 'admin' })
   mockApi('GET', '/api/me', () => useMe().me.value)
-  mockApi('GET', '/api/realtime/pulse', { cursor: '2026-10-14T10:00:00.000Z', pendingCount: 0, newSubmissions: [], pendingUsers: 0 })
+  mockApi('GET', '/api/realtime/pulse', { cursor: '2026-10-14T10:00:00.000Z', pendingCount: 0, newSubmissions: [], pendingUsers: 0, openAccessRequests: 0, newAccessRequests: [] })
   // El filtro por persona de /actividad: no es el endpoint bajo prueba.
   mockApi('GET', '/api/users', { items: [], total: 0 })
+  // La sección de solicitudes de acceso de /solicitudes (feature 003): tampoco es el endpoint bajo prueba.
+  mockApi('GET', '/api/access-requests', [])
 })
 
 describe.each(rows)('$name · los cuatro estados', ({ page, route, endpoint, emptyPayload, errorCopy, emptyCopy }) => {

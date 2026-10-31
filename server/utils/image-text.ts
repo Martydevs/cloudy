@@ -2,8 +2,8 @@
 // usan los endpoints. Orquesta elegibilidad → reclamar → descargar → firma → IA → guardar. Nunca SQL
 // directo (usa el store) ni detalles del proveedor (usa `#server/ai`).
 import { createError } from 'h3'
-import { createProviderBreaker, extractImageText, imageSourceSchema, resolveImageTextCandidates } from '#server/ai'
-import type { ImageTextResult, ProviderBreaker } from '#server/ai'
+import { createProviderBreaker, extractImageText, imageSourceSchema, resolveImageTextModel } from '#server/ai'
+import type { ExtractImageTextOptions, ImageTextResult } from '#server/ai'
 import type { ImageText, ImageTextError, ImageTextStatus } from '#shared/types/api'
 import { isImageTextEligible, MAX_IMAGE_TEXT_BYTES, READING_STALE_MS } from '#shared/constants/image-text'
 import { activityInsert } from './activity'
@@ -65,10 +65,7 @@ function codeOf(error: unknown): string {
   return typeof name === 'string' ? name : 'unknown'
 }
 
-export interface ReadOptions {
-  abortSignal?: AbortSignal
-  breaker?: ProviderBreaker
-}
+export type ReadOptions = Pick<ExtractImageTextOptions, 'abortSignal' | 'breaker' | 'model'>
 
 /**
  * Lee una fila ya reclamada y guarda el resultado. Al modelo solo van los bytes de la imagen, tal como
@@ -105,6 +102,7 @@ export async function readImageText(target: ImageTextTarget, row: ClaimedImageTe
       image: { mediaType: signatureExt === 'png' ? 'image/png' : 'image/jpeg', data },
       abortSignal: options.abortSignal,
       breaker: options.breaker,
+      model: options.model,
     })
     if (result.status === 'failed') console.warn(`[image-text] ${target.table}:${row.id} failed (${result.error})`)
     return await save(result.status === 'ready'
@@ -223,22 +221,24 @@ const GUEST_TEXT_LIMIT = { limit: 20, windowSec: 3600 }
  * Lee en segundo plano las imágenes aptas de un envío de invitado (research A6): hasta `concurrency` a la
  * vez, con un presupuesto compartido de `min(240 s, plazo real - 15 s)` y un cortacircuito propio de esta
  * ejecución. Cada trabajador reclama su imagen justo antes de leerla; lo que no se inicia queda pendiente
- * (`NULL`) y se lee al abrir Pendientes. Al modelo solo van los bytes (FR-019). Nunca lanza.
+ * (`NULL`) y se lee al abrir Solicitudes. Sin clave de OpenRouter no se inicia ninguna. Al modelo solo van
+ * los bytes (FR-019). Nunca lanza.
  */
 export async function readSubmissionImages(submissionId: string, { concurrency = 4, budgetMs }: { concurrency?: number, budgetMs?: number } = {}): Promise<void> {
   try {
     const budget = budgetMs ?? Math.min(SUBMISSION_BUDGET_MS, (remainingMs() ?? Number.POSITIVE_INFINITY) - DEADLINE_MARGIN_MS)
     if (budget <= 0) return
+    const model = resolveImageTextModel(useRuntimeConfig())
+    if (!model) return
     const signal = AbortSignal.timeout(budget)
     const { senderKey, rows } = await listPendingSubmissionImages(submissionId)
     const queue = rows.filter(row => canReadImageText(row, !!row.textSourceKey))
-    const candidates = resolveImageTextCandidates(useRuntimeConfig())
     const breaker = createProviderBreaker()
 
     let next = 0
     const worker = async () => {
       // Orden por imagen: presupuesto → cortacircuito → reclamar → límite → leer.
-      while (next < queue.length && !signal.aborted && !breaker.exhausted(candidates)) {
+      while (next < queue.length && !signal.aborted && !breaker.isOpen()) {
         const row = queue[next++]!
         const target: ImageTextTarget = { table: 'guest_submission_files', id: row.id }
         try {
@@ -250,7 +250,7 @@ export async function readSubmissionImages(submissionId: string, { concurrency =
             await releaseImageText(target, claimed.claimedAt)
             continue
           }
-          await readImageText(target, claimed, { abortSignal: signal, breaker })
+          await readImageText(target, claimed, { abortSignal: signal, breaker, model })
         }
         catch (error) {
           console.error(`[image-text] ${target.table}:${row.id} pool error (${codeOf(error)})`)

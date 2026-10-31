@@ -50,6 +50,7 @@ const setMe = (changes: Partial<Me['profile']> = {}) => {
 const summary = (changes: Partial<DashboardSummary> = {}): DashboardSummary => ({
   recentFiles: [],
   pendingCount: 0,
+  openAccessRequests: 0,
   totalsByCategory: {
     image: { count: 3, bytes: 3072 }, audio: { count: 0, bytes: 0 }, video: { count: 0, bytes: 0 },
     presentation: { count: 0, bytes: 0 }, document: { count: 0, bytes: 0 },
@@ -84,7 +85,8 @@ describe('Inicio', () => {
     const wrapper = await mountSuspended(HomePage)
     await flush()
     expect(wrapper.get('h1').text()).toBe('Hola, Ana')
-    expect(wrapper.text()).toContain('Pendientes de revisar')
+    expect(wrapper.text()).toContain('Solicitudes por atender')
+    expect(wrapper.findAll('a[href="/solicitudes"]').map(a => a.text())).toEqual(expect.arrayContaining(['Ver solicitudes']))
     expect(wrapper.text()).toContain('3 KB')
     expect(wrapper.text()).toContain('Imágenes')
     expect(wrapper.text()).toContain('Sube tu primer archivo')
@@ -115,6 +117,17 @@ describe('Inicio', () => {
     usePulse().pendingCount.value = 0
     await nextTick()
     expect(wrapper.get('.stat-value').text()).toBe('2')
+
+    // "Solicitudes por atender" suma envíos por revisar y solicitudes de acceso (feature 003).
+    usePulse().openAccessRequests.value = 4
+    await nextTick()
+    expect(wrapper.get('.stat-value').text()).toBe('4')
+    usePulse().openAccessRequests.value = 0
+    clearNuxtData()
+    mockApi('GET', '/api/dashboard', summary({ pendingCount: 2, openAccessRequests: 3 }))
+    const summed = await mountSuspended(HomePage)
+    await flush()
+    expect(summed.get('.stat-value').text()).toBe('5')
 
     useMe().me.value = null
     clearNuxtData()
@@ -231,6 +244,14 @@ describe('inicio de sesión y registro', () => {
     await evil.get('form').trigger('submit')
     await flush()
     expect(navigateToMock).toHaveBeenLastCalledWith('/pendiente')
+  })
+
+  it('login ofrece a los invitados "Enviar archivos" hacia /upload (feature 003, FR-001)', async () => {
+    const wrapper = await mountSuspended(LoginPage)
+    expect(wrapper.text()).toContain('¿Eres invitado?')
+    const link = wrapper.get('a[href="/upload"]')
+    expect(link.text()).toBe('Enviar archivos')
+    expect(link.classes()).toEqual(expect.arrayContaining(['btn', 'btn-outline', 'btn-block']))
   })
 
   it('login muestra el error traducido', async () => {

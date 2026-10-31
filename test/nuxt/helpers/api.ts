@@ -1,7 +1,7 @@
 // Endpoints simulados con respuesta intercambiable por prueba sobre `registerEndpoint`
 // (que acumula registros por URL y usa el primero que coincide).
 import { registerEndpoint } from '@nuxt/test-utils/runtime'
-import { createError } from 'h3'
+import { createError, setResponseStatus } from 'h3'
 import type { H3Event } from 'h3'
 import type { DOMWrapper } from '@vue/test-utils'
 
@@ -39,6 +39,17 @@ async function readJson(event: H3Event): Promise<unknown> {
 export function failWith(statusCode: number, data?: Record<string, unknown>, message?: string): Impl {
   return () => {
     throw createError({ statusCode, data, message })
+  }
+}
+
+/**
+ * Error como lo envía un endpoint real: `statusMessage` genérico y `message` en español (lo que muestra
+ * `serverMessage`). Se devuelve el cuerpo con el estado: un `createError` lanzado aquí pierde su `message`.
+ */
+export function failFromServer(statusCode: number, statusMessage: string, message: string, data?: Record<string, unknown>): Impl {
+  return (event) => {
+    setResponseStatus(event, statusCode, statusMessage)
+    return { statusCode, statusMessage, message, ...(data ? { data } : {}) }
   }
 }
 

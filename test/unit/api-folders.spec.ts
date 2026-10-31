@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { created, expectGuarded, expectStatus, installNitro, loadHandler, makeEvent, UUID, UUID2 } from './helpers/nitro'
+import { created, expectGuarded, expectStatus, installNitro, loadHandler, makeEvent, sqlText, UUID, UUID2 } from './helpers/nitro'
 
 afterEach(() => {
   vi.unstubAllGlobals()
@@ -18,8 +18,12 @@ const fileRow = (changes: Record<string, unknown> = {}) => ({
 })
 
 describe('GET /api/folders/:id/children', () => {
+  // Todo va en un `db.batch`: el doble resuelve el `execute` de las migas al construirlo y después, en orden,
+  // la carpeta, los archivos y las subcarpetas.
+  const children = (crumbs: unknown[], own: unknown[], fileRows: unknown[], subfolders: unknown[]) => [{ rows: crumbs }, own, fileRows, subfolders]
+
   it('raíz: subcarpetas con su conteo, archivos y ruta', async () => {
-    installNitro([[fileRow({ folderId: null, commentCount: 2 })], [{ folder: folder(), itemCount: 3 }]])
+    const fake = installNitro(children([], [], [fileRow({ folderId: null, commentCount: 2 })], [{ folder: folder(), itemCount: 3 }]))
     const handler = await loadHandler('api/folders/[id]/children.get.ts')
     const result = await handler(makeEvent({ params: { id: 'root' } }))
     expect(result).toEqual({
@@ -29,11 +33,13 @@ describe('GET /api/folders/:id/children', () => {
       files: [expect.objectContaining({ id: 'f1', commentCount: 2 })],
       nextCursor: null,
     })
+    // Un solo viaje a Neon.
+    expect(fake.db.batch).toHaveBeenCalledTimes(1)
+    expect(fake.db.batch.mock.calls[0]![0]).toHaveLength(4)
   })
 
   it('una carpeta incluye la carpeta y sus migas', async () => {
-    // Archivos, subcarpetas y migas van en paralelo; el doble consume el `execute` de las migas al construirlo.
-    installNitro([[folder()], { rows: [{ id: UUID, name: 'Domingo', depth: 0 }] }, [fileRow()], []])
+    installNitro(children([{ id: UUID, name: 'Domingo', depth: 0 }], [folder()], [fileRow()], []))
     const handler = await loadHandler('api/folders/[id]/children.get.ts')
     const result = await handler(makeEvent({ params: { id: UUID }, url: '/api/x?sort=date&dir=desc' })) as { folder: { name: string }, breadcrumbs: unknown[] }
     expect(result.folder.name).toBe('Domingo')
@@ -41,18 +47,23 @@ describe('GET /api/folders/:id/children', () => {
   })
 
   it('con filtro de tipo o cursor no repite las subcarpetas', async () => {
-    const fake = installNitro([[fileRow()], [fileRow()]])
+    const fake = installNitro([...children([], [], [fileRow()], []), ...children([], [], [fileRow()], [])])
     const handler = await loadHandler('api/folders/[id]/children.get.ts')
     const filtered = await handler(makeEvent({ params: { id: 'root' }, url: '/api/x?type=image' })) as { folders: unknown[] }
     expect(filtered.folders).toEqual([])
     const cursor = Buffer.from(JSON.stringify({ v: 'foto.jpg', id: 'f1' })).toString('base64url')
     const page2 = await handler(makeEvent({ params: { id: 'root' }, url: `/api/x?cursor=${cursor}` })) as { folders: unknown[], breadcrumbs: unknown[] }
     expect(page2).toMatchObject({ folders: [], breadcrumbs: [] })
-    expect(fake.calls.filter(c => c.method === 'select')).toHaveLength(2)
+    // Archivos, subcarpetas y carpeta por petición: la consulta de subcarpetas va desactivada con `false`.
+    const wheres = fake.calls.filter(c => c.method === 'where').map(c => sqlText(c.args[0]))
+    expect(wheres).toHaveLength(6)
+    expect(wheres[1]).toContain('false')
+    expect(wheres[4]).toContain('false')
   })
 
   it('404 para ids inválidos o carpetas en la papelera; 422 para filtros inválidos', async () => {
-    installNitro([[]])
+    // La carpeta va en el batch con el resto: sus migas también se piden y vuelven vacías.
+    installNitro(children([], [], [], []))
     const handler = await loadHandler('api/folders/[id]/children.get.ts')
     await expectStatus(Promise.resolve().then(() => handler(makeEvent({ params: { id: 'no-es-uuid' } }))), 404)
     await expectStatus(Promise.resolve().then(() => handler(makeEvent({ params: { id: UUID } }))), 404)

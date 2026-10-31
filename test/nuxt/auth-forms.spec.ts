@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import { mountSuspended } from '@nuxt/test-utils/runtime'
 import type { VueWrapper } from '@vue/test-utils'
+import AuthForm from '~/components/auth/AuthForm.vue'
+import { type FormRules, loginRules, registerRules } from '~/utils/form-rules'
+import { flush } from './helpers/api'
 import LoginPage from '~/pages/login.vue'
 import RegistroPage from '~/pages/registro.vue'
 import RestablecerPage from '~/pages/restablecer.vue'
@@ -16,6 +19,9 @@ async function fillAndBlur(wrapper: VueWrapper, label: string, value: string) {
   await input.setValue(value)
   await input.trigger('blur')
 }
+
+// Fuera de una plantilla `mountSuspended` no infiere el genérico de AuthForm: se pasa como registro de textos.
+const asFormRules = <S extends Record<string, string>>(rules: FormRules<S>) => rules as unknown as FormRules<Record<string, string>>
 
 function submitButton(wrapper: VueWrapper) {
   return wrapper.get('button[type="submit"]')
@@ -81,6 +87,53 @@ describe('formulario de inicio de sesión', () => {
     await fillAndBlur(wrapper, 'Correo electrónico', 'no-es-correo')
     expect(wrapper.text()).toContain('Escribe un correo electrónico válido')
     expect(submitButton(wrapper).attributes('disabled')).toBeDefined()
+  })
+})
+
+describe('AuthForm', () => {
+  const loginFields = [
+    { name: 'email', label: 'Correo electrónico', type: 'email' as const },
+    { name: 'password', label: 'Contraseña', type: 'password' as const },
+  ]
+
+  it('no marca errores mientras se escribe, solo al salir del campo', async () => {
+    const wrapper = await mountSuspended(RegistroPage)
+    const email = field(wrapper, 'Correo electrónico')
+    await email.setValue('ana@')
+    expect(wrapper.text()).not.toContain('Escribe un correo electrónico válido')
+    expect(email.attributes('aria-invalid')).toBeUndefined()
+    await email.trigger('blur')
+    expect(wrapper.text()).toContain('Escribe un correo electrónico válido')
+    expect(email.attributes('aria-describedby')).toBe(wrapper.get('p.text-error').attributes('id'))
+  })
+
+  it('al enviar con errores enfoca el primer campo inválido y no emite', async () => {
+    const wrapper = await mountSuspended(AuthForm, {
+      props: { legend: 'Crear cuenta', fields: [
+        { name: 'name', label: 'Nombre' },
+        { name: 'email', label: 'Correo electrónico', type: 'email' as const },
+        { name: 'password', label: 'Contraseña', type: 'password' as const },
+        { name: 'confirm', label: 'Confirmar contraseña', type: 'password' as const },
+      ], rules: asFormRules(registerRules), submitLabel: 'Crear cuenta', initial: { name: 'Ana' } },
+      attachTo: document.body,
+    })
+    await field(wrapper, 'Contraseña').setValue('12345678')
+    await wrapper.get('form').trigger('submit')
+    await flush()
+    expect(document.activeElement).toBe(field(wrapper, 'Correo electrónico').element)
+    expect(wrapper.emitted('submit')).toBeUndefined()
+    wrapper.unmount()
+  })
+
+  it('emite los datos como el servidor: recorta, correo en minúsculas y contraseña intacta', async () => {
+    const wrapper = await mountSuspended(AuthForm, {
+      props: { legend: 'Iniciar sesión', fields: loginFields, rules: asFormRules(loginRules), submitLabel: 'Entrar' },
+    })
+    await field(wrapper, 'Correo electrónico').setValue('  Ana@Iglesia.ORG ')
+    await field(wrapper, 'Contraseña').setValue(' clave ')
+    await wrapper.get('form').trigger('submit')
+    await flush()
+    expect(wrapper.emitted('submit')).toEqual([[{ email: 'ana@iglesia.org', password: ' clave ' }]])
   })
 })
 

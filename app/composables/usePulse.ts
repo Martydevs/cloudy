@@ -7,7 +7,9 @@ export function usePulse() {
   const newSubmissions = useState<Pulse['newSubmissions']>('pulse-new', () => [])
   const cursor = useState<string | null>('pulse-cursor', () => null)
   const pendingUsers = useState('pulse-pending-users', () => 0)
-  return { pendingCount, newSubmissions, cursor, pendingUsers }
+  /** Solicitudes de acceso abiertas (feature 003). */
+  const openAccessRequests = useState('pulse-access', () => 0)
+  return { pendingCount, newSubmissions, cursor, pendingUsers, openAccessRequests }
 }
 
 // Solo en el cliente: el sondeo vive en el layout y las páginas piden un pulso extra tras una acción.
@@ -20,7 +22,7 @@ export function refreshPulse() {
 
 /** Arranca el sondeo; se llama una vez desde el layout del dashboard. */
 export function usePulsePolling() {
-  const { pendingCount, newSubmissions, cursor, pendingUsers } = usePulse()
+  const { pendingCount, newSubmissions, cursor, pendingUsers, openAccessRequests } = usePulse()
   const api = useApi()
   const toast = useToast()
   const visibility = useDocumentVisibility()
@@ -35,10 +37,14 @@ export function usePulsePolling() {
       pendingCount.value = pulse.pendingCount
       newSubmissions.value = pulse.newSubmissions
       pendingUsers.value = pulse.pendingUsers ?? 0
+      openAccessRequests.value = pulse.openAccessRequests ?? 0
       cursor.value = pulse.cursor
-      // Aviso en vivo de cada envío nuevo (FR-018), con enlace a la cola (T121).
+      // Aviso en vivo de cada envío nuevo (FR-018) y de cada solicitud de acceso (feature 003, FR-007), con enlace a Solicitudes.
       for (const submission of pulse.newSubmissions) {
-        toast.info(messages.submissions.received(submission.senderName, submission.fileCount), { action: { label: 'Ver', to: '/pendientes' } })
+        toast.info(messages.submissions.received(submission.senderName, submission.fileCount), { action: { label: 'Ver', to: '/solicitudes' } })
+      }
+      for (const request of pulse.newAccessRequests ?? []) {
+        toast.info(messages.access.requested(request.senderName), { action: { label: 'Ver', to: '/solicitudes' } })
       }
     }
     catch {

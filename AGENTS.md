@@ -7,7 +7,8 @@ send material from a public page into an approval queue that the team reviews li
 **Governance**: `.specify/memory/constitution.md` (v1.0.1) is the source of truth and overrides this
 file. Keep this guide aligned with it whenever the constitution is amended.
 
-**Active feature**: `specs/002-note-text-extraction/` (builds on `specs/001-shared-media-drive/`). Read `spec.md` (what), `plan.md` + `research.md`
+**Active feature**: `specs/003-guest-upload-access-code/` (builds on `specs/001-shared-media-drive/` and
+`specs/002-note-text-extraction/`). Read `spec.md` (what), `plan.md` + `research.md`
 (how), `data-model.md` and `contracts/` (interfaces) before changing related code.
 
 ## Stack
@@ -21,7 +22,7 @@ file. Keep this guide aligned with it whenever the constitution is amended.
 | UI | Tailwind CSS 4 + daisyUI 5 (themes `cloudy` dark default, `cloudy-light`) · `@nuxt/icon` with **lucide** only · `@nuxt/fonts` (DM Sans) · `@nuxt/image` |
 | Utilities | `@vueuse/nuxt` (auto-imported) |
 | Tests | Vitest projects `unit` / `nuxt` / `e2e` · `@nuxt/test-utils` · `playwright-core` (Chromium) |
-| AI | AI SDK v7 (`generateText` + `Output.object`) · OpenAI `gpt-4o` as main provider, Google `gemini-3.5-flash-lite` as fallback · isolated in `server/ai/` |
+| AI | AI SDK v7 (`generateText` + `Output.object`) · OpenRouter as the only provider via `@openrouter/ai-sdk-provider`, preset `@preset/image-content-extraction` (the preset picks model and routing) · isolated in `server/ai/` |
 | Deploy | Vercel (Nitro `vercel` preset, SSR, Vercel Cron) |
 
 Do not add dependencies or external services without a justification in the feature plan's
@@ -79,6 +80,10 @@ fetching uses Nuxt `useFetch`, not VueUse.
 gzip per route. Index every filtered/sorted column; no N+1 queries; cursor pagination. **Never stream
 file binaries through server functions** (Vercel body limit ~4.5 MB): browsers upload/download
 directly with presigned URLs. Lazy-load thumbnails and non-critical components (`Lazy*`).
+Guest access (feature 003): the guest's browser holds two `httpOnly` cookies, `cloudy-guest-access` (random token;
+only its SHA-256 is stored) and `cloudy-guest-device` (per-browser rate-limit key). Limits: 3 new requests per
+30 min per browser, 30 per network (`hashSender(ip)`), and `ACCESS_SUBMIT_LIMIT` creations per approved request
+(`shared/constants/access.ts`). `/upload` polls `GET /api/public/access/current` every 5 s like the team pulse.
 
 **II. Functional & effective** — Deliver user stories as independent, shippable slices. YAGNI. Failed
 flows must leave no orphans or half-written rows and must tell the user what to do next.
@@ -144,8 +149,7 @@ files: set the same names per environment in the project settings.
 `NUXT_DATABASE_URL`, `NUXT_NEON_AUTH_BASE_URL`,
 `NUXT_NEON_AUTH_COOKIE_SECRET`, `NUXT_AWS_ENDPOINT_URL_S3`, `NUXT_AWS_ACCESS_KEY_ID`,
 `NUXT_AWS_SECRET_ACCESS_KEY`, `NUXT_AWS_REGION`, `NUXT_S3_BUCKET`, `NUXT_PUBLIC_SITE_URL`,
-`NUXT_OPENAI_APIKEY`, `NUXT_OPENAI_ORG`, `NUXT_OPENAI_PROJ`, `NUXT_OPENAI_BASE_URL` (empty = OpenAI; e2e only),
-`NUXT_GOOGLE_APIKEY` (fallback provider; empty = no fallback),
+`NUXT_OPENROUTER_APIKEY` (empty = no image-text reads), `NUXT_OPENROUTER_BASE_URL` (empty = OpenRouter; e2e only),
 `CRON_SECRET`, `NUXT_RATE_LIMIT_SALT`. `NUXT_NEON_JWKS_URL` is present but intentionally unused in v1. `NUXT_NEON_REALTIME_URL` and
 `NUXT_NEON_REALTIME_SECRET` exist in `.env.example` and `runtimeConfig` but are outside feature 002; do not use them in it.
 Never print or commit their values.
@@ -163,9 +167,11 @@ Never print or commit their values.
   429); never call the auth API directly from a spec.
 - The Neon auth client *throws* its own normalized codes (`bad_jwt`, `invalid_credentials`, …), not Better
   Auth's; `useAuthClient` maps what pages need (e.g. a used reset link → `INVALID_TOKEN`).
-- AI: OpenAI is the main provider and Gemini the fallback (no key, or any provider failure: network, timeout,
-  rate limit, exhausted balance/quota, invalid key or model). `NUXT_GOOGLE_APIKEY` stays empty in `.env.test` so
-  e2e never call Gemini.
+- AI: OpenRouter is the only provider; there is no fallback. Each image is one call (30 s, 1 retry, 45 s cap). The
+  guest pool's per-run breaker stops calling OpenRouter after a 402 (out of credits), 401/403/404 (key, permissions,
+  preset) or 3 transient failures in a row; images not started stay pending. With no key nothing is called. E2E run
+  against a local chat-completions stub (`test/e2e/setup/openrouter-stub.ts`) through `NUXT_OPENROUTER_BASE_URL`, so
+  they never call OpenRouter.
 - Nitro's `event.waitUntil` is not wired on Vercel Node: background work uses `waitUntil` from
   `@vercel/functions`, only through `server/utils/background.ts`.
 - `heic-to` only works in the browser: load it with a dynamic `import()` (`app/utils/heic-copy.ts`).
@@ -174,13 +180,21 @@ Never print or commit their values.
   `server/utils/image-text.ts`; `test/unit/architecture.spec.ts` enforces it.
 - `scripts/storage-setup*` accepts an optional `CORS_EXTRA_ORIGINS` (comma-separated `https://` origins, or
   `http://localhost:*`) to add a preview alias without dropping the site domain.
+- Routes (feature 003): guests ask for access at `/upload` (public); the team's queue is `/solicitudes` (the old
+  `/pendientes` 301-redirects there via `routeRules`). `/enviar` (open link) still works.
+- `Permissions-Policy` opens only `camera=(self)` (guest camera, feature 003); everything else stays `()`.
+  `getUserMedia` needs a secure context: from a phone in dev use an HTTPS tunnel. `test/e2e/camera.spec.ts` uses
+  Chromium's `--use-fake-ui-for-media-stream` / `--use-fake-device-for-media-stream` and forces `(pointer: coarse)`.
+- `guest_access_requests.submission_id` is written **after** the submission row is inserted, in the same
+  `db.batch` (the FK is not deferrable). Access-request expiry uses Postgres `now()`, but `created_at` is stamped
+  with the server clock, like the pulse cursor: with Postgres' clock a skew of seconds would drop the live toast.
 
 ## Workflow
 
 - Spec Kit: `/speckit-specify` → `/speckit-clarify` → `/speckit-plan` → `/speckit-tasks` →
   `/speckit-implement`. Plans must pass the Constitution Check (principles I–VI).
 - **Definition of done for every task and every phase** (phases are the `## Phase N` sections of
-  the active feature's `tasks.md`, e.g. `specs/002-note-text-extraction/tasks.md`). When a task or phase is implemented, run these in order and
+  the active feature's `tasks.md`, e.g. `specs/003-guest-upload-access-code/tasks.md`). When a task or phase is implemented, run these in order and
   do not mark it complete or start the next one until all pass:
   1. `bun run typecheck`, then the tests that cover the change: `bun run test:unit`, `bun run test:nuxt`
      and, when the change touches a user story or protected route, `bun run test:e2e`. At the end of a

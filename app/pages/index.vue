@@ -10,8 +10,12 @@ const { data, error, refresh } = await useApiFetch<DashboardSummary>('/api/dashb
 const upload = useUploadDialog()
 watch(upload.version, () => refresh())
 
-const { pendingCount } = usePulse()
-const pending = computed(() => Math.max(pendingCount.value, data.value?.pendingCount ?? 0))
+const { pendingCount, openAccessRequests } = usePulse()
+// Envíos por revisar + solicitudes de acceso (feature 003); el mayor entre el pulso y el resumen.
+const pending = computed(() => Math.max(
+  pendingCount.value + openAccessRequests.value,
+  (data.value?.pendingCount ?? 0) + (data.value?.openAccessRequests ?? 0),
+))
 
 const { copyGuestLink } = useGuestLink()
 
@@ -30,9 +34,9 @@ const firstName = computed(() => profile.value?.name.split(' ')[0] ?? '')
         <Icon name="lucide:upload" class="size-4" aria-hidden="true" />
         Subir archivo
       </button>
-      <NuxtLink to="/pendientes" class="btn">
+      <NuxtLink to="/solicitudes" class="btn">
         <Icon name="lucide:inbox" class="size-4" aria-hidden="true" />
-        Ver pendientes
+        Ver solicitudes
       </NuxtLink>
       <button type="button" class="btn" @click="copyGuestLink">
         <Icon name="lucide:link" class="size-4" aria-hidden="true" />
@@ -46,11 +50,11 @@ const firstName = computed(() => profile.value?.name.split(' ')[0] ?? '')
       <section aria-labelledby="resumen-title">
         <h2 id="resumen-title" class="sr-only">Resumen</h2>
         <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
-          <NuxtLink to="/pendientes" class="stat rounded-box border border-base-300 bg-base-100 hover:border-primary">
+          <NuxtLink to="/solicitudes" class="stat rounded-box border border-base-300 bg-base-100 hover:border-primary">
             <div class="stat-figure text-primary"><Icon name="lucide:inbox" class="size-8" aria-hidden="true" /></div>
-            <div class="stat-title">Pendientes de revisar</div>
+            <div class="stat-title">Solicitudes por atender</div>
             <div class="stat-value">{{ pending }}</div>
-            <div class="stat-desc">Envíos de invitados</div>
+            <div class="stat-desc">Envíos y pedidos de acceso de invitados</div>
           </NuxtLink>
           <div class="stat rounded-box border border-base-300 bg-base-100">
             <div class="stat-figure text-secondary"><Icon name="lucide:hard-drive" class="size-8" aria-hidden="true" /></div>

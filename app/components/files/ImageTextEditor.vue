@@ -5,14 +5,15 @@ import { MAX_IMAGE_TEXT_LENGTH } from '#shared/constants/image-text'
 const props = defineProps<{ modelValue: string, saving?: boolean }>()
 const emit = defineEmits<{ save: [text: string], cancel: [] }>()
 
-const draft = ref(props.modelValue)
+const { r$ } = useRegle({ text: props.modelValue }, imageTextRules)
 const inputId = useId()
 const counterId = useId()
 const textarea = useTemplateRef<HTMLTextAreaElement>('textarea')
 
-const length = computed(() => draft.value.trim().length)
+const length = computed(() => r$.$value.text.trim().length)
 const tooLong = computed(() => length.value > MAX_IMAGE_TEXT_LENGTH)
-const canSave = computed(() => length.value > 0 && !tooLong.value && !props.saving)
+// Vacío o demasiado largo no se puede guardar; el contador ya explica el límite.
+const canSave = computed(() => !r$.$invalid && !props.saving)
 
 /** «10 000»: miles separados por un espacio, como en el resto de contadores en español. */
 const grouped = (n: number) => String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ' ')
@@ -20,7 +21,7 @@ const grouped = (n: number) => String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ' ')
 onMounted(() => textarea.value?.focus())
 
 function submit() {
-  if (canSave.value) emit('save', draft.value.trim())
+  if (canSave.value) emit('save', r$.$value.text.trim())
 }
 </script>
 
@@ -30,12 +31,12 @@ function submit() {
     <textarea
       :id="inputId"
       ref="textarea"
-      v-model="draft"
+      v-model="r$.$value.text"
       class="textarea w-full"
       :class="{ 'textarea-error': tooLong }"
       rows="6"
       :aria-describedby="counterId"
-      :aria-invalid="tooLong || length === 0"
+      :aria-invalid="r$.text.$invalid"
     />
     <p :id="counterId" class="text-right text-sm" :class="tooLong ? 'text-error' : 'text-base-content/70'">
       {{ grouped(length) }} / {{ grouped(MAX_IMAGE_TEXT_LENGTH) }}

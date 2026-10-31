@@ -8,18 +8,18 @@ import { neon } from '@neondatabase/serverless'
 import type { TestProject } from 'vitest/node'
 import { ENV_FILES, readEnvFile, requireVar } from '../../../scripts/env'
 import { E2E_PORT, E2E_URL } from './constants'
-import { startOpenAIStub } from './openai-stub'
+import { startAiStub } from './openrouter-stub'
 
 const TABLES = [
   'profiles', 'folders', 'files', 'guest_submissions', 'guest_submission_files',
-  'comments', 'activity_log', 'rate_limits',
+  'comments', 'activity_log', 'rate_limits', 'guest_access_requests',
 ]
 
 declare module 'vitest' {
   export interface ProvidedContext {
     runId: string
-    /** Control del stub de OpenAI (`/__stub/*`). */
-    openaiStubUrl: string
+    /** Control del stub de OpenRouter (`/__stub/*`). */
+    aiStubUrl: string
   }
 }
 
@@ -72,18 +72,15 @@ export default async function setup(project: TestProject) {
     execSync('bunx nuxi build', { stdio: 'inherit' })
   }
 
-  // Stub de la Responses API: los e2e nunca llaman a OpenAI ni a Gemini (research A9).
-  const stub = await startOpenAIStub()
-  project.provide('openaiStubUrl', stub.url)
+  // Stub de chat completions: los e2e nunca llaman a OpenRouter (research A9).
+  const stub = await startAiStub()
+  project.provide('aiStubUrl', stub.url)
 
   const server: ChildProcess = spawn('node', ['.output/server/index.mjs'], {
     env: {
       ...testEnv,
-      NUXT_OPENAI_BASE_URL: stub.url,
-      NUXT_OPENAI_APIKEY: 'sk-e2e-stub',
-      NUXT_OPENAI_ORG: '',
-      NUXT_OPENAI_PROJ: '',
-      NUXT_GOOGLE_APIKEY: '',
+      NUXT_OPENROUTER_BASE_URL: stub.url,
+      NUXT_OPENROUTER_APIKEY: 'sk-or-e2e-stub',
       PORT: String(E2E_PORT),
       NUXT_STORAGE_KEY_PREFIX: prefix,
       NUXT_PUBLIC_SITE_URL: E2E_URL,

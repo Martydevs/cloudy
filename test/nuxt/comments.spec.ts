@@ -130,6 +130,16 @@ describe('CommentItem', () => {
     await wrapper.get('form').trigger('submit')
     await flush()
     expect(wrapper.get('p.text-error').text()).toBe('Texto no permitido')
+    expect(wrapper.get('textarea').attributes('aria-invalid')).toBe('true')
+    // Al corregir el texto se limpia el error del servidor.
+    await wrapper.get('textarea').setValue('Nuevo texto')
+    expect(wrapper.find('p.text-error').exists()).toBe(false)
+
+    // Un 422 sin errores de campo usa el texto de respaldo.
+    mockApi('PATCH', '/api/comments/c1', failWith(422))
+    await wrapper.get('form').trigger('submit')
+    await flush()
+    expect(wrapper.get('p.text-error').text()).toBe('Revisa el comentario')
 
     mockApi('PATCH', '/api/comments/c1', failWith(409, undefined, 'El archivo está en la papelera'))
     await wrapper.get('form').trigger('submit')

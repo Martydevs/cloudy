@@ -4,12 +4,14 @@ import type { Field } from './core'
 import { bool, int, nullable, object, oneOf, optional, str, uuid } from './core'
 
 // Se prohíben / \ : * ? " < > | y los caracteres de control.
-const NAME_PATTERN = /^[^/\\:*?"<>|\u0000-\u001F]+$/
+export const NAME_PATTERN = /^[^/\\:*?"<>|\u0000-\u001F]+$/
 const FORBIDDEN_CHARS_GLOBAL = /[/\\:*?"<>|\u0000-\u001F]/g
-const FORBIDDEN_MESSAGE = 'No uses los caracteres / \\ : * ? " < > |'
+export const FORBIDDEN_MESSAGE = 'No uses los caracteres / \\ : * ? " < > |'
+export const FOLDER_NAME_MAX = 120
+export const FILE_NAME_MAX = 200
 
-export const folderName = () => str({ max: 120, pattern: NAME_PATTERN, message: FORBIDDEN_MESSAGE })
-export const fileName = () => str({ max: 200, pattern: NAME_PATTERN, message: FORBIDDEN_MESSAGE })
+export const folderName = () => str({ max: FOLDER_NAME_MAX, pattern: NAME_PATTERN, message: FORBIDDEN_MESSAGE })
+export const fileName = () => str({ max: FILE_NAME_MAX, pattern: NAME_PATTERN, message: FORBIDDEN_MESSAGE })
 
 /** Destino de un movimiento: ausente = no se mueve · `null` = raíz · uuid = carpeta. */
 export function moveTarget(): Field<string | null | undefined> {
@@ -35,10 +37,10 @@ export const fileRenameInput = object(
 /** Reemplaza los caracteres prohibidos de nombres que vienen del sistema del usuario. */
 export function sanitizeFileName(name: string): string {
   const clean = name.replace(FORBIDDEN_CHARS_GLOBAL, '-').replace(/\s+/g, ' ').trim()
-  if (clean.length <= 200) return clean || 'archivo'
+  if (clean.length <= FILE_NAME_MAX) return clean || 'archivo'
   const ext = getExtension(clean)
   const suffix = ext ? `.${ext}` : ''
-  return clean.slice(0, 200 - suffix.length) + suffix
+  return clean.slice(0, FILE_NAME_MAX - suffix.length) + suffix
 }
 
 /** Conserva la extensión original al renombrar (la extensión es inmutable). */

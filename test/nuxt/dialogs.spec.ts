@@ -9,6 +9,7 @@ import FolderPicker from '~/components/files/FolderPicker.vue'
 import ItemDialogs from '~/components/files/ItemDialogs.vue'
 import NameDialog from '~/components/files/NameDialog.vue'
 import UploadDialog from '~/components/upload/UploadDialog.vue'
+import { fileNameRules, folderNameRules } from '~/utils/form-rules'
 import { failWith, flush, mockApi } from './helpers/api'
 
 const tree = [
@@ -28,7 +29,7 @@ beforeEach(() => {
 describe('NameDialog', () => {
   it('valida en línea, deshabilita el envío con errores y emite el nombre limpio', async () => {
     const wrapper = await mountSuspended(NameDialog, {
-      props: { title: 'Nueva carpeta', label: 'Nombre de la carpeta', field: folderName(), confirmLabel: 'Crear carpeta' },
+      props: { title: 'Nueva carpeta', label: 'Nombre de la carpeta', rules: folderNameRules, confirmLabel: 'Crear carpeta' },
       attachTo: document.body,
     })
     const input = wrapper.get('input')
@@ -42,16 +43,59 @@ describe('NameDialog', () => {
 
     await input.setValue('  Domingo ')
     await wrapper.get('form').trigger('submit')
+    await flush()
     expect(wrapper.emitted('submit')).toEqual([['Domingo']])
     wrapper.unmount()
   })
 
+  it('cerrar con el foco en el campo no lanza errores (el blur llega con el componente ya desmontado)', async () => {
+    const wrapper = await mountSuspended(NameDialog, {
+      props: { title: 'Renombrar carpeta', label: 'Nombre', rules: folderNameRules, initial: 'Domingo' },
+      attachTo: document.body,
+    })
+    const input = wrapper.get('input').element
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const uncaught = vi.fn()
+    window.addEventListener('error', uncaught)
+
+    wrapper.unmount()
+    input.dispatchEvent(new Event('blur'))
+    await flush()
+
+    window.removeEventListener('error', uncaught)
+    expect(uncaught).not.toHaveBeenCalled()
+    expect(warn).not.toHaveBeenCalled()
+    expect(error).not.toHaveBeenCalled()
+    warn.mockRestore()
+    error.mockRestore()
+  })
+
+  it('respeta el máximo de caracteres tras recortar (carpeta 120, archivo 200)', async () => {
+    const folder = await mountSuspended(NameDialog, { props: { title: 'Nueva carpeta', label: 'Nombre', rules: folderNameRules } })
+    await folder.get('input').setValue(` ${'a'.repeat(120)} `)
+    await folder.get('form').trigger('submit')
+    await flush()
+    expect(folder.emitted('submit')).toEqual([['a'.repeat(120)]])
+    await folder.get('input').setValue('a'.repeat(121))
+    await folder.get('form').trigger('submit')
+    await flush()
+    expect(folder.text()).toContain('Debe tener como máximo 120 caracteres')
+    expect(folder.emitted('submit')).toHaveLength(1)
+
+    const file = await mountSuspended(NameDialog, { props: { title: 'Renombrar', label: 'Nombre', rules: fileNameRules } })
+    await file.get('input').setValue('a'.repeat(201))
+    await file.get('input').trigger('blur')
+    expect(file.text()).toContain('Debe tener como máximo 200 caracteres')
+  })
+
   it('al enviar vacío marca el error; muestra sufijo y error del servidor; Cancelar emite close', async () => {
     const wrapper = await mountSuspended(NameDialog, {
-      props: { title: 'Renombrar', label: 'Nombre nuevo', field: folderName(), suffix: '.jpg', serverError: 'Ya existe' },
+      props: { title: 'Renombrar', label: 'Nombre nuevo', rules: folderNameRules, suffix: '.jpg', serverError: 'Ya existe' },
     })
     await wrapper.get('input').setValue('')
     await wrapper.get('form').trigger('submit')
+    await flush()
     expect(wrapper.emitted('submit')).toBeUndefined()
     expect(wrapper.text()).toContain('Este campo es obligatorio')
     expect(wrapper.text()).toContain('.jpg')

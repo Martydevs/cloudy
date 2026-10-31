@@ -173,8 +173,8 @@ describe('US9 · tema', () => {
 // ---------------------------------------------------------------- T151 · recorrido de rutas
 // Matriz de contracts/ui-routes.md; cada página declara su `access` en `definePageMeta`.
 // Los parámetros se sustituyen por una carpeta y un archivo sembrados en esta corrida.
-const PRIVATE_ROUTES = ['/', '/archivos', '/archivos/:folderId', '/archivos/ver/:fileId', '/pendientes', '/papelera', '/usuarios', '/actividad', '/perfil']
-const PUBLIC_ROUTES = ['/login', '/registro', '/recuperar', '/restablecer', '/enviar', '/acceso-denegado']
+const PRIVATE_ROUTES = ['/', '/archivos', '/archivos/:folderId', '/archivos/ver/:fileId', '/solicitudes', '/papelera', '/usuarios', '/actividad', '/perfil']
+const PUBLIC_ROUTES = ['/login', '/registro', '/recuperar', '/restablecer', '/enviar', '/upload', '/acceso-denegado']
 const PENDING_ROUTES = ['/pendiente']
 
 type Theme = 'cloudy' | 'cloudy-light'

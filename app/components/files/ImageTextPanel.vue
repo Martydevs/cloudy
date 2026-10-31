@@ -8,11 +8,11 @@ const props = withDefaults(defineProps<{
   initial?: ImageText | null
   editable?: boolean
   autoRead?: boolean
-  /** Versión de la tarjeta de Pendientes: el texto se trunca a 6 líneas con "Ver todo". */
+  /** Versión de la tarjeta de Solicitudes: el texto se trunca a 6 líneas con "Ver todo". */
   compact?: boolean
   /** HEIC apta por tamaño: si no está disponible es porque se subió sin copia para lectura. */
   heic?: boolean
-  /** Encabezado; en Pendientes nombra el archivo para distinguir varios paneles. */
+  /** Encabezado; en Solicitudes nombra el archivo para distinguir varios paneles. */
   title?: string
 }>(), { initial: null, editable: false, autoRead: false, compact: false, heic: false, title: 'Texto de la imagen' })
 

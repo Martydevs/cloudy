@@ -29,6 +29,13 @@
       "when": 1792596307263,
       "tag": "0003_redundant_absorbing_man",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1793331765311,
+      "tag": "0004_burly_vermin",
+      "breakpoints": true
     }
   ]
 }

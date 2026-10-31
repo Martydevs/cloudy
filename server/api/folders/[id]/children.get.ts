@@ -15,7 +15,6 @@ export default defineEventHandler(async (event): Promise<FolderChildren> => {
 
   const { sort = 'name', dir = 'asc', type, cursor } = queryValid(event, listQuery)
   const db = useDb()
-  const folder = folderId ? await getVisibleFolder(folderId) : null
 
   const keyset = filesKeyset(sort, dir, cursor)
   const filesQuery = db
@@ -32,24 +31,27 @@ export default defineEventHandler(async (event): Promise<FolderChildren> => {
     .limit(PAGE_SIZE)
 
   // Las subcarpetas van completas en la primera página y se ocultan al filtrar por tipo.
-  const listSubfolders = () => db
+  const subfoldersQuery = db
     .select({ folder: folders, itemCount: folderItemCountSql() })
     .from(folders)
-    .where(and(sameFolder(folders.parentId, folderId), isNull(folders.deletedAt)))
+    .where(and(sameFolder(folders.parentId, folderId), isNull(folders.deletedAt), cursor || type ? sql`false` : undefined))
     .orderBy(sort === 'date' && dir === 'desc' ? sql`${folders.createdAt} desc` : asc(sql`lower(${folders.name})`))
 
-  // En paralelo (Constitución I): con el driver HTTP cada consulta es un viaje a Neon y el TTFB de la
-  // página SSR era la suma de los cuatro; ahora es el máximo de estos tres más el de la carpeta.
-  const [fileRows, folderRows, breadcrumbs] = await Promise.all([
+  // Un solo viaje a Neon (Constitución I): con el driver HTTP cada consulta en paralelo abre su propia conexión
+  // y una fría cuesta más que todo el batch. En la raíz, la carpeta y las migas no devuelven filas.
+  const [folderRows, fileRows, subfolderRows, ancestors] = await db.batch([
+    visibleFolderQuery(folderId),
     filesQuery,
-    cursor || type ? [] : listSubfolders(),
-    cursor ? [] : buildBreadcrumbs(folderId),
+    subfoldersQuery,
+    breadcrumbsQuery(folderId),
   ])
+  const folder = folderRows[0]
+  if (folderId && !folder) throw folderNotFound()
 
   return {
     folder: folder ? toFolderItem(folder) : null,
-    breadcrumbs,
-    folders: folderRows.map(row => toFolderItem(row.folder, row.itemCount)),
+    breadcrumbs: cursor ? [] : toBreadcrumbs(ancestors.rows),
+    folders: subfolderRows.map(row => toFolderItem(row.folder, row.itemCount)),
     files: fileRows.map(row => toFileItem(row, { commentCount: row.commentCount })),
     nextCursor: keyset.nextCursor(fileRows),
   }

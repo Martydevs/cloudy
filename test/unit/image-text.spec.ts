@@ -20,7 +20,7 @@ vi.mock('#server/ai', async () => {
     extractImageText: ai.extractImageText,
     imageSourceSchema: schemas.imageSourceSchema,
     createProviderBreaker: breaker.createProviderBreaker,
-    resolveImageTextCandidates: () => [],
+    resolveImageTextModel: () => null,
   }
 })
 
@@ -63,7 +63,7 @@ beforeEach(() => {
   s3.readRange.mockReset()
   s3.deleteMany.mockClear()
   ai.extractImageText.mockReset()
-  ai.extractImageText.mockResolvedValue({ status: 'ready', text: 'Oremos por Ana', usedProvider: 'openai' })
+  ai.extractImageText.mockResolvedValue({ status: 'ready', text: 'Oremos por Ana' })
   vi.spyOn(console, 'warn').mockImplementation(() => {})
   vi.spyOn(console, 'error').mockImplementation(() => {})
 })
@@ -115,7 +115,7 @@ describe('readImageText', () => {
     s3.readRange.mockResolvedValue(JPEG)
     const dto = await readImageText(FILE, claimed())
     expect(s3.readRange).toHaveBeenCalledWith(`pre/files/${UUID}`, 0, JPEG.byteLength - 1)
-    expect(ai.extractImageText).toHaveBeenCalledWith({ image: { mediaType: 'image/jpeg', data: JPEG }, abortSignal: undefined, breaker: undefined })
+    expect(ai.extractImageText).toHaveBeenCalledWith({ image: { mediaType: 'image/jpeg', data: JPEG }, abortSignal: undefined, breaker: undefined, model: undefined })
     expect(dto).toMatchObject({ status: 'ready', text: 'Oremos por Ana', error: null })
     expect(queries(fake)[0]).toContain(CLAIMED_AT)
     expect(queries(fake)[0]).toContain('"ready","Oremos por Ana"')
@@ -169,13 +169,14 @@ describe('readImageText', () => {
     expect(await readImageText(FILE, claimed())).toMatchObject({ status: 'failed', error: 'rate_limited' })
   })
 
-  it('pasa el presupuesto y el cortacircuito a la IA', async () => {
+  it('pasa el presupuesto, el cortacircuito y el modelo a la IA', async () => {
     installNitro([{ rows: [{ saved: 1 }] }])
     s3.readRange.mockResolvedValue(JPEG)
     const abortSignal = new AbortController().signal
     const breaker = { isOpen: vi.fn() } as never
-    await readImageText(GUEST, claimed(), { abortSignal, breaker })
-    expect(ai.extractImageText.mock.calls[0]![0]).toMatchObject({ abortSignal, breaker })
+    const model = { modelId: 'preset' } as never
+    await readImageText(GUEST, claimed(), { abortSignal, breaker, model })
+    expect(ai.extractImageText.mock.calls[0]![0]).toMatchObject({ abortSignal, breaker, model })
   })
 
   it('un fallo del storage queda como failed/provider y nunca lanza', async () => {

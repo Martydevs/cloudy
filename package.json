@@ -25,8 +25,6 @@
     "storage:setup:prod": "APP_ENV=production bun scripts/storage-setup.ts"
   },
   "dependencies": {
-    "@ai-sdk/google": "^4.0.101",
-    "@ai-sdk/openai": "^4.0.97",
     "@aws-sdk/client-s3": "^3.1152.0",
     "@aws-sdk/s3-request-presigner": "^3.1152.0",
     "@neondatabase/auth": "0.6.0-beta",
@@ -34,6 +32,11 @@
     "@nuxt/fonts": "1.0.1",
     "@nuxt/icon": "2.5.1",
     "@nuxt/image": "2.1.0",
+    "@openrouter/ai-sdk-provider": "^3.1.0",
+    "@regle/core": "^1.29.5",
+    "@regle/nuxt": "^1.29.5",
+    "@regle/rules": "^1.29.5",
+    "@regle/schemas": "^1.29.5",
     "@tailwindcss/vite": "^4.3.3",
     "@vercel/functions": "^3.10.1",
     "@vueuse/nuxt": "15.0.0",

@@ -24,6 +24,12 @@ const images = computed(() => props.submission.status === 'pending' ? props.subm
 const left = computed(() => daysLeft(props.submission.expiresAt))
 const expiry = computed(() => left.value === 0 ? 'caduca hoy' : left.value === 1 ? 'caduca en 1 día' : `caduca en ${left.value} días`)
 
+// Origen del envío (feature 003, FR-019/FR-022): icono y texto, sin depender del color.
+const ORIGIN: Record<Submission['origin'], { label: string, icon: string }> = {
+  link: { label: 'Por enlace', icon: 'lucide:link' },
+  permission: { label: 'Por permiso', icon: 'lucide:shield-check' },
+}
+
 const STATUS: Record<Submission['status'], { label: string, badge: string }> = {
   pending: { label: 'Pendiente', badge: 'badge-warning' },
   approved: { label: 'Aprobado', badge: 'badge-success badge-soft' },
@@ -52,9 +58,17 @@ function confirmReject() {
   <article class="card border border-base-300 bg-base-100" :aria-label="`Envío de ${submission.senderName}`">
     <div class="card-body gap-3 p-4">
       <header class="flex flex-wrap items-center gap-2">
-        <h2 class="min-w-0 flex-1 truncate text-lg font-semibold">{{ submission.senderName }}</h2>
+        <!-- h3: en Solicitudes la tarjeta va bajo el h2 "Envíos" (feature 003). -->
+        <h3 class="min-w-0 flex-1 truncate text-lg font-semibold">{{ submission.senderName }}</h3>
+        <span class="badge badge-outline shrink-0 gap-1">
+          <Icon :name="ORIGIN[submission.origin].icon" class="size-3.5" aria-hidden="true" />
+          {{ ORIGIN[submission.origin].label }}
+        </span>
         <span class="badge" :class="STATUS[submission.status].badge">{{ STATUS[submission.status].label }}</span>
       </header>
+      <p v-if="submission.origin === 'permission'" class="text-sm text-base-content/70">
+        Acceso aprobado por {{ submission.accessGrantedBy?.name ?? 'una persona del equipo' }}
+      </p>
       <p class="text-sm text-base-content/70">
         {{ timeAgo(submission.createdAt) }}
         <template v-if="submission.status === 'pending'"> · {{ expiry }}</template>

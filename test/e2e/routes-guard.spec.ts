@@ -5,7 +5,7 @@ import { E2E_URL, ensureAccount, email, login, setProfile, signedInAs } from './
 
 await setup({ host: E2E_URL, browser: true })
 
-const PRIVATE_ROUTES = ['/', '/archivos', '/archivos/ver/00000000-0000-0000-0000-000000000000', '/perfil', '/usuarios', '/actividad', '/pendientes', '/papelera']
+const PRIVATE_ROUTES = ['/', '/archivos', '/archivos/ver/00000000-0000-0000-0000-000000000000', '/perfil', '/usuarios', '/actividad', '/solicitudes', '/papelera']
 
 describe('US6 · protección de rutas', () => {
   it.each(PRIVATE_ROUTES)('sin sesión, %s lleva a login con redirect', async (path) => {
@@ -59,6 +59,35 @@ describe('US6 · protección de rutas', () => {
     await page.close()
   })
 
+  it('feature 003: /upload es pública, /solicitudes manda a /pendiente con cuenta pendiente y /pendientes redirige', async () => {
+    const anonymous = await createPage()
+    const res = await anonymous.goto(`${E2E_URL}/upload`)
+    expect(res?.status()).toBe(200)
+    expect(new URL(anonymous.url()).pathname).toBe('/upload')
+    await expect.poll(() => anonymous.getByRole('button', { name: 'Pedir acceso' }).isVisible()).toBe(true)
+    await anonymous.close()
+
+    const creds = { name: 'E2E guard pending page', email: email('guard-pending-page') }
+    await ensureAccount(creds)
+    await setProfile(creds.email, { status: 'pending', role: null })
+    const pending = await createPage()
+    await login(pending, creds)
+    await pending.goto(`${E2E_URL}/solicitudes`)
+    await pending.waitForURL(url => url.pathname === '/pendiente')
+    await pending.close()
+
+    // La ruta vieja redirige con 301 (FR-024) y, con sesión, llega a la página nueva.
+    const moved = await fetch(`${E2E_URL}/pendientes`, { redirect: 'manual' })
+    expect(moved.status).toBe(301)
+    expect(new URL(moved.headers.get('location')!, E2E_URL).pathname).toBe('/solicitudes')
+    const editor = await createPage()
+    await signedInAs(editor, 'editor', 'guard-editor')
+    await editor.goto(`${E2E_URL}/pendientes`)
+    await editor.waitForURL(url => url.pathname === '/solicitudes')
+    await expect.poll(() => editor.getByRole('heading', { name: 'Solicitudes', exact: true }).isVisible()).toBe(true)
+    await editor.close()
+  })
+
   it('una ruta inexistente muestra "Página no encontrada"', async () => {
     const page = await createPage()
     const res = await page.goto(`${E2E_URL}/no-existe`)
@@ -103,6 +132,10 @@ describe('US6 · protección de rutas', () => {
       ['PATCH', `/api/files/${id}/text`],
       ['GET', `/api/submissions/${id}/files/${id}/text`],
       ['POST', `/api/submissions/${id}/files/${id}/text`],
+      // Solicitudes de acceso de invitados (feature 003).
+      ['GET', '/api/access-requests'],
+      ['POST', `/api/access-requests/${id}/approve`],
+      ['POST', `/api/access-requests/${id}/reject`],
     ] as const
     for (const [method, path] of commentRoutes) {
       const init: { method: string, headers: Record<string, string>, body?: string } = method === 'GET' || method === 'DELETE'

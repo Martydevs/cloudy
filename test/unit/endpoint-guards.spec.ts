@@ -52,14 +52,30 @@ describe('guards de los endpoints', () => {
     expect(source('me.get.ts')).toMatch(/\brequireSession\(/)
   })
 
-  it('public/* son solo las dos fases del envío de invitados y no leen la sesión', () => {
+  it('public/* son las fases del envío de invitados y la solicitud de acceso, y no leen la sesión', () => {
     // Una ruta pública nueva debe revisarse aquí a propósito.
-    expect(files.filter(isPublic)).toEqual(['public/submissions/[id]/complete.post.ts', 'public/submissions/index.post.ts'])
+    expect(files.filter(isPublic)).toEqual([
+      'public/access/current.get.ts',
+      'public/access/index.post.ts',
+      'public/access/submissions.post.ts',
+      'public/submissions/[id]/complete.post.ts',
+      'public/submissions/index.post.ts',
+    ])
     for (const file of files.filter(isPublic)) {
       expect(source(file), `${file} no debe leer la sesión`).not.toMatch(/\brequire(Role|Active|Session)\(/)
     }
     // Fase 1: límite por IP. Fase 2: el id del envío (UUID) es la capacidad; solo cierra envíos pendientes.
     expect(source('public/submissions/index.post.ts')).toMatch(/\bhitRateLimit\(/)
     expect(source('public/submissions/[id]/complete.post.ts')).toMatch(/submission\.status !== 'pending'/)
+    // Feature 003: pedir acceso y crear con permiso tienen limitador; `current` es una lectura por índice único.
+    expect(source('public/access/index.post.ts')).toMatch(/\bhitRateLimit\(/)
+    expect(source('public/access/submissions.post.ts')).toMatch(/\bhitRateLimit\(/)
+    expect(source('public/access/current.get.ts')).not.toMatch(/\bhitRateLimit\(/)
+  })
+
+  it('los endpoints del equipo para solicitudes de acceso exigen rol (feature 003)', () => {
+    const team = files.filter(f => f.startsWith('access-requests/'))
+    expect(team).toEqual(['access-requests/[id]/approve.post.ts', 'access-requests/[id]/reject.post.ts', 'access-requests/index.get.ts'])
+    for (const file of team) expect(source(file), file).toMatch(/\brequireRole\(event, 'editor'\)/)
   })
 })

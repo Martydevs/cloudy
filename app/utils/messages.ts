@@ -34,6 +34,7 @@ export const messages = {
     activity: `No pudimos cargar la actividad. ${CONNECTION}`,
     moreActivity: 'No pudimos cargar más.',
     comments: 'No pudimos cargar los comentarios.',
+    accessRequests: 'No pudimos cargar las solicitudes de acceso.',
   },
   files: {
     folderCreated: (name: string) => `Carpeta «${name}» creada`,
@@ -128,5 +129,49 @@ export const messages = {
     copyFailed: (link: string) => `No pudimos copiar el enlace. Cópialo a mano: ${link}`,
     tooMany: 'Has enviado demasiados archivos; intenta en una hora',
     sendFailed: 'No pudimos enviar los archivos. Revisa tu conexión e inténtalo de nuevo.',
+  },
+  /**
+   * Solicitudes de acceso de invitados (feature 003, contracts/ui.md "Copy"). Los textos de 409/410/404 al decidir,
+   * los 403 del envío con permiso y el 409 de `complete` los da el servidor: aquí no se duplican.
+   */
+  access: {
+    requested: (name: string) => `${name} pide permiso para enviar archivos`,
+    granted: (name: string) => `Diste acceso a ${name}`,
+    rejected: (name: string) => `Rechazaste la solicitud de ${name}`,
+    confirmReject: (name: string) => `¿Rechazar la solicitud de ${name}?`,
+    decideFailed: 'No pudimos guardar tu decisión. Inténtalo de nuevo',
+    tooMany: (min: number) => `Ya pediste acceso varias veces. Intenta de nuevo en ${min} min`,
+    networkBusy: (min: number) => `Hay muchas solicitudes desde esta red. Intenta de nuevo en ${min} min`,
+    requestFailed: 'No pudimos enviar tu solicitud. Revisa tu conexión e inténtalo de nuevo',
+    submitFailed: 'No pudimos iniciar tu envío. Revisa tu conexión e inténtalo de nuevo',
+    state: {
+      waiting: 'Esperando a que alguien del equipo revise tu solicitud',
+      approved: '¡Listo! Ya puedes enviar tus archivos',
+      window: (min: number) => `Tienes ${min} min para empezar el envío`,
+      expiresIn: (min: number) => `Caduca en ${min} min`,
+      rejected: 'El equipo no aceptó tu solicitud',
+      expired: 'Tu solicitud caducó sin que nadie la atendiera',
+      accessExpired: 'Tu acceso caducó antes de empezar el envío',
+      used: '¡Gracias! Recibimos tu envío',
+      retry: 'Pedir acceso de nuevo',
+      another: 'Pedir acceso para otro envío',
+    },
+  },
+  /** Cámara dentro de Cloudy en las páginas de invitados (feature 003, contracts/ui.md "CameraCapture"). */
+  camera: {
+    open: 'Abrir cámara',
+    opening: 'Abriendo la cámara…',
+    take: 'Tomar foto',
+    retake: 'Repetir',
+    use: 'Usar foto',
+    close: 'Cerrar cámara',
+    ready: 'Foto lista para revisar',
+    addedOne: 'Foto agregada',
+    added: (n: number) => (n === 1 ? '1 foto agregada' : `${n} fotos agregadas`),
+    limit: 'Llegaste al máximo de archivos de este envío',
+    denied: 'Cloudy no tiene permiso para usar la cámara. Actívalo en los ajustes del navegador o usa «Elegir archivos»',
+    notFound: 'No encontramos una cámara en este dispositivo',
+    busy: 'Otra app está usando la cámara',
+    failed: 'No pudimos abrir la cámara. Usa «Elegir archivos»',
   },
 } as const

@@ -29,6 +29,8 @@ interface Vitals {
   dcl: number
   lcpElement: string
   api: string[]
+  /** Desplazamientos con su valor y los nodos que se movieron (para saber qué arreglar si el CLS se pasa). */
+  shifts: string[]
 }
 
 type CookieInit = Parameters<BrowserContext['addCookies']>[0][number]
@@ -94,9 +96,11 @@ function measure(p: Page): Promise<Vitals> {
     let windowValue = 0
     let windowStart = 0
     let previous = 0
+    const shifts: string[] = []
     new PerformanceObserver((list) => {
-      for (const entry of list.getEntries() as (PerformanceEntry & { value: number, hadRecentInput: boolean })[]) {
+      for (const entry of list.getEntries() as (PerformanceEntry & { value: number, hadRecentInput: boolean, sources?: { node?: Node | null }[] })[]) {
         if (entry.hadRecentInput) continue
+        shifts.push(`${entry.value.toFixed(3)}@${Math.round(entry.startTime)} ${(entry.sources ?? []).map(s => describe(s.node instanceof Element ? s.node : s.node?.parentElement)).join(' | ')}`)
         if (windowValue > 0 && entry.startTime - previous < 1000 && entry.startTime - windowStart < 5000) {
           windowValue += entry.value
         }
@@ -121,6 +125,7 @@ function measure(p: Page): Promise<Vitals> {
         dcl: Math.round(nav?.domContentLoadedEventEnd ?? 0),
         lcpElement,
         api,
+        shifts,
       })
     }, settle)
   }), SETTLE_MS)
@@ -157,7 +162,7 @@ async function audit(path: string, annotate: Annotate) {
   const lcp = median(runs.map(r => r.lcp))
   const cls = median(runs.map(r => r.cls))
   const summary = `LCP ${lcp} ms · CLS ${cls} · cargas: ${runs.map(r => `${r.lcp} ms / ${r.cls}`).join(', ')}`
-  const detail = runs.map((r, i) => `carga ${i + 1}: TTFB ${r.ttfb} · DCL ${r.dcl} · LCP ${r.lcp} en ${r.lcpElement} · api: ${r.api.join(', ') || '—'}`)
+  const detail = runs.map((r, i) => `carga ${i + 1}: TTFB ${r.ttfb} · DCL ${r.dcl} · LCP ${r.lcp} en ${r.lcpElement} · api: ${r.api.join(', ') || '—'}${r.shifts.length ? ` · desplazamientos: ${r.shifts.join(' ; ')}` : ''}`)
   process.stdout.write(`[perf] ${path} · ${summary}\n${detail.map(d => `[perf]   ${d}\n`).join('')}`)
   await annotate(summary, 'perf')
   for (const d of detail) await annotate(d, 'perf')
@@ -183,6 +188,15 @@ describe('Constitución I · Web Vitals en móvil 4G (T155)', () => {
 
   it('/enviar (pública)', async ({ annotate }) => {
     await audit('/enviar', annotate)
+  })
+
+  it('/upload (pública, feature 003)', async ({ annotate }) => {
+    await audit('/upload', annotate)
+  })
+
+  it('/solicitudes (feature 003)', async ({ annotate }) => {
+    await seeded()
+    await audit('/solicitudes', annotate)
   })
 })
 
