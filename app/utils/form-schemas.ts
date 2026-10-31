@@ -18,19 +18,23 @@ import {
 import { FILE_NAME_MAX, FOLDER_NAME_MAX, FORBIDDEN_MESSAGE, NAME_PATTERN } from '#shared/validation/files'
 import { NOTE_MAX, SENDER_NAME_MAX } from '#shared/validation/submissions'
 
-/** Obligatorio: un texto de solo espacios cuenta como vacío. Si falla, no se evalúan las demás comprobaciones. */
-const filled = z.refine<string>(value => value.trim().length > 0, { error: REQUIRED_MESSAGE, abort: true })
+/**
+ * Obligatorio: un texto de solo espacios cuenta como vacío. Va siempre primero en cada campo, que es el error que se
+ * muestra. No usa `abort`: un fallo con `abort` hace que zod omita también la comprobación de objeto de la
+ * confirmación (`confirmMatches`), y el servidor informa de ambos errores.
+ */
+const filled = z.refine<string>(value => value.trim().length > 0, { error: REQUIRED_MESSAGE })
 
 /** Máximo de caracteres tras recortar, como `str()` del servidor (`maxLength` de zod no recorta). */
 const maxChars = (max: number) => z.refine<string>(value => value.trim().length <= max, { error: maxMessage(max) })
 
 /** Nombres de carpetas y archivos sin / \ : * ? " < > | ni caracteres de control. */
-const safeName = z.refine<string>(value => NAME_PATTERN.test(value.trim()), { error: FORBIDDEN_MESSAGE })
+const safeName = z.refine<string>(value => value.trim() === '' || NAME_PATTERN.test(value.trim()), { error: FORBIDDEN_MESSAGE })
 
 /** Mismo criterio que `email()` del servidor. */
 const validEmail = z.refine<string>(value => {
   const email = value.trim()
-  return email.length <= EMAIL_MAX && EMAIL_RE.test(email)
+  return email === '' || (email.length <= EMAIL_MAX && EMAIL_RE.test(email))
 }, { error: EMAIL_MESSAGE })
 
 const name = () => z.string().check(filled, maxChars(NAME_MAX))

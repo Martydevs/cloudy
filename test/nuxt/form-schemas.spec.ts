@@ -89,6 +89,10 @@ const cases: Case[] = [
       register({ confirm: '12345679' }),
       register({ confirm: '' }),
       register({ password: '1234', confirm: '9999' }),
+      // Un campo vacío no debe ocultar que la confirmación no coincide.
+      register({ name: '', confirm: '12345679' }),
+      register({ email: '', confirm: '12345679' }),
+      register({ name: '', email: 'ana@', confirm: '12345679' }),
     ],
   },
   {
@@ -107,13 +111,13 @@ const cases: Case[] = [
     name: 'restablecer contraseña',
     validator: resetInput,
     schema: resetSchema,
-    samples: [reset(), reset({ password: L(7) }), reset({ confirm: 'otra' }), reset({ password: '', confirm: '' })],
+    samples: [reset(), reset({ password: L(7) }), reset({ confirm: 'otra' }), reset({ password: '', confirm: '' }), reset({ password: '', confirm: 'otra' })],
   },
   {
     name: 'cambiar contraseña',
     validator: changePasswordInput,
     schema: changePasswordSchema,
-    samples: [change(), change({ currentPassword: '' }), change({ password: L(129), confirm: L(129) }), change({ confirm: '1234567' })],
+    samples: [change(), change({ currentPassword: '' }), change({ password: L(129), confirm: L(129) }), change({ confirm: '1234567' }), change({ currentPassword: '', confirm: '1234567' })],
   },
   {
     name: 'nombre visible',
