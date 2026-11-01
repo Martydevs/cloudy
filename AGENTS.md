@@ -154,8 +154,8 @@ files: set the same names per environment in the project settings.
 `NUXT_NEON_AUTH_COOKIE_SECRET`, `NUXT_AWS_ENDPOINT_URL_S3`, `NUXT_AWS_ACCESS_KEY_ID`,
 `NUXT_AWS_SECRET_ACCESS_KEY`, `NUXT_AWS_REGION`, `NUXT_S3_BUCKET`, `NUXT_PUBLIC_SITE_URL`,
 `NUXT_OPENROUTER_APIKEY` (empty = no image-text reads), `NUXT_OPENROUTER_BASE_URL` (empty = OpenRouter; e2e only),
-`CRON_SECRET`, `NUXT_RATE_LIMIT_SALT`. `NUXT_NEON_JWKS_URL` is present but intentionally unused in v1. `NUXT_NEON_REALTIME_URL` and
-`NUXT_NEON_REALTIME_SECRET` exist in `.env.example` and `runtimeConfig` but are outside feature 002; do not use them in it.
+`CRON_SECRET`, `NUXT_RATE_LIMIT_SALT`. `NUXT_NEON_JWKS_URL` is present but intentionally unused in v1. There is no Neon Realtime
+config: "realtime" is client polling (`/api/realtime/pulse`, `/api/public/access/current`).
 Never print or commit their values.
 
 ## Known gotchas
