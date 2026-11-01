@@ -1,4 +1,16 @@
 <!--
+Sync Impact Report (1.1.1, 2026-10-31)
+- Version change: 1.1.0 → 1.1.1 (PATCH: correction of the stack list, no change in obligations)
+- Modified sections: Restricciones técnicas y de plataforma → Stack: `@nuxt/image` is removed.
+- Reason: no component ever used it (no `<NuxtImg>`/`<NuxtPicture>`/`useImage`). Every image is private
+  media behind a session check and a 302 to a presigned URL that changes per request, which Vercel's image
+  optimizer cannot fetch (no session cookie) or cache; IPX on our own functions would stream binaries
+  (Principle I). Thumbnails are generated as WEBP in the browser at upload instead.
+- Added/removed sections: none
+- Templates checked: ✅ plan/spec/tasks templates need no change
+- Follow-up: AGENTS.md updated. specs/001-shared-media-drive keeps its `@nuxt/image` mentions as historical
+  records. No migration plan needed: nothing depended on the module.
+
 Sync Impact Report (1.1.0, 2026-10-31)
 - Version change: 1.0.1 → 1.1.0 (MINOR: the initial-JS budget per route is relaxed; no principle added or removed)
 - Modified principles: I. Rendimiento medible: initial JS per route goes from ≤ 200 KB to ≤ 250 KB compressed,
@@ -166,7 +178,7 @@ se sienta confiable.
 - **Stack**: Nuxt 4 (Vue 3, Nitro) con TypeScript y Bun como gestor de paquetes. PostgreSQL en
   Neon con Drizzle ORM. Neon Auth para identidad y correos de autenticación. Neon Object Storage
   vía `@aws-sdk/*` para archivos. Tailwind CSS 4 + daisyUI 5. `@nuxt/icon` (lucide),
-  `@nuxt/fonts`, `@nuxt/image` y `@vueuse/nuxt`. Vitest con `@nuxt/test-utils` y `playwright-core`.
+  `@nuxt/fonts` y `@vueuse/nuxt`. Vitest con `@nuxt/test-utils` y `playwright-core`.
 - **Despliegue**: Vercel. El código de servidor MUST ser sin estado entre peticiones (nada de
   estado compartido en memoria), respetar el límite de cuerpo de petición de la plataforma y
   usar Vercel Cron para tareas programadas.
@@ -209,4 +221,4 @@ se sienta confiable.
   operativa para agentes y personas vive en `AGENTS.md`, que MUST mantenerse alineado con esta
   constitución.
 
-**Version**: 1.1.0 | **Ratified**: 2026-10-14 | **Last Amended**: 2026-10-31
+**Version**: 1.1.1 | **Ratified**: 2026-10-14 | **Last Amended**: 2026-10-31

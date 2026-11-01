@@ -10,7 +10,6 @@ export default defineNuxtConfig({
     '@nuxt/icon/module',
     '@nuxt/fonts',
     '@vueuse/nuxt/module',
-    '@nuxt/image',
     '@nuxt/test-utils/module',
     '@regle/nuxt',
     Sonda({ enabled: analyze, server: true, gzip: true }),
@@ -22,8 +21,6 @@ export default defineNuxtConfig({
   // Valores sobrescritos por las variables NUXT_* (ver AGENTS.md). NUXT_NEON_JWKS_URL no se usa (R17).
   runtimeConfig: {
     databaseUrl: '',
-    neonRealtimeUrl: '',
-    neonRealtimeSecret: '',
     openrouterApikey: '',
     // Vacío = API de OpenRouter; solo los e2e lo apuntan a un stub local.
     openrouterBaseUrl: '',

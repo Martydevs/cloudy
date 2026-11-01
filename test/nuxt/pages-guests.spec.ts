@@ -162,6 +162,9 @@ describe('SubmissionCard', () => {
   it('muestra remitente, nota, caducidad y archivos con vista previa', async () => {
     const wrapper = await mountSuspended(SubmissionCard, { props: { submission: submission() } })
     expect(wrapper.get('h3').text()).toBe('Eva')
+    // Regresión: a 360 px el nombre se recortaba a "Invita…"; ahora ocupa su fila y salta de línea, nunca se recorta.
+    expect(wrapper.get('h3').classes()).not.toContain('truncate')
+    expect(wrapper.get('h3').classes()).toEqual(expect.arrayContaining(['basis-full', 'break-words']))
     expect(wrapper.text()).toContain('caduca en 5 días')
     expect(wrapper.text()).toContain('2 archivos')
     expect(wrapper.text()).toContain('Fotos del domingo')
@@ -288,6 +291,8 @@ describe('/solicitudes', () => {
     expect(wrapper.get('h1').text()).toBe('Solicitudes')
     expect(wrapper.findAll('h2').map(h => h.text())).toEqual(expect.arrayContaining(['Solicitudes de acceso', 'Envíos']))
     expect(wrapper.findAll('[role="tab"]').map(t => t.text())).toEqual(['Por revisar', 'Aprobados', 'Rechazados'])
+    // Regresión: daisyUI pinta las pestañas inactivas al 50 % (3,25:1 en el tema claro); se suben al 80 % para AA.
+    expect(wrapper.findAll('[role="tab"]').map(t => t.classes().includes('text-base-content/80'))).toEqual([false, true, true])
     expect(wrapper.text()).toContain('Rut')
     expect(wrapper.text()).toContain('No hay envíos por revisar')
 

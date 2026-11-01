@@ -95,6 +95,20 @@ describe('AuthForm', () => {
     { name: 'password', label: 'Contraseña', type: 'password' as const },
   ]
 
+  // Regresión: las páginas de acceso no tenían encabezado de página, solo la leyenda del grupo (WCAG 1.3.1).
+  it('el título es un h1 dentro de la leyenda en las páginas de acceso, y un h2 si se pide', async () => {
+    for (const page of [LoginPage, RegistroPage]) {
+      const wrapper = await mountSuspended(page)
+      expect(wrapper.findAll('h1')).toHaveLength(1)
+      expect(wrapper.get('legend h1').text()).toBe(wrapper.get('legend').text())
+    }
+    const nested = await mountSuspended(AuthForm, {
+      props: { legend: 'Cambiar contraseña', fields: loginFields, schema: loginSchema, submitLabel: 'Guardar', headingLevel: 2 },
+    })
+    expect(nested.find('h1').exists()).toBe(false)
+    expect(nested.get('legend h2').text()).toBe('Cambiar contraseña')
+  })
+
   it('no marca errores mientras se escribe, solo al salir del campo', async () => {
     const wrapper = await mountSuspended(RegistroPage)
     const email = field(wrapper, 'Correo electrónico')

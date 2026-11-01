@@ -1,5 +1,7 @@
 // Acciones del administrador sobre cuentas (FR-021, FR-022): activar, desactivar, reactivar,
 // cambiar rol y eliminar, con confirmación, avisos y manejo del 409 "último administrador".
+// Desactivar a otra persona es reversible y no pregunta; desactivar la propia cuenta cierra el acceso al
+// instante y solo otro administrador puede deshacerlo, así que se confirma.
 import type { Role } from '#shared/permissions'
 import type { Profile } from '#shared/types/api'
 
@@ -35,6 +37,8 @@ export function useUserAdmin(onChanged: () => Promise<unknown> | void) {
     }
   }
 
+  const isSelf = (user: Profile) => user.userId === me.value?.user.id
+
   const patch = (user: Profile, body: { status?: 'active' | 'disabled', role?: Role }) =>
     api<Profile>(`/api/users/${user.userId}`, { method: 'PATCH', body })
 
@@ -44,10 +48,21 @@ export function useUserAdmin(onChanged: () => Promise<unknown> | void) {
       await patch(user, { status: 'active', role })
       toast.success(messages.users.activated(user.name, ROLE_LABELS[role].toLowerCase()))
     }, messages.users.activateFailed),
-    disable: (user: Profile) => run(user, async () => {
-      await patch(user, { status: 'disabled' })
-      toast.success(messages.users.disabled(user.name))
-    }, messages.users.disableFailed),
+    disable: async (user: Profile) => {
+      if (isSelf(user)) {
+        const ok = await confirm({
+          title: '¿Desactivar tu propia cuenta?',
+          message: 'Perderás el acceso a Cloudy en cuanto confirmes. Solo otro administrador podrá reactivarla.',
+          confirmLabel: 'Desactivar mi cuenta',
+          danger: true,
+        })
+        if (!ok) return
+      }
+      await run(user, async () => {
+        await patch(user, { status: 'disabled' })
+        toast.success(messages.users.disabled(user.name))
+      }, messages.users.disableFailed)
+    },
     reactivate: (user: Profile) => run(user, async () => {
       await patch(user, { status: 'active' })
       toast.success(messages.users.reactivated(user.name))
@@ -57,12 +72,19 @@ export function useUserAdmin(onChanged: () => Promise<unknown> | void) {
       toast.success(messages.users.roleChanged(user.name, ROLE_LABELS[role].toLowerCase()))
     }, messages.users.roleFailed),
     remove: async (user: Profile) => {
-      const ok = await confirm({
-        title: `¿Eliminar la cuenta de ${user.name}?`,
-        message: 'Perderá el acceso a Cloudy. Sus archivos y su historial se conservan.',
-        confirmLabel: 'Eliminar cuenta',
-        danger: true,
-      })
+      const ok = await confirm(isSelf(user)
+        ? {
+            title: '¿Eliminar tu propia cuenta?',
+            message: 'Perderás el acceso a Cloudy en cuanto confirmes. Tus archivos y tu historial se conservan.',
+            confirmLabel: 'Eliminar mi cuenta',
+            danger: true,
+          }
+        : {
+            title: `¿Eliminar la cuenta de ${user.name}?`,
+            message: 'Perderá el acceso a Cloudy. Sus archivos y su historial se conservan.',
+            confirmLabel: 'Eliminar cuenta',
+            danger: true,
+          })
       if (!ok) return
       await run(user, async () => {
         await api(`/api/users/${user.userId}`, { method: 'DELETE' })

@@ -58,8 +58,9 @@ function confirmReject() {
   <article class="card border border-base-300 bg-base-100" :aria-label="`Envío de ${submission.senderName}`">
     <div class="card-body gap-3 p-4">
       <header class="flex flex-wrap items-center gap-2">
-        <!-- h3: en Solicitudes la tarjeta va bajo el h2 "Envíos" (feature 003). -->
-        <h3 class="min-w-0 flex-1 truncate text-lg font-semibold">{{ submission.senderName }}</h3>
+        <!-- h3: en Solicitudes la tarjeta va bajo el h2 "Envíos" (feature 003). El nombre nunca se recorta: en teléfono
+             ocupa su propia fila y las insignias bajan; desde `sm` comparte la fila y, si es largo, salta de línea. -->
+        <h3 class="min-w-0 basis-full break-words text-lg font-semibold sm:flex-1 sm:basis-0">{{ submission.senderName }}</h3>
         <span class="badge badge-outline shrink-0 gap-1">
           <Icon :name="ORIGIN[submission.origin].icon" class="size-3.5" aria-hidden="true" />
           {{ ORIGIN[submission.origin].label }}

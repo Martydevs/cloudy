@@ -98,7 +98,7 @@ const EMPTY: Record<SubmissionStatus, string> = {
         type="button"
         role="tab"
         class="tab min-h-11"
-        :class="{ 'tab-active': tab === option.value }"
+        :class="tab === option.value ? 'tab-active' : 'text-base-content/80'"
         :aria-selected="tab === option.value"
         @click="tab = option.value"
       >
