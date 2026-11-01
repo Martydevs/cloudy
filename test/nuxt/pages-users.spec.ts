@@ -88,8 +88,50 @@ describe('Usuarios', () => {
     const wrapper = await mountSuspended(UsuariosPage)
     await flush()
     await button(wrapper, 'Desactivar').trigger('click')
+    await nextTick()
+    useConfirm().accept()
     await flush()
     expect(useToast().toasts.value.at(-1)).toMatchObject({ type: 'error', message: 'Debe existir al menos un administrador activo' })
+  })
+
+  // Regresión: «Desactivar» sobre la propia cuenta cerraba la sesión al primer toque, sin confirmar.
+  it('desactivar o eliminar la propia cuenta pide confirmación; a otra persona no se le pregunta al desactivar', async () => {
+    mockApi('GET', '/api/users', { items: [me.profile, user({ status: 'active', role: 'editor' })], total: 2 })
+    mockApi('PATCH', '/api/users/u1', me.profile)
+    mockApi('PATCH', '/api/users/u2', user({ status: 'disabled', role: 'editor' }))
+    const wrapper = await mountSuspended(UsuariosPage)
+    await flush()
+    const table = wrapper.get('table')
+    const rowOf = (name: string) => table.findAll('tbody tr').find(r => r.text().includes(name))!
+
+    await buttonsWithText(rowOf('Ana'), 'Desactivar')[0]!.trigger('click')
+    await nextTick()
+    expect(useConfirm().options.value).toMatchObject({ title: '¿Desactivar tu propia cuenta?', confirmLabel: 'Desactivar mi cuenta', danger: true })
+    useConfirm().cancel()
+    await flush()
+    expect(calls.some(c => c.method === 'PATCH')).toBe(false)
+
+    await rowOf('Ana').get('button[aria-label="Eliminar a Ana"]').trigger('click')
+    await nextTick()
+    expect(useConfirm().options.value?.title).toBe('¿Eliminar tu propia cuenta?')
+    useConfirm().cancel()
+    await flush()
+    expect(calls.some(c => c.method === 'DELETE')).toBe(false)
+
+    await buttonsWithText(rowOf('Luis'), 'Desactivar')[0]!.trigger('click')
+    await flush()
+    expect(calls.filter(c => c.method === 'PATCH').at(-1)).toMatchObject({ url: '/api/users/u2', body: { status: 'disabled' } })
+  })
+
+  // Regresión: a 360 px el nombre de la tarjeta móvil se cortaba («QA Cloudy …»).
+  it('la tarjeta móvil no recorta el nombre', async () => {
+    mockApi('GET', '/api/users', { items: [user({ name: 'Persona con un nombre muy largo de verdad' })], total: 1 })
+    const wrapper = await mountSuspended(UsuariosPage)
+    await flush()
+    const name = wrapper.get('ul[aria-label="Usuarios"] li span.font-medium')
+    expect(name.text()).toBe('Persona con un nombre muy largo de verdad')
+    expect(name.classes()).not.toContain('truncate')
+    expect(name.classes()).toEqual(expect.arrayContaining(['basis-full', 'break-words']))
   })
 
   it('eliminar pide confirmación y, al confirmar, llama a DELETE', async () => {

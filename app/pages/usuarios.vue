@@ -64,7 +64,9 @@ const summary = computed(() => {
         >
           <div class="card-body gap-3 p-4">
             <div class="flex flex-wrap items-center gap-2">
-              <span class="min-w-0 flex-1 truncate font-medium">{{ user.name }}</span>
+              <!-- El nombre nunca se recorta: en teléfono ocupa su propia fila y las insignias bajan; desde `sm`
+                   comparte la fila y, si es largo, salta de línea (como el remitente en SubmissionCard). -->
+              <span class="min-w-0 basis-full break-words font-medium sm:flex-1 sm:basis-0">{{ user.name }}</span>
               <span class="badge" :class="STATUS_BADGE[user.status]">{{ STATUS_LABELS[user.status] }}</span>
               <span v-if="user.role" class="badge badge-primary badge-soft">{{ ROLE_LABELS[user.role] }}</span>
             </div>

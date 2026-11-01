@@ -83,6 +83,7 @@ async function savePassword(data: ChangePasswordForm) {
         <AuthForm
           v-if="profile"
           legend="Nombre visible"
+          :heading-level="2"
           :fields="nameFields"
           :schema="profileNameSchema"
           :initial="{ name: profile.name }"
@@ -99,6 +100,7 @@ async function savePassword(data: ChangePasswordForm) {
         <AuthForm
           :key="passwordFormKey"
           legend="Cambiar contraseña"
+          :heading-level="2"
           :fields="passwordFields"
           :schema="changePasswordSchema"
           submit-label="Cambiar contraseña"

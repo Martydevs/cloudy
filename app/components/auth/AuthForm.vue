@@ -22,7 +22,9 @@ const props = withDefaults(defineProps<{
   loading?: boolean
   serverError?: string
   initial?: Record<string, string>
-}>(), { loading: false, serverError: '', initial: () => ({}) })
+  /** Nivel del título dentro de la leyenda: 1 en las páginas de acceso; 2 cuando la página ya tiene su h1 (Mi perfil). */
+  headingLevel?: 1 | 2
+}>(), { loading: false, serverError: '', initial: () => ({}), headingLevel: 1 })
 
 const emit = defineEmits<{ submit: [data: T] }>()
 
@@ -65,7 +67,10 @@ async function onSubmit() {
 <template>
   <form method="post" novalidate class="flex flex-col gap-4" @submit.prevent="onSubmit">
     <fieldset class="fieldset gap-3">
-      <legend class="fieldset-legend text-xl">{{ legend }}</legend>
+      <!-- La leyenda nombra el grupo y el encabezado dentro de ella da el título de la página (HTML admite encabezados en `legend`). -->
+      <legend class="fieldset-legend text-xl">
+        <component :is="`h${headingLevel}`">{{ legend }}</component>
+      </legend>
       <slot name="intro" />
 
       <div v-if="serverError" role="alert" class="alert alert-error alert-soft">

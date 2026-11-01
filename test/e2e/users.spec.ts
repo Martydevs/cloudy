@@ -70,6 +70,8 @@ describe('US4 · gestión de usuarios', () => {
     await testSql()`UPDATE profiles SET role = 'editor', updated_at = now() WHERE role = 'admin' AND status = 'active' AND email <> ${adminEmail}`
     const selfRow = adminPage.getByRole('row').filter({ hasText: adminEmail })
     await selfRow.getByRole('button', { name: 'Desactivar' }).click()
+    // Sobre la propia cuenta se pide confirmación antes de desactivar.
+    await adminPage.getByRole('button', { name: 'Desactivar mi cuenta' }).click()
     await expect.poll(() => adminPage.getByText('Debe existir al menos un administrador activo').isVisible()).toBe(true)
     await expect.poll(() => selfRow.getByText('Activo', { exact: true }).isVisible()).toBe(true)
   })

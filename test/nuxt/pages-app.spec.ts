@@ -170,6 +170,9 @@ describe('Mi perfil', () => {
     const wrapper = await mountSuspended(PerfilPage)
     expect(wrapper.text()).toContain('ana@iglesia.org')
     expect(wrapper.text()).toContain('Editor')
+    // Un solo h1 en la página: los formularios del perfil titulan con h2.
+    expect(wrapper.findAll('h1').map(h => h.text())).toEqual(['Mi perfil'])
+    expect(wrapper.findAll('legend h2').map(h => h.text())).toEqual(['Nombre visible', 'Cambiar contraseña'])
 
     await fill(wrapper, 'Nombre', 'Ana María')
     await wrapper.findAll('form')[0]!.trigger('submit')
@@ -398,6 +401,15 @@ describe('cuenta pendiente, acceso denegado y errores', () => {
     expect(clearErrorMock).toHaveBeenCalledWith({ redirect: '/' })
     const other = await mountSuspended(ErrorPage, { props: { error: { statusCode: 500 } as never } })
     expect(other.get('h1').text()).toBe('Algo salió mal')
+  })
+
+  // Regresión: Nuxt pinta error.vue en lugar de app.vue, y el 404 salía oscuro con el tema claro elegido.
+  it('error.vue aplica el tema elegido a <html>', async () => {
+    useTheme().set('cloudy-light')
+    await mountSuspended(ErrorPage, { props: { error: { statusCode: 404 } as never } })
+    await vi.waitFor(() => expect(document.documentElement.getAttribute('data-theme')).toBe('cloudy-light'))
+    useTheme().set('cloudy')
+    await vi.waitFor(() => expect(document.documentElement.getAttribute('data-theme')).toBe('cloudy'))
   })
 })
 

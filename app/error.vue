@@ -3,8 +3,13 @@ import type { NuxtError } from '#app'
 
 const props = defineProps<{ error: NuxtError }>()
 const notFound = computed(() => props.error.statusCode === 404)
+// Nuxt pinta esta página en lugar de app.vue: el `data-theme` de la cookie se aplica aquí también (FR-043).
+const { theme } = useTheme()
 
-useHead({ title: computed(() => notFound.value ? 'Página no encontrada · Cloudy' : 'Error · Cloudy') })
+useHead({
+  title: computed(() => notFound.value ? 'Página no encontrada · Cloudy' : 'Error · Cloudy'),
+  htmlAttrs: { 'data-theme': theme },
+})
 
 function goHome() {
   clearError({ redirect: '/' })
