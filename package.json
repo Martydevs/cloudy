@@ -31,7 +31,6 @@
     "@neondatabase/serverless": "^1.2.0",
     "@nuxt/fonts": "1.0.1",
     "@nuxt/icon": "2.5.1",
-    "@nuxt/image": "2.1.0",
     "@openrouter/ai-sdk-provider": "^3.1.0",
     "@regle/core": "^1.29.5",
     "@regle/nuxt": "^1.29.5",
@@ -46,7 +45,6 @@
     "nuxt": "^4.6.1",
     "tailwindcss": "^4.3.3",
     "vue": "^3.5.43",
-    "vue-router": "^5.4.0",
     "zod": "^4.6.7"
   },
   "devDependencies": {

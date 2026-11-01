@@ -10,7 +10,6 @@ export default defineNuxtConfig({
     '@nuxt/icon/module',
     '@nuxt/fonts',
     '@vueuse/nuxt/module',
-    '@nuxt/image',
     '@nuxt/test-utils/module',
     '@regle/nuxt',
     Sonda({ enabled: analyze, server: true, gzip: true }),

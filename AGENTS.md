@@ -4,7 +4,7 @@ Cloudy is the internal media drive for a Christian church's multimedia & audio p
 members (admins and editors) upload, organize, preview, comment on and recover media files. Guests
 send material from a public page into an approval queue that the team reviews live.
 
-**Governance**: `.specify/memory/constitution.md` (v1.1.0) is the source of truth and overrides this
+**Governance**: `.specify/memory/constitution.md` (v1.1.1) is the source of truth and overrides this
 file. Keep this guide aligned with it whenever the constitution is amended.
 
 **Active feature**: `specs/003-guest-upload-access-code/` (builds on `specs/001-shared-media-drive/` and
@@ -19,7 +19,7 @@ file. Keep this guide aligned with it whenever the constitution is amended.
 | Database | Neon PostgreSQL · Drizzle ORM (`drizzle-orm/neon-http`) · migrations with `drizzle-kit` |
 | Auth & auth emails | Neon Auth via `@neondatabase/auth/server` toolkit + custom h3 adapter (roles/approval live in our `profiles` table) |
 | File storage | Neon Object Storage (S3-compatible, path-style) via `@aws-sdk/client-s3` + `@aws-sdk/s3-request-presigner` |
-| UI | Tailwind CSS 4 + daisyUI 5 (themes `cloudy` dark default, `cloudy-light`) · `@nuxt/icon` with **lucide** only · `@nuxt/fonts` (DM Sans) · `@nuxt/image` |
+| UI | Tailwind CSS 4 + daisyUI 5 (themes `cloudy` dark default, `cloudy-light`) · `@nuxt/icon` with **lucide** only · `@nuxt/fonts` (DM Sans) · plain `<img>` (no `@nuxt/image`: media is private, served by presigned redirects) |
 | Utilities | `@vueuse/nuxt` (auto-imported) |
 | Forms | Regle (`@regle/schemas`) over zod schemas (`zod/mini`) in `app/utils/form-schemas.ts`, always through `useFormSchema` (`app/utils/form-schema.ts`) · `@regle/nuxt` (auto-imports and its plugin, loaded normally) |
 | Tests | Vitest projects `unit` / `nuxt` / `e2e` · `@nuxt/test-utils` · `playwright-core` (Chromium) |
