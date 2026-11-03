@@ -18,6 +18,7 @@ export const navItems: NavItem[] = [
   { to: '/papelera', label: 'Papelera', icon: 'lucide:trash-2', roles: TEAM },
   { to: '/usuarios', label: 'Usuarios', icon: 'lucide:users', roles: ['admin'] },
   { to: '/actividad', label: 'Actividad', icon: 'lucide:activity', roles: ['admin'] },
+  {to: '/youtube', label: 'YouTube', icon: 'lucide:circle-play', roles: TEAM}
 ]
 
 /** `/` solo es activo en el inicio; el resto también en sus subrutas (p. ej. /archivos/:id). */
