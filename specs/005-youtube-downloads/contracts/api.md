@@ -59,6 +59,19 @@ El servicio de descargas (`cloudy-api`) se llama **solo** desde `server/utils/cl
 - `UPDATE … SET last_viewed_at = NULL, last_viewed_by = NULL` si el video existe. **204**; si no existía o ya estaba fuera, **204** igualmente.
 - No toca las listas. La limpieza diaria borra el video si queda huérfano.
 
+## Descargas guardadas
+
+### `GET /api/youtube/downloads` — últimos videos descargados por el equipo
+
+- **Query**: `cursor?` (keyset, 422 si no es válido) y `limit?` (1–48, por defecto 24), los mismos validadores que el historial (`youtubeHistoryQuery`).
+- **200** → `YoutubeDownloadsPage`, de la descarga más reciente a la más antigua, con `downloadedBy` resuelto por `LEFT JOIN profiles` (sin N+1). `Cache-Control: no-store`.
+
+### `POST /api/youtube/downloads` — anotar una descarga ya guardada
+
+- **Body**: `{ videoIds: string[1..10], format }` (el mismo validador que `POST /jobs`, `youtubeJobInput`). Lo envía el navegador cuando el archivo ya se guardó, nunca al crear el trabajo ni para las copias de reproducción.
+- Una fila por video (`INSERT … ON CONFLICT (video_id) DO UPDATE`): bajar el mismo video otra vez actualiza formato, quién y cuándo. Los `videoId` que Cloudy no conoce se ignoran.
+- **200** → `{ recorded: number }`.
+
 ## Listas
 
 ### `GET /api/youtube/playlists` — fila Listas (FR-016)
@@ -102,7 +115,7 @@ El servicio de descargas (`cloudy-api`) se llama **solo** desde `server/utils/cl
 | `youtubeJobInput` | `videoIds`: 1–`MAX_BATCH` (10) IDs válidos, sin repetidos; `format` ∈ `YOUTUBE_FORMATS` |
 | `youtubePlaylistInput` | `name` 1–80 recortado; `videoId` opcional válido |
 | `youtubePlaylistRename` | `name` 1–80 recortado |
-| `youtubeHistoryQuery` | `limit` 1–48 entero, `cursor` opcional, `exclude` opcional válido |
+| `youtubeHistoryQuery` | `limit` 1–48 entero, `cursor` opcional, `exclude` opcional válido (también para `GET /downloads`, que ignora `exclude`) |
 | `parseYoutubeUrl` | texto → `{ ok: true, videoId }` o `{ ok: false, reason }` (research D13); no es un validador de endpoint, lo usa el campo |
 
 ## Matriz de acceso

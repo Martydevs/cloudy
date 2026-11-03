@@ -104,6 +104,36 @@ describe('arquitectura de la feature 002', () => {
     expect(files.filter(f => f.path.startsWith('app/') && imports(f.code).includes('@regle/rules')).map(f => f.path)).toEqual([])
   })
 
+  // Feature 005 (research D1): una sola puerta al servicio de descargas; la clave nunca llega al cliente.
+  const BOUNDARY = 'server/utils/cloudy-api.ts'
+
+  it('solo server/utils/cloudy-api.ts lee cloudyApiUrl y cloudyApiKey', () => {
+    const offenders = files
+      .filter(f => f.path !== BOUNDARY && /\bcloudyApi(Url|Key)\b/.test(f.code))
+      .map(f => f.path)
+    expect(offenders).toEqual([])
+    expect(files.find(f => f.path === BOUNDARY)!.code).toMatch(/cloudyApiKey/)
+  })
+
+  it('nada de app/ ni shared/ importa la frontera del servicio', () => {
+    const offenders = files
+      .filter(f => f.path.startsWith('app/') || f.path.startsWith('shared/'))
+      .flatMap(f => imports(f.code).filter(spec => /server\/utils\/cloudy-api/.test(target(f.path, spec))).map(spec => `${f.path} → ${spec}`))
+    expect(offenders).toEqual([])
+  })
+
+  it('los endpoints de YouTube no llaman a fetch: usan las funciones de la frontera', () => {
+    const youtube = files.filter(f => f.path.startsWith('server/api/youtube/'))
+    expect(youtube.length).toBeGreaterThan(0)
+    const offenders = youtube.filter(f => /\b(\$?fetch|ofetch)\s*\(/.test(f.code)).map(f => f.path)
+    expect(offenders).toEqual([])
+    // En server/utils, solo la frontera habla con el servicio (`/v1/` o `/healthz`).
+    const callers = files
+      .filter(f => f.path.startsWith('server/') && /['"`]\/(v1\/(videos|jobs)|healthz)/.test(f.code))
+      .map(f => f.path)
+    expect(callers).toEqual([BOUNDARY])
+  })
+
   it('heic-to solo se carga con import() dinámico desde app/utils/heic-copy.ts', () => {
     const users = files.filter(f => imports(f.code).includes('heic-to')).map(f => f.path)
     expect(users).toEqual(['app/utils/heic-copy.ts'])

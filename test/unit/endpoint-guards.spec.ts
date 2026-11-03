@@ -73,6 +73,30 @@ describe('guards de los endpoints', () => {
     expect(source('public/access/current.get.ts')).not.toMatch(/\bhitRateLimit\(/)
   })
 
+  it('los 16 endpoints de YouTube exigen rol de equipo y ninguno es público ni exento (feature 005)', () => {
+    const youtube = files.filter(f => f.startsWith('youtube/'))
+    expect(youtube).toEqual([
+      'youtube/downloads/index.get.ts',
+      'youtube/downloads/index.post.ts',
+      'youtube/health.get.ts',
+      'youtube/history/[videoId].delete.ts',
+      'youtube/history/index.get.ts',
+      'youtube/jobs/[jobId].delete.ts',
+      'youtube/jobs/[jobId].get.ts',
+      'youtube/jobs/index.post.ts',
+      'youtube/playlists/[id]/index.delete.ts',
+      'youtube/playlists/[id]/index.get.ts',
+      'youtube/playlists/[id]/index.patch.ts',
+      'youtube/playlists/[id]/items/[videoId].delete.ts',
+      'youtube/playlists/[id]/items/index.post.ts',
+      'youtube/playlists/index.get.ts',
+      'youtube/playlists/index.post.ts',
+      'youtube/videos/[videoId].get.ts',
+    ])
+    for (const file of youtube) expect(source(file), file).toMatch(/\brequireRole\(event, 'editor'\)/)
+    expect(files.filter(f => (isPublic(f) || isCron(f)) && f.includes('youtube'))).toEqual([])
+  })
+
   it('los endpoints del equipo para solicitudes de acceso exigen rol (feature 003)', () => {
     const team = files.filter(f => f.startsWith('access-requests/'))
     expect(team).toEqual(['access-requests/[id]/approve.post.ts', 'access-requests/[id]/reject.post.ts', 'access-requests/index.get.ts'])

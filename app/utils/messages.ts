@@ -1,6 +1,7 @@
 // Textos de avisos (toasts), respaldos de errores de la API y el ErrorState de cada vista (T153),
 // agrupados por área y siempre en español. Los títulos estáticos y los EmptyState viven en sus páginas.
 import { RATE_LIMITED_MESSAGE } from '#shared/constants/messages'
+import { YOUTUBE_URL_MESSAGES } from '#shared/validation/youtube'
 
 /** «1 elemento» / «4 elementos». */
 export function pluralize(n: number, singular: string, plural: string): string {
@@ -173,5 +174,63 @@ export const messages = {
     notFound: 'No encontramos una cámara en este dispositivo',
     busy: 'Otra app está usando la cámara',
     failed: 'No pudimos abrir la cámara. Usa «Elegir archivos»',
+  },
+  /** Página YouTube (feature 005, contracts/ui.md "Textos"). Los textos por código del servicio viven en `shared/constants/youtube.ts`. */
+  youtube: {
+    /** Error del campo de enlace por motivo de `parseYoutubeUrl`. */
+    url: YOUTUBE_URL_MESSAGES,
+    service: {
+      waking: 'Despertando el servicio, puede tardar hasta 1 minuto',
+      busy: 'El servicio está ocupado. Intenta de nuevo en un momento.',
+      down: 'El servicio de descargas no está disponible ahora. Reintenta en unos minutos.',
+      notConfigured: 'El servicio de descargas no está configurado. Avisa a un administrador.',
+    },
+    load: {
+      video: `No pudimos cargar el video. ${CONNECTION}`,
+      playlists: `No pudimos cargar las listas. ${CONNECTION}`,
+      playlist: `No pudimos cargar la lista. ${CONNECTION}`,
+      history: `No pudimos cargar el historial. ${CONNECTION}`,
+      moreHistory: 'No pudimos cargar más videos.',
+      downloads: `No pudimos cargar las descargas. ${CONNECTION}`,
+      moreDownloads: 'No pudimos cargar más descargas.',
+    },
+    compliance: 'Descarga solo contenido que el equipo tenga permiso de usar.',
+    player: {
+      idleHint: 'Se prepara una copia en 720p, puede tardar un momento.',
+      preparing: (pct: number | string) => `Preparando el video… ${pct} %`,
+      failed: 'No pudimos preparar el video',
+      expired: 'La copia expiró',
+      actionsHint: 'Prepara el video para usar estas acciones',
+    },
+    downloads: {
+      ready: 'Tu archivo está listo',
+      batch: (n: number | string, total: number | string) => `Lote ${n} de ${total}`,
+      delivered: (height: number | string) => `Entregado en ${height}p`,
+      expired: 'Esta descarga expiró. Prepárala de nuevo.',
+      paused: 'Descarga en pausa. Pulsa Reintentar cuando el servicio responda.',
+      startFailed: `No pudimos iniciar la descarga. ${RETRY}`,
+      batchFailed: (n: number | string) => `El lote ${n} no se pudo descargar. Seguimos con el resto.`,
+      cancelled: 'Descarga cancelada',
+      filesCount: (n: number) => (n === 1 ? 'Recibirás 1 archivo' : `Recibirás ${n} archivos`),
+      bestAvailable: 'Si el video no llega a 1080p, se entregará la mayor calidad disponible.',
+    },
+    playlists: {
+      created: (name: string) => `Lista «${name}» creada`,
+      renamed: (name: string) => `Ahora se llama «${name}»`,
+      deleted: (name: string) => `Se eliminó la lista «${name}»`,
+      added: (name: string) => `Agregado a «${name}»`,
+      already: (name: string) => `Ya estaba en «${name}»`,
+      removed: (title: string) => `Se quitó «${title}» de la lista`,
+      createFailed: `No pudimos crear la lista. ${RETRY}`,
+      renameFailed: `No pudimos renombrar la lista. ${RETRY}`,
+      deleteFailed: `No pudimos eliminar la lista. ${RETRY}`,
+      addFailed: `No pudimos agregar el video. ${RETRY}`,
+      removeFailed: `No pudimos quitar el video. ${RETRY}`,
+    },
+    history: {
+      removed: (title: string) => `Se quitó «${title}» del historial`,
+      removeFailed: `No pudimos quitarlo del historial. ${RETRY}`,
+    },
+    inactiveUser: 'Usuario que ya no está activo',
   },
 } as const

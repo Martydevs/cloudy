@@ -5,7 +5,7 @@ import { createPage, setup } from '@nuxt/test-utils/e2e'
 import type { BrowserContext, Page } from 'playwright-core'
 import { afterAll, describe, expect, it } from 'vitest'
 import type { TestContext } from 'vitest'
-import { E2E_URL, email, profileUserId, runId, seedFiles, seedFolder, signedInAs, viewports, waitForHydration } from './setup/fixtures'
+import { E2E_URL, email, profileUserId, routeYoutubeThumbnails, runId, seedFiles, seedFolder, seedYoutubeHistory, signedInAs, viewports, waitForHydration } from './setup/fixtures'
 
 await setup({ host: E2E_URL, browser: true })
 
@@ -51,6 +51,8 @@ async function throttledPage(): Promise<Page> {
     await signedInAs(page, 'admin', ADMIN)
     session = await page.context().cookies()
   }
+  // Miniaturas de YouTube desde un fixture local (feature 005): los e2e nunca contactan a YouTube.
+  await routeYoutubeThumbnails(page)
   const cdp = await page.context().newCDPSession(page)
   await cdp.send('Network.enable')
   await cdp.send('Network.setCacheDisabled', { cacheDisabled: true })
@@ -197,6 +199,31 @@ describe('Constitución I · Web Vitals en móvil 4G (T155)', () => {
   it('/solicitudes (feature 003)', async ({ annotate }) => {
     await seeded()
     await audit('/solicitudes', annotate)
+  })
+
+  // Feature 005 · SC-007: el historial compartido con 5 000 videos; la primera página responde en < 2 s.
+  it('/youtube con 5 000 videos en el historial (feature 005)', async ({ annotate }) => {
+    const p = await throttledPage()
+    const owner = await profileUserId(email(ADMIN))
+    await seedYoutubeHistory(owner, 5000, 'perf')
+    const cookie = (await p.context().cookies()).map(c => `${c.name}=${c.value}`).join('; ')
+    const timings: number[] = []
+    for (let i = 0; i < 3; i++) {
+      const start = performance.now()
+      const res = await fetch(`${E2E_URL}/api/youtube/history`, { headers: { cookie } })
+      timings.push(Math.round(performance.now() - start))
+      expect(res.status).toBe(200)
+      expect((await res.json() as { items: unknown[] }).items).toHaveLength(24)
+    }
+    const ms = median(timings)
+    await annotate(`historial de YouTube, primera página: ${ms} ms (${timings.join(', ')})`, 'perf')
+    expect(ms, `historial: ${ms} ms`).toBeLessThan(2000)
+    await audit('/youtube', annotate)
+  })
+
+  it('/youtube/<id> (feature 005)', async ({ annotate }) => {
+    await throttledPage()
+    await audit('/youtube/okShortVid1', annotate)
   })
 })
 

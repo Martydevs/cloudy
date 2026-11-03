@@ -12,6 +12,7 @@ import { object } from '#shared/validation/core'
 import { fileName, folderName } from '#shared/validation/files'
 import { imageTextEditInput } from '#shared/validation/image-text'
 import { note, senderName } from '#shared/validation/submissions'
+import { parseYoutubeUrl, playlistName, YOUTUBE_URL_MESSAGES } from '#shared/validation/youtube'
 import { useFormSchema } from '~/utils/form-schema'
 import {
   accessRequestSchema,
@@ -28,6 +29,8 @@ import {
   profileNameSchema,
   registerSchema,
   resetSchema,
+  youtubePlaylistSchema,
+  youtubeUrlSchema,
 } from '~/utils/form-schemas'
 import { failWith, mockApi } from './helpers/api'
 
@@ -156,6 +159,12 @@ const cases: Case[] = [
     samples: [{ name: 'Eva' }, { name: '  ' }, { name: pad(L(80)) }, { name: L(81) }],
   },
   {
+    name: 'nombre de lista de YouTube',
+    validator: object({ name: playlistName() }),
+    schema: youtubePlaylistSchema,
+    samples: [{ name: 'Domingo' }, { name: '' }, { name: '   ' }, { name: pad(L(80)) }, { name: L(81) }],
+  },
+  {
     name: 'nota del envío (opcional)',
     validator: object({ note: note() }),
     schema: z.object({ note: noteSchema }),
@@ -176,6 +185,42 @@ describe('paridad de esquemas cliente/servidor', () => {
     const sample = { email: 'ana@iglesia.org', password: '   ' }
     expect(serverErrors(loginInput, sample)).toEqual({})
     expect(await schemaErrors(sample, loginSchema)).toEqual({ password: 'Este campo es obligatorio' })
+  })
+})
+
+describe('enlace de YouTube (youtubeUrlSchema ↔ parseYoutubeUrl)', () => {
+  const ID = 'dQw4w9WgXcQ'
+  const samples = [
+    `https://www.youtube.com/watch?v=${ID}&t=30s&list=PL1`,
+    `https://youtu.be/${ID}?t=5`,
+    `youtube.com/shorts/${ID}`,
+    `  https://www.youtube-nocookie.com/embed/${ID}  `,
+    '',
+    '   ',
+    'hola',
+    ID,
+    'https://vimeo.com/123',
+    'https://evil-youtube.com/watch?v=dQw4w9WgXcQ',
+    'https://www.youtube.com/playlist?list=PL1',
+    'https://www.youtube.com/@canal',
+    'https://www.youtube.com/watch',
+    'https://youtu.be/abc',
+  ]
+
+  it('acepta y rechaza lo mismo que la regla compartida, con el mensaje de cada motivo', async () => {
+    for (const url of samples) {
+      const res = parseYoutubeUrl(url)
+      const expected = url.trim() === ''
+        ? { url: 'Este campo es obligatorio' }
+        : res.ok ? {} : { url: YOUTUBE_URL_MESSAGES[res.reason] }
+      expect(await schemaErrors({ url }, youtubeUrlSchema), url).toEqual(expected)
+    }
+  })
+
+  it('los mensajes dicen qué hacer', async () => {
+    expect(await schemaErrors({ url: 'hola' }, youtubeUrlSchema)).toEqual({ url: 'Pega un enlace completo, por ejemplo https://youtu.be/…' })
+    expect(await schemaErrors({ url: 'https://www.youtube.com/playlist?list=PL1' }, youtubeUrlSchema)).toEqual({ url: 'Ese enlace es de una lista de YouTube. Pega el de un video.' })
+    expect(await schemaErrors({ url: 'https://vimeo.com/1' }, youtubeUrlSchema)).toEqual({ url: 'Solo aceptamos enlaces de YouTube' })
   })
 })
 

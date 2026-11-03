@@ -1,7 +1,7 @@
 // Limpieza diaria (Vercel Cron, FR-020, FR-036, R8): papelera vencida, envíos caducados, subidas huérfanas y ventanas de rate limit.
 import { and, eq, inArray, lt, sql } from 'drizzle-orm'
 import { SUBMISSION_TTL_DAYS, TRASH_RETENTION_DAYS, UPLOAD_ORPHAN_HOURS } from '#shared/constants/files'
-import { files, guestSubmissionFiles, guestSubmissions, rateLimits } from '../../db/schema'
+import { files, guestSubmissionFiles, guestSubmissions, rateLimits, youtubeVideos } from '../../db/schema'
 import { deleteMany } from '../../utils/storage'
 
 const BATCH = 500
@@ -12,13 +12,15 @@ export interface CleanupReport {
   orphanUploads: number
   rateLimitRows: number
   accessRequests: number
+  /** Videos de YouTube sin historial ni listas (feature 005). */
+  orphanVideos: number
 }
 
 export default defineEventHandler(async (event): Promise<CleanupReport> => {
   requireCron(event)
   const db = useDb()
   const now = Date.now()
-  const report: CleanupReport = { purgedTrash: 0, expiredSubmissions: 0, orphanUploads: 0, rateLimitRows: 0, accessRequests: 0 }
+  const report: CleanupReport = { purgedTrash: 0, expiredSubmissions: 0, orphanUploads: 0, rateLimitRows: 0, accessRequests: 0, orphanVideos: 0 }
 
   // 0. Raíces con más de 30 días en la papelera: filas y objetos, en lotes de 500.
   report.purgedTrash = await purgeAll(new Date(now - TRASH_RETENTION_DAYS * 86_400_000))
@@ -85,6 +87,22 @@ export default defineEventHandler(async (event): Promise<CleanupReport> => {
 
   // 5. Solicitudes de acceso terminadas o vencidas hace más de 24 h (feature 003, data-model "Retención").
   report.accessRequests = await purgeStaleAccessRequests()
+
+  // 6. Videos de YouTube huérfanos (feature 005): fuera del historial, en ninguna lista, sin descarga guardada y sin cambios en 24 h.
+  for (;;) {
+    const orphans = await db.delete(youtubeVideos)
+      .where(sql`${youtubeVideos.videoId} IN (
+        SELECT v.video_id FROM youtube_videos v
+        WHERE v.last_viewed_at IS NULL
+          AND v.updated_at < now() - interval '24 hours'
+          AND NOT EXISTS (SELECT 1 FROM youtube_playlist_items i WHERE i.video_id = v.video_id)
+          AND NOT EXISTS (SELECT 1 FROM youtube_downloads d WHERE d.video_id = v.video_id)
+        LIMIT ${BATCH}
+      )`)
+      .returning({ videoId: youtubeVideos.videoId })
+    report.orphanVideos += orphans.length
+    if (orphans.length < BATCH) break
+  }
 
   return report
 })

@@ -228,7 +228,7 @@ sale con Escape; abrir la ventana externa y comprobar que reproduce el mismo vid
 
 - **FR-012**: La página de un video MUST incluir en la parte superior un reproductor con los controles propios del
   tema de Cloudy (reproducir/pausar, avance, volumen, tiempo, pantalla completa), accesible por teclado y que respete
-  el tema oscuro y el claro.
+  el tema oscuro y el claro. La pantalla completa se entrega con US4; el resto de los controles, con US1.
 - **FR-013**: Cloudy MUST ofrecer, junto a las acciones del video, **Pantalla completa** en la misma página y **Abrir en
   ventana nueva**; ambas MUST habilitarse solo cuando el video esté listo para reproducirse.
 - **FR-014**: Mientras el video se prepara para reproducir, el reproductor MUST mostrar el progreso y un estado de
@@ -307,8 +307,8 @@ sale con Escape; abrir la ventana externa y comprobar que reproduce el mismo vid
   navegar, con un mensaje que dice qué enlaces se aceptan.
 - **SC-004**: Crear una lista desde un video y verla desde otra cuenta del equipo toma menos de 30 segundos y la lista
   siempre muestra su autor.
-- **SC-005**: Descargar una lista o una selección de hasta 10 videos entrega un solo archivo; de 11 a 100 videos entrega
-  un archivo por cada 10, y la persona siempre sabe cuántos archivos recibirá antes de confirmar.
+- **SC-005**: Descargar una lista o una selección de hasta 10 videos entrega un solo archivo; de 11 videos en adelante entrega
+  un archivo por cada 10 (no hay tope de videos por lista o selección), y la persona siempre sabe cuántos archivos recibirá antes de confirmar.
 - **SC-006**: En una descarga por lotes con fallos parciales, el 100 % de los videos disponibles llegan al archivo y el
   100 % de los fallidos se listan con su motivo en español.
 - **SC-007**: La página YouTube, con 5 000 entradas en el historial, muestra el primer bloque en menos de 2 segundos

@@ -1,0 +1,366 @@
+// Stub local del servicio de descargas `cloudy-api` para los e2e (feature 005, research D17). La app de pruebas lo
+// usa vía `NUXT_CLOUDY_API_URL`; los e2e nunca llaman a YouTube ni a Render. Implementa el contrato del servicio
+// (`/healthz`, `/v1/videos/:id`, `/v1/jobs`, `/v1/jobs/:id`, `/v1/jobs/:id/file`) con escenarios por ID de video.
+// Los archivos son fixtures reproducibles diminutos (`test/fixtures/files/stub-video.mp4` y `stub-audio.mp3`,
+// H.264/AAC y MP3); el `.zip` de un lote se arma en código (STORED).
+import { createHmac, randomBytes } from 'node:crypto'
+import { readFileSync } from 'node:fs'
+import { createServer } from 'node:http'
+import type { IncomingMessage, ServerResponse } from 'node:http'
+import type { AddressInfo } from 'node:net'
+
+export const STUB_API_KEY = 'e2e-stub-key'
+const SIGNING = 'stub-signing-secret'
+
+const VIDEO = readFileSync(new URL('../../fixtures/files/stub-video.mp4', import.meta.url))
+const AUDIO = readFileSync(new URL('../../fixtures/files/stub-audio.mp3', import.meta.url))
+
+/** Tiempo de cada video de un trabajo (corto) y el de `slowJobVid1`. */
+const ITEM_MS = 400
+const SLOW_ITEM_MS = 6000
+const ZIP_MS = 200
+
+interface Scenario {
+  title: string
+  channel: string | null
+  duration: number | null
+  heights: number[]
+  downloadable: boolean
+  reason?: string
+  /** La sonda falla con este código (422 del servicio). */
+  probeError?: string
+  /** El video falla dentro del trabajo con este código (pasa la sonda). */
+  jobError?: string
+  /** Fracción de avance en la que falla. */
+  failAt?: number
+  slow?: boolean
+}
+
+const HEIGHTS = [144, 240, 360, 480, 720, 1080]
+
+/** Escenarios por ID de video (11 caracteres). Cualquier otro ID válido es un video corto descargable. */
+export const SCENARIOS: Record<string, Partial<Scenario>> = {
+  okShortVid1: { title: 'Alabanza de prueba', channel: 'Canal Cloudy', duration: 185 },
+  privateVid1: { probeError: 'private' },
+  tooLongVid1: { title: 'Conferencia muy larga', duration: 7200, downloadable: false, reason: 'too_long' },
+  liveVideo01: { title: 'Transmisión en vivo', duration: null, downloadable: false, reason: 'live' },
+  slowJobVid1: { title: 'Video lento', slow: true },
+  failMidVid1: { title: 'Video que falla', jobError: 'download_failed', failAt: 0.5 },
+  unavailVid1: { title: 'Video que ya no está', jobError: 'unavailable', failAt: 0 },
+  lowResVid01: { title: 'Video en baja calidad', heights: [144, 240, 360, 480] },
+}
+
+function scenario(videoId: string): Scenario {
+  const s = SCENARIOS[videoId] ?? {}
+  return {
+    title: s.title ?? `Video ${videoId}`,
+    channel: s.channel === undefined ? 'Canal Cloudy' : s.channel,
+    duration: s.duration === undefined ? 95 : s.duration,
+    heights: s.heights ?? HEIGHTS,
+    downloadable: s.downloadable ?? true,
+    ...s,
+  } as Scenario
+}
+
+const VIDEO_ID_RE = /^[A-Za-z0-9_-]{11}$/
+
+// ---------------------------------------------------------------- zip (STORED, sin compresión)
+
+const CRC_TABLE = Array.from({ length: 256 }, (_, n) => {
+  let c = n
+  for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1
+  return c >>> 0
+})
+
+function crc32(data: Buffer): number {
+  let crc = 0xFFFFFFFF
+  for (const byte of data) crc = CRC_TABLE[(crc ^ byte) & 0xFF]! ^ (crc >>> 8)
+  return (crc ^ 0xFFFFFFFF) >>> 0
+}
+
+export function buildZip(entries: { name: string, data: Buffer }[]): Buffer {
+  const locals: Buffer[] = []
+  const centrals: Buffer[] = []
+  let offset = 0
+  for (const { name, data } of entries) {
+    const fileName = Buffer.from(name, 'utf8')
+    const crc = crc32(data)
+    const local = Buffer.alloc(30)
+    local.writeUInt32LE(0x04034B50, 0)
+    local.writeUInt16LE(20, 4)
+    local.writeUInt16LE(0x0800, 6) // UTF-8
+    local.writeUInt16LE(0, 8) // STORED
+    local.writeUInt32LE(crc, 14)
+    local.writeUInt32LE(data.length, 18)
+    local.writeUInt32LE(data.length, 22)
+    local.writeUInt16LE(fileName.length, 26)
+    locals.push(local, fileName, data)
+
+    const central = Buffer.alloc(46)
+    central.writeUInt32LE(0x02014B50, 0)
+    central.writeUInt16LE(20, 4)
+    central.writeUInt16LE(20, 6)
+    central.writeUInt16LE(0x0800, 8)
+    central.writeUInt32LE(crc, 16)
+    central.writeUInt32LE(data.length, 20)
+    central.writeUInt32LE(data.length, 24)
+    central.writeUInt16LE(fileName.length, 28)
+    central.writeUInt32LE(offset, 42)
+    centrals.push(central, fileName)
+    offset += 30 + fileName.length + data.length
+  }
+  const centralSize = centrals.reduce((n, b) => n + b.length, 0)
+  const end = Buffer.alloc(22)
+  end.writeUInt32LE(0x06054B50, 0)
+  end.writeUInt16LE(entries.length, 8)
+  end.writeUInt16LE(entries.length, 10)
+  end.writeUInt32LE(centralSize, 12)
+  end.writeUInt32LE(offset, 16)
+  return Buffer.concat([...locals, ...centrals, end])
+}
+
+// ---------------------------------------------------------------- trabajos
+
+type Format = 'mp4_720' | 'mp4_1080' | 'mp3'
+
+interface Job {
+  id: string
+  format: Format
+  createdAt: number
+  videoIds: string[]
+  cancelled: boolean
+}
+
+interface ItemView {
+  video_id: string
+  title: string
+  status: 'queued' | 'running' | 'done' | 'failed'
+  progress: number
+  error: { code: string, message: string } | null
+  actual_height: number | null
+}
+
+function itemDuration(videoId: string) {
+  return scenario(videoId).slow ? SLOW_ITEM_MS : ITEM_MS
+}
+
+/** Estado del trabajo calculado por el tiempo transcurrido: los videos se procesan uno tras otro. */
+function view(job: Job, now = Date.now()) {
+  let clock = job.createdAt
+  const elapsed = now
+  const items: ItemView[] = job.videoIds.map((videoId) => {
+    const s = scenario(videoId)
+    const duration = itemDuration(videoId)
+    const start = clock
+    clock += duration
+    const fraction = Math.max(0, Math.min(1, (elapsed - start) / duration))
+    const height = job.format === 'mp3' ? null : Math.min(job.format === 'mp4_1080' ? 1080 : 720, Math.max(...s.heights))
+    if (s.jobError && fraction >= (s.failAt ?? 0) && elapsed >= start) {
+      return { video_id: videoId, title: s.title, status: 'failed', progress: s.failAt ?? 0, error: { code: s.jobError, message: 'Stub failure' }, actual_height: null }
+    }
+    if (elapsed < start) return { video_id: videoId, title: s.title, status: 'queued', progress: 0, error: null, actual_height: null }
+    if (fraction < 1) return { video_id: videoId, title: s.title, status: 'running', progress: fraction, error: null, actual_height: null }
+    return { video_id: videoId, title: s.title, status: 'done', progress: 1, error: null, actual_height: height }
+  })
+  const finishedAt = clock + (job.videoIds.length > 1 ? ZIP_MS : 0)
+  const progress = items.reduce((n, i) => n + i.progress, 0) / items.length
+  const successes = items.filter(i => i.status === 'done')
+  const allSettled = items.every(i => i.status === 'done' || i.status === 'failed')
+  let status: 'queued' | 'running' | 'zipping' | 'done' | 'failed' = elapsed < job.createdAt ? 'queued' : 'running'
+  if (allSettled && successes.length === 0) status = 'failed'
+  else if (allSettled && elapsed < finishedAt) status = 'zipping'
+  else if (allSettled) status = 'done'
+  return { items, status, progress, successes, finishedAt }
+}
+
+function sanitize(title: string) {
+  return title.replace(/[^\p{L}\p{N} ._-]+/gu, '').trim() || 'video'
+}
+
+function fileOf(job: Job, successes: ItemView[]): { name: string, data: Buffer, type: string } {
+  const ext = job.format === 'mp3' ? 'mp3' : 'mp4'
+  const bytes = job.format === 'mp3' ? AUDIO : VIDEO
+  if (job.videoIds.length === 1) {
+    const item = successes[0]!
+    return { name: `${sanitize(item.title)} [${item.video_id}].${ext}`, data: bytes, type: ext === 'mp3' ? 'audio/mpeg' : 'video/mp4' }
+  }
+  const data = buildZip(successes.map(i => ({ name: `${sanitize(i.title)} [${i.video_id}].${ext}`, data: bytes })))
+  return { name: `cloudy-batch-${job.id.slice(0, 8)}.zip`, data, type: 'application/zip' }
+}
+
+const sign = (jobId: string, exp: number) => createHmac('sha256', SIGNING).update(`${jobId}:${exp}`).digest('hex')
+
+// ---------------------------------------------------------------- servidor
+
+export type StubState = 'up' | 'asleep' | 'degraded'
+
+export interface CloudyStubCalls {
+  /** Trabajos creados (`POST /v1/jobs` aceptados). */
+  jobsCreated: number
+  /** Peticiones a rutas con clave que llegaron sin la clave correcta. */
+  unauthorized: number
+  /** Formatos de cada trabajo creado, en orden. */
+  formats: string[]
+}
+
+export async function startCloudyApiStub(): Promise<{ url: string, close: () => Promise<void> }> {
+  const jobs = new Map<string, Job>()
+  let state: StubState = 'up'
+  let calls: CloudyStubCalls = { jobsCreated: 0, unauthorized: 0, formats: [] }
+  let base = ''
+
+  const server = createServer(async (req: IncomingMessage, res: ServerResponse) => {
+    const chunks: Buffer[] = []
+    for await (const chunk of req) chunks.push(chunk as Buffer)
+    const raw = Buffer.concat(chunks).toString('utf8')
+    const url = new URL(req.url ?? '/', 'http://stub')
+    const path = url.pathname
+    const json = (status: number, payload: unknown) => {
+      res.writeHead(status, { 'content-type': 'application/json' })
+      res.end(JSON.stringify(payload))
+    }
+    const detail = (status: number, code: string, message: string, extra: Record<string, unknown> = {}) =>
+      json(status, { detail: { code, message, ...extra } })
+
+    // Control del stub (solo los e2e).
+    if (req.method === 'POST' && path === '/__stub/state') {
+      state = (raw ? (JSON.parse(raw) as { state?: StubState }).state : undefined) ?? 'up'
+      return json(200, { state })
+    }
+    if (req.method === 'POST' && path === '/__stub/reset') {
+      state = 'up'
+      calls = { jobsCreated: 0, unauthorized: 0, formats: [] }
+      jobs.clear()
+      return json(200, calls)
+    }
+    if (req.method === 'GET' && path === '/__stub/calls') return json(200, calls)
+
+    // Dormido: la plataforma responde 502 a todo, como Render mientras levanta la instancia.
+    if (state === 'asleep') {
+      res.writeHead(502, { 'content-type': 'text/plain' })
+      return res.end('Bad Gateway')
+    }
+
+    if (req.method === 'GET' && path === '/healthz') {
+      const ok = state === 'up'
+      return json(ok ? 200 : 503, { status: ok ? 'ok' : 'degraded', yt_dlp_version: 'stub', ffmpeg: ok, js_runtime: ok })
+    }
+
+    const file = /^\/v1\/jobs\/([0-9a-f]{32})\/file$/.exec(path)
+    if (req.method === 'GET' && file) {
+      const exp = Number(url.searchParams.get('exp'))
+      const sig = url.searchParams.get('sig') ?? ''
+      const jobId = file[1]!
+      if (sig !== sign(jobId, exp)) return detail(403, 'invalid_signature', 'Invalid download link')
+      if (exp * 1000 < Date.now()) return detail(403, 'link_expired', 'Download link expired, poll the job again')
+      const job = jobs.get(jobId)
+      if (!job) return detail(404, 'not_found', 'Job not found or expired')
+      const v = view(job)
+      if (v.status !== 'done') return detail(404, 'not_found', 'Job not found or expired')
+      const out = fileOf(job, v.successes)
+      const headers: Record<string, string | number> = {
+        'content-type': out.type,
+        'content-disposition': `attachment; filename*=UTF-8''${encodeURIComponent(out.name)}`,
+        'accept-ranges': 'bytes',
+      }
+      const range = /^bytes=(\d*)-(\d*)$/.exec(req.headers.range ?? '')
+      if (range) {
+        const start = range[1] ? Number(range[1]) : 0
+        const end = range[2] ? Math.min(Number(range[2]), out.data.length - 1) : out.data.length - 1
+        res.writeHead(206, { ...headers, 'content-range': `bytes ${start}-${end}/${out.data.length}`, 'content-length': end - start + 1 })
+        return res.end(out.data.subarray(start, end + 1))
+      }
+      res.writeHead(200, { ...headers, 'content-length': out.data.length })
+      return res.end(out.data)
+    }
+
+    // A partir de aquí todo exige la clave.
+    if (req.headers['x-api-key'] !== STUB_API_KEY) {
+      calls.unauthorized++
+      return detail(401, 'unauthorized', 'Invalid or missing API key')
+    }
+
+    const video = /^\/v1\/videos\/([^/]+)$/.exec(path)
+    if (req.method === 'GET' && video) {
+      const videoId = decodeURIComponent(video[1]!)
+      if (!VIDEO_ID_RE.test(videoId)) return json(422, { detail: [{ loc: ['path', 'video_id'], msg: 'pattern' }] })
+      const s = scenario(videoId)
+      if (s.probeError) return detail(422, s.probeError, 'Private video. Sign in if you\'ve been granted access')
+      return json(200, {
+        video_id: videoId,
+        title: s.title,
+        duration: s.duration,
+        thumbnail: `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
+        channel: s.channel,
+        available_heights: s.heights,
+        downloadable: s.downloadable,
+        reason: s.downloadable ? null : s.reason ?? null,
+      })
+    }
+
+    if (req.method === 'POST' && path === '/v1/jobs') {
+      const body = raw ? JSON.parse(raw) as { video_ids?: unknown, format?: unknown } : {}
+      const ids = Array.isArray(body.video_ids) ? [...new Set(body.video_ids as string[])] : []
+      const format = body.format as Format
+      if (ids.length === 0 || !['mp4_720', 'mp4_1080', 'mp3'].includes(format) || ids.some(id => !VIDEO_ID_RE.test(id))) {
+        return json(422, { detail: [{ loc: ['body'], msg: 'invalid' }] })
+      }
+      if (ids.length > 10) return detail(422, 'batch_too_large', 'At most 10 videos per job')
+      const problems = ids.flatMap((id) => {
+        const s = scenario(id)
+        if (s.probeError) return [{ video_id: id, code: s.probeError, message: 'Private video' }]
+        if (!s.downloadable) return [{ video_id: id, code: s.reason ?? 'not_downloadable', message: 'Video can\'t be downloaded' }]
+        return []
+      })
+      if (problems.length) return detail(422, 'videos_rejected', 'Some videos can\'t be downloaded', { videos: problems })
+      const id = randomBytes(16).toString('hex')
+      jobs.set(id, { id, format, createdAt: Date.now(), videoIds: ids, cancelled: false })
+      calls.jobsCreated++
+      calls.formats.push(format)
+      return json(202, { job_id: id, status: 'queued' })
+    }
+
+    const jobMatch = /^\/v1\/jobs\/([^/]+)$/.exec(path)
+    if (jobMatch) {
+      const job = jobs.get(jobMatch[1]!)
+      if (!job) return detail(404, 'not_found', 'Job not found or expired')
+      if (req.method === 'DELETE') {
+        jobs.delete(job.id)
+        res.writeHead(204)
+        return res.end()
+      }
+      if (req.method === 'GET') {
+        const v = view(job)
+        const out: Record<string, unknown> = {
+          job_id: job.id,
+          status: v.status,
+          format: job.format,
+          progress: Math.round(v.progress * 10_000) / 10_000,
+          items: v.items,
+        }
+        if (v.status === 'done') {
+          const exp = Math.floor(Date.now() / 1000) + 600
+          const file = fileOf(job, v.successes)
+          out.download_url = `${base}/v1/jobs/${job.id}/file?exp=${exp}&sig=${sign(job.id, exp)}`
+          out.filename = file.name
+          out.size_bytes = file.data.length
+          out.expires_at = v.finishedAt / 1000 + 1800
+        }
+        return json(200, out)
+      }
+    }
+
+    detail(404, 'not_found', 'Not found')
+  })
+
+  await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
+  const { port } = server.address() as AddressInfo
+  base = `http://127.0.0.1:${port}`
+  return {
+    url: base,
+    close: () => new Promise<void>((resolve) => {
+      server.closeAllConnections()
+      server.close(() => resolve())
+    }),
+  }
+}

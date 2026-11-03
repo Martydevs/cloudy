@@ -22,7 +22,7 @@ También guarda videos en **listas** compartidas y consulta un **historial** del
   cursor keyset; listas con conteo y miniaturas por subconsulta.
 - **Sin dependencias nuevas.** El servicio de descargas es el único servicio externo nuevo (Complexity Tracking).
 - **Arranque en frío** del plan gratuito de Render: ping a `/healthz` al abrir la feature y banner con reintento (D7).
-- **Hallazgo a corregir**: `.env.example` declara `NUXT_CLOUDY_APIURL`, que no mapea a `runtimeConfig.cloudyApiUrl`; debe ser `NUXT_CLOUDY_API_URL` más `NUXT_CLOUDY_API_KEY` (D16).
+- **Hallazgo corregido** (commit 6871c03): `.env.example` declaraba `NUXT_CLOUDY_APIURL`, que no mapea a `runtimeConfig.cloudyApiUrl`; ahora es `NUXT_CLOUDY_API_URL` más `NUXT_CLOUDY_API_KEY` (D16).
 
 ## Technical Context
 
@@ -69,8 +69,8 @@ También guarda videos en **listas** compartidas y consulta un **historial** del
 **Scale/Scope**:
 
 - Volumen: un equipo de decenas de personas, cientos de videos en el historial, decenas de listas.
-- Servidor: 13 endpoints nuevos (`health`, `videos/:id`, 3 de `jobs`, 2 de `history`, 6 de `playlists`) y 1 módulo de frontera; 1 paso nuevo en la limpieza diaria.
-- Cliente: 3 páginas nuevas (`index`, `[id]/index`, `[id]/ventana`), 1 layout (`player`), 11 componentes, 5 composables; `navigation.ts` ya tiene la entrada.
+- Servidor: 14 endpoints nuevos (`health`, `videos/:id`, 3 de `jobs`, 2 de `history`, 7 de `playlists`) y 1 módulo de frontera; 1 paso nuevo en la limpieza diaria.
+- Cliente: 3 páginas nuevas (`index`, `[id]/index`, `[id]/ventana`), 1 layout (`player`), 12 componentes, 5 composables; `navigation.ts` ya tiene la entrada.
 - 4 historias: US1 (P1, MVP) pegar enlace, ver ficha y descargar; US2 (P2) listas; US3 (P3) historial y selección por lotes; US4 (P4) pantalla completa y ventana externa.
 
 ## Constitution Check
@@ -88,7 +88,7 @@ Evaluado contra la constitución **v1.1.1**.
 | **V. Pruebas** | ✅ | Ver el detalle bajo la tabla. |
 | **VI. Consistencia de UX** | ✅ | Ver el detalle bajo la tabla. |
 | **Restricciones técnicas** | ✅ | Ver el detalle bajo la tabla. |
-| **Flujo y gates** | ✅ | Rama `005-youtube-downloads` (aún por crear: hoy el trabajo está en `main` con cambios sin versionar). Conventional Commits. DoD de AGENTS.md por fase (typecheck → tests → navegador). |
+| **Flujo y gates** | ✅ | Rama `005-youtube-downloads` creada. Conventional Commits. DoD de AGENTS.md por fase (typecheck → tests → navegador). |
 
 **Detalle de los principios**:
 
@@ -99,7 +99,7 @@ Evaluado contra la constitución **v1.1.1**.
   - Miniaturas `<img loading="lazy" width height>`; la primera vista de `/youtube` (campo, listas, historial) con SSR.
   - El video no se pide al abrir la ficha, solo al pulsar Reproducir (protege la cola de la instancia gratuita).
 - **II. Funcional y efectivo**:
-  - 4 historias desplegables por separado en orden de prioridad (US1 → US4); US2 y US3 solo dependen de que la ficha registre videos (US1).
+  - 4 historias desplegables por separado en orden de prioridad (US1 → US4); US2 y US3 dependen de que la ficha registre videos (US1); la entrada "Agregar a lista" del menú del historial (US3) usa el diálogo de US2, por eso US3 se entrega después de US2. US4 solo depende de US1.
   - Sin dependencias nuevas; todo sale de VueUse, Nuxt, daisyUI y los utils existentes. Sin cuotas, sin reorden de listas, sin persistir trabajos: YAGNI.
   - Sin huérfanos: la creación de una lista con video es un solo `db.batch`; el trabajo fallido no deja filas (no se guardan); los videos sin historial ni listas se limpian a las 24 h.
   - Cada error dice qué hacer ("Reintenta en un momento", "Prepárala de nuevo", "Pega el de un video").
@@ -108,7 +108,7 @@ Evaluado contra la constitución **v1.1.1**.
   - Casillas y botones ≥ 44 px; barra de selección fija abajo, al alcance del pulgar, con relleno para no tapar el último elemento.
   - Verificación a 360 px y ≥ 1280 px (quickstart §2–§3).
 - **IV. Calidad de código**:
-  - `requireRole(event, 'editor')` en los 13 endpoints; renombrar/eliminar una lista exige autor o `can(role, 'youtube.moderate')`. El barrido de `endpoint-guards.spec.ts` los cubre.
+  - `requireRole(event, 'editor')` en los 14 endpoints; renombrar/eliminar una lista exige autor o `can(role, 'youtube.moderate')`. El barrido de `endpoint-guards.spec.ts` los cubre.
   - Reglas compartidas una sola vez en `shared/`: `constants/youtube.ts` (formatos, tope de 10, mensajes por código), `validation/youtube.ts` (`parseYoutubeUrl`, validadores), DTOs en `types/api.ts`.
   - Frontera del servicio en `server/utils/cloudy-api.ts` y `architecture.spec.ts` impide leer `cloudyApiUrl`/`cloudyApiKey` o llamar al servicio fuera de ese módulo.
   - Formularios por `useFormSchema` con `youtubeUrlSchema` y `youtubePlaylistSchema`; mensajes por `serverMessage()`.
@@ -140,7 +140,7 @@ specs/005-youtube-downloads/
 ├── data-model.md        # Phase 1 output (/speckit-plan command)
 ├── quickstart.md        # Phase 1 output (/speckit-plan command)
 ├── contracts/
-│   ├── api.md           # 13 endpoints /api/youtube/**
+│   ├── api.md           # 14 endpoints /api/youtube/**
 │   └── ui.md            # páginas, componentes, composables, estados y textos
 ├── checklists/
 │   └── requirements.md
@@ -210,10 +210,10 @@ app/
 ├── utils/
 │   ├── form-schemas.ts           # + youtubeUrlSchema, youtubePlaylistSchema
 │   ├── messages.ts               # + bloque youtube
-│   └── navigation.ts             # entrada YouTube (ya existe, sin versionar)
+│   └── navigation.ts             # entrada YouTube (ya existe)
 └── …
 
-nuxt.config.ts                    # runtimeConfig.cloudyApiUrl / cloudyApiKey (ya existen, sin versionar)
+nuxt.config.ts                    # runtimeConfig.cloudyApiUrl / cloudyApiKey (ya existen)
 .env.example                      # corregir NUXT_CLOUDY_API_URL y añadir NUXT_CLOUDY_API_KEY
 
 test/

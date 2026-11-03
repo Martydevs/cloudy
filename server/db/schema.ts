@@ -1,8 +1,9 @@
 // Esquema de Cloudy (Drizzle ORM). Ver specs/001-shared-media-drive/data-model.md.
-import { relations } from 'drizzle-orm'
+import { relations, sql } from 'drizzle-orm'
 import type { AnyPgColumn } from 'drizzle-orm/pg-core'
 import {
   bigint,
+  check,
   index,
   integer,
   jsonb,
@@ -254,6 +255,71 @@ export const rateLimits = pgTable('rate_limits', {
   count: integer('count').notNull().default(0),
 }, t => [
   primaryKey({ columns: [t.key, t.windowStart] }),
+])
+
+// ---------------------------------------------------------------- YouTube (feature 005, data-model.md)
+
+/** Video conocido + historial compartido en la misma fila: `last_viewed_at` `NULL` = fuera del historial. */
+export const youtubeVideos = pgTable('youtube_videos', {
+  videoId: text('video_id').primaryKey(),
+  /** 1–300 car. (se recorta al guardar) */
+  title: text('title').notNull(),
+  /** ≤ 200 car. */
+  channel: text('channel'),
+  /** `NULL` en vivo o desconocida; ≥ 0 */
+  durationSeconds: integer('duration_seconds'),
+  /** Solo `https://` */
+  thumbnailUrl: text('thumbnail_url'),
+  lastViewedAt: timestamp('last_viewed_at', { withTimezone: true }),
+  lastViewedBy: text('last_viewed_by').references(() => profiles.userId),
+  ...timestamps,
+}, t => [
+  index('youtube_videos_history_idx').on(t.lastViewedAt.desc(), t.videoId.desc()).where(sql`${t.lastViewedAt} IS NOT NULL`),
+  check('youtube_videos_video_id_format', sql`${t.videoId} ~ '^[A-Za-z0-9_-]{11}$'`),
+  check('youtube_videos_title_length', sql`char_length(${t.title}) BETWEEN 1 AND 300`),
+  check('youtube_videos_channel_length', sql`${t.channel} IS NULL OR char_length(${t.channel}) <= 200`),
+  check('youtube_videos_duration', sql`${t.durationSeconds} IS NULL OR ${t.durationSeconds} >= 0`),
+  check('youtube_videos_thumbnail_https', sql`${t.thumbnailUrl} IS NULL OR ${t.thumbnailUrl} LIKE 'https://%'`),
+  check('youtube_videos_last_viewed_pair', sql`(${t.lastViewedAt} IS NULL) = (${t.lastViewedBy} IS NULL)`),
+])
+
+/** Lista global del equipo; los nombres pueden repetirse. */
+export const youtubePlaylists = pgTable('youtube_playlists', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  /** 1–80 car., sin espacios al borde */
+  name: text('name').notNull(),
+  createdBy: text('created_by').notNull().references(() => profiles.userId),
+  ...timestamps,
+}, t => [
+  index('youtube_playlists_updated_idx').on(t.updatedAt.desc(), t.id),
+  check('youtube_playlists_name_length', sql`char_length(${t.name}) BETWEEN 1 AND 80 AND ${t.name} = btrim(${t.name})`),
+])
+
+/** Un video una sola vez por lista (FR-018). Sin cascada al video: no se borra mientras una lista lo use. */
+export const youtubePlaylistItems = pgTable('youtube_playlist_items', {
+  playlistId: uuid('playlist_id').notNull().references(() => youtubePlaylists.id, { onDelete: 'cascade' }),
+  videoId: text('video_id').notNull().references(() => youtubeVideos.videoId),
+  addedBy: text('added_by').notNull().references(() => profiles.userId),
+  addedAt: timestamp('added_at', { withTimezone: true }).notNull().defaultNow(),
+}, t => [
+  primaryKey({ columns: [t.playlistId, t.videoId] }),
+  index('youtube_playlist_items_video_idx').on(t.videoId),
+])
+
+/**
+ * Última descarga de cada video, compartida por el equipo (sección «Descargas» de /youtube). Una fila por video: bajar el
+ * mismo video otra vez la actualiza, así la tabla crece como mucho al ritmo de los videos conocidos. Sin cascada: la
+ * limpieza diaria no borra un video mientras tenga aquí su fila.
+ */
+export const youtubeDownloads = pgTable('youtube_downloads', {
+  videoId: text('video_id').primaryKey().references(() => youtubeVideos.videoId),
+  /** `mp4_720` | `mp4_1080` | `mp3` */
+  format: text('format').notNull(),
+  downloadedBy: text('downloaded_by').notNull().references(() => profiles.userId),
+  downloadedAt: timestamp('downloaded_at', { withTimezone: true }).notNull().defaultNow(),
+}, t => [
+  index('youtube_downloads_recent_idx').on(t.downloadedAt.desc(), t.videoId.desc()),
+  check('youtube_downloads_format', sql`${t.format} IN ('mp4_720', 'mp4_1080', 'mp3')`),
 ])
 
 // ---------------------------------------------------------------- relations

@@ -9,10 +9,12 @@ import type { TestProject } from 'vitest/node'
 import { ENV_FILES, readEnvFile, requireVar } from '../../../scripts/env'
 import { E2E_PORT, E2E_URL } from './constants'
 import { startAiStub } from './openrouter-stub'
+import { STUB_API_KEY, startCloudyApiStub } from './cloudy-api-stub'
 
 const TABLES = [
   'profiles', 'folders', 'files', 'guest_submissions', 'guest_submission_files',
   'comments', 'activity_log', 'rate_limits', 'guest_access_requests',
+  'youtube_videos', 'youtube_playlists', 'youtube_playlist_items', 'youtube_downloads',
 ]
 
 declare module 'vitest' {
@@ -20,6 +22,8 @@ declare module 'vitest' {
     runId: string
     /** Control del stub de OpenRouter (`/__stub/*`). */
     aiStubUrl: string
+    /** Stub del servicio de descargas de YouTube (feature 005, `/__stub/*`). */
+    cloudyStubUrl: string
   }
 }
 
@@ -75,12 +79,17 @@ export default async function setup(project: TestProject) {
   // Stub de chat completions: los e2e nunca llaman a OpenRouter (research A9).
   const stub = await startAiStub()
   project.provide('aiStubUrl', stub.url)
+  // Stub del servicio de descargas: los e2e nunca llaman a YouTube ni a Render (feature 005, research D17).
+  const cloudyStub = await startCloudyApiStub()
+  project.provide('cloudyStubUrl', cloudyStub.url)
 
   const server: ChildProcess = spawn('node', ['.output/server/index.mjs'], {
     env: {
       ...testEnv,
       NUXT_OPENROUTER_BASE_URL: stub.url,
       NUXT_OPENROUTER_APIKEY: 'sk-or-e2e-stub',
+      NUXT_CLOUDY_API_URL: cloudyStub.url,
+      NUXT_CLOUDY_API_KEY: STUB_API_KEY,
       PORT: String(E2E_PORT),
       NUXT_STORAGE_KEY_PREFIX: prefix,
       NUXT_PUBLIC_SITE_URL: E2E_URL,
@@ -92,6 +101,7 @@ export default async function setup(project: TestProject) {
   return async () => {
     server.kill()
     await stub.close()
+    await cloudyStub.close()
     // El teardown borra los objetos de esta corrida del bucket de pruebas.
     const { S3Client, ListObjectsV2Command, DeleteObjectsCommand } = await import('@aws-sdk/client-s3')
     const s3 = new S3Client({

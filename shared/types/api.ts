@@ -1,6 +1,7 @@
 // DTOs del contrato HTTP (specs/001-shared-media-drive/contracts/api.md).
 import type { FileCategory } from '../constants/files'
 import type { Role } from '../permissions'
+import type { YoutubeBlockReason, YoutubeFormat } from '../constants/youtube'
 
 export type UserStatus = 'pending' | 'active' | 'disabled' | 'removed'
 export type FileOrigin = 'team' | 'guest'
@@ -223,3 +224,68 @@ export interface ImageText {
   /** Nombre visible de quien lo corrigió. */
   editedBy: string | null
 }
+
+// ---------------------------------------------------------------- YouTube (feature 005, data-model § DTOs)
+
+export type { YoutubeBlockReason, YoutubeFormat } from '../constants/youtube'
+
+export interface YoutubePerson { userId: string, name: string, active: boolean }
+
+export interface YoutubeVideo {
+  videoId: string
+  title: string
+  channel: string | null
+  durationSeconds: number | null
+  thumbnailUrl: string | null
+}
+
+export interface YoutubeVideoDetail extends YoutubeVideo {
+  availableHeights: number[]
+  downloadable: boolean
+  reason: YoutubeBlockReason | null
+}
+
+export interface YoutubeHistoryItem extends YoutubeVideo { viewedAt: string, viewedBy: YoutubePerson | null }
+export interface YoutubeHistoryPage { items: YoutubeHistoryItem[], nextCursor: string | null }
+
+/** Una descarga guardada (sección «Descargas»): el video, quién lo bajó, cuándo y en qué formato. */
+export interface YoutubeDownloadItem extends YoutubeVideo { format: YoutubeFormat, downloadedAt: string, downloadedBy: YoutubePerson | null }
+export interface YoutubeDownloadsPage { items: YoutubeDownloadItem[], nextCursor: string | null }
+
+export interface YoutubePlaylist {
+  id: string
+  name: string
+  author: YoutubePerson
+  itemCount: number
+  /** Hasta 4 miniaturas de los videos agregados más recientemente. */
+  covers: string[]
+  createdAt: string
+  updatedAt: string
+}
+export interface YoutubePlaylistItem extends YoutubeVideo { addedAt: string, addedBy: YoutubePerson }
+export interface YoutubePlaylistDetail extends YoutubePlaylist { items: YoutubePlaylistItem[] }
+
+export type YoutubeJobStatus = 'queued' | 'running' | 'zipping' | 'done' | 'failed' | 'expired'
+export interface YoutubeJobItem {
+  videoId: string
+  title: string | null
+  status: 'queued' | 'running' | 'done' | 'failed'
+  /** 0–100. */
+  progress: number
+  error: { code: string, message: string } | null
+  actualHeight: number | null
+}
+export interface YoutubeJob {
+  jobId: string
+  status: YoutubeJobStatus
+  format: YoutubeFormat
+  /** 0–100. */
+  progress: number
+  items: YoutubeJobItem[]
+  downloadUrl: string | null
+  filename: string | null
+  sizeBytes: number | null
+  /** ISO del vencimiento del archivo. */
+  expiresAt: string | null
+}
+export interface YoutubeServiceHealth { state: 'up' | 'waking' | 'down' }

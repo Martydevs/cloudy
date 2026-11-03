@@ -17,6 +17,8 @@ import {
 } from '#shared/validation/core'
 import { FILE_NAME_MAX, FOLDER_NAME_MAX, FORBIDDEN_MESSAGE, NAME_PATTERN } from '#shared/validation/files'
 import { NOTE_MAX, SENDER_NAME_MAX } from '#shared/validation/submissions'
+import { YOUTUBE_PLAYLIST_NAME_MAX } from '#shared/constants/youtube'
+import { parseYoutubeUrl, YOUTUBE_URL_MESSAGES } from '#shared/validation/youtube'
 
 /**
  * Obligatorio: un texto de solo espacios cuenta como vacío. Va siempre primero en cada campo, que es el error que se
@@ -101,6 +103,25 @@ export const guestSubmissionSchema = (fixedName: boolean) => z.object({
   name: fixedName ? z.string() : senderNameSchema,
   note: noteSchema,
 })
+
+/**
+ * Enlace de YouTube pegado en `/youtube` (feature 005, research D13). La regla es `parseYoutubeUrl` de `shared/`; su
+ * motivo de rechazo elige el mensaje. Vacío → obligatorio (y el `refine` no repite el error).
+ */
+const youtubeUrl = z.refine<string>(
+  value => value.trim() === '' || parseYoutubeUrl(value).ok,
+  {
+    error: (issue) => {
+      const res = parseYoutubeUrl(issue.input)
+      return res.ok ? YOUTUBE_URL_MESSAGES.not_url : YOUTUBE_URL_MESSAGES[res.reason]
+    },
+  },
+)
+
+export const youtubeUrlSchema = z.object({ url: z.string().check(filled, youtubeUrl) })
+
+/** Nombre de una lista de YouTube: 1–80 caracteres tras recortar, como `playlistName()` del servidor. */
+export const youtubePlaylistSchema = z.object({ name: z.string().check(filled, maxChars(YOUTUBE_PLAYLIST_NAME_MAX)) })
 
 export type RegisterForm = z.infer<typeof registerSchema>
 export type LoginForm = z.infer<typeof loginSchema>

@@ -5,7 +5,7 @@
 Reglas de siempre: mobile first (360 px base, `lg:` amplía), `btn` base (nunca `btn-sm`/`btn-xs` como base), iconos lucide, colores solo con clases semánticas de
 daisyUI, copy en `app/utils/messages.ts`, errores HTTP con `serverMessage()`, cuatro estados con `SkeletonList`/`EmptyState`/`ErrorState`, datos con `useApiFetch`.
 Rutas de equipo (`access: 'private'`, roles editor y admin). Entrada en `navItems`: `{ to: '/youtube', label: 'YouTube', icon: 'lucide:circle-play', roles: TEAM }`
-(ya existe, sin versionar).
+(ya existe).
 
 ## Páginas
 
@@ -25,11 +25,16 @@ De arriba abajo, una sola columna:
    `checkbox` (área táctil ≥ 44 px, `aria-label` "Seleccionar {título}"). Con ≥ 1 marcado aparece `YoutubeSelectionBar` fija abajo: "N seleccionados", `YoutubeFormatPicker` y
    `btn btn-primary` "Descargar selección" + `btn btn-ghost` "Limpiar". `useInfiniteScroll` pide la página siguiente (24); al fallar una página, `ErrorState` inline con Reintentar.
    Menú `ActionMenu` por tarjeta: Abrir · Agregar a lista · Descargar · Quitar del historial (`ConfirmDialog`).
+   El encabezado de esta sección es de la página: `h2` («Historial» o «Descargas») y, a su derecha, un interruptor `join` de dos `btn` con `aria-pressed`
+   (grupo «Cambiar de sección») para alternar con **«Descargas»**. El historial se oculta sin desmontarlo (conserva páginas y selección) y la barra de selección solo se muestra en él.
+5. **Sección "Descargas"** (`YoutubeDownloadsGrid`, se carga la primera vez que se abre): rejilla compacta de miniaturas **sin tarjetas** (2 columnas en móvil, hasta 6 en `xl:`): miniatura 16:9
+   con formato (arriba a la izquierda) y duración, título a 2 líneas y "{nombre} · hace N"; cada celda es un enlace a la ficha. Página siguiente al llegar al final y `ErrorState` inline si falla una.
 
 | Vista | cargando | vacío | error | contenido |
 |-------|----------|-------|-------|-----------|
 | Listas | `SkeletonList` (3 tarjetas) | `EmptyState` "Aún no hay listas" + "Abre un video y pulsa Crear lista" | `ErrorState` + Reintentar | `YoutubePlaylistCard` |
 | Historial | `SkeletonList` (6 tarjetas) | `EmptyState` "Todavía no hay videos" + "Pega el primer enlace arriba" | `ErrorState` + Reintentar | `YoutubeVideoCard` |
+| Descargas | `SkeletonList` (6 miniaturas) | `EmptyState` "Todavía no hay descargas" + "Descarga un video y aparecerá aquí" | `ErrorState` + Reintentar | `YoutubeDownloadsGrid` |
 
 ### `/youtube/:id` (`app/pages/youtube/[id]/index.vue`, FR-006, FR-012, FR-013, FR-026)
 
@@ -39,7 +44,7 @@ De arriba abajo, una sola columna:
    |--------|-----------|
    | `idle` | Miniatura como póster, botón grande `btn btn-primary btn-circle` Reproducir (icono `lucide:play`, `aria-label` "Preparar y reproducir") y texto "Se prepara una copia en 720p, puede tardar un momento." |
    | `preparing` | Póster atenuado, `progress` con el avance del trabajo y texto "Preparando el video… N %" con `role="status"`; **Cancelar** |
-   | `ready` | `<video>` nativo; barra de controles daisyUI: Reproducir/Pausar, `range` de avance (`aria-label` "Posición"), tiempo, `range` de volumen + silencio, Pantalla completa. Autoplay al quedar listo |
+   | `ready` | `<video>` nativo; barra de controles daisyUI: Reproducir/Pausar, `range` de avance (`aria-label` "Posición"), tiempo, `range` de volumen + silencio, Pantalla completa (esta última desde US4). Autoplay al quedar listo |
    | `error` | `ErrorState` ("No pudimos preparar el video") + Reintentar; los metadatos y las descargas siguen disponibles |
    | `expired` | Mensaje "La copia expiró" + **Preparar de nuevo** |
 
@@ -61,6 +66,20 @@ contenido. Un ID con forma inválida → 404 de Nuxt (`createError`).
 Layout sin barra lateral (`app/layouts/player.vue`): fondo `bg-base-300`, el `YoutubePlayer` ocupa el viewport, título pequeño sobre la barra. Lee `?job=<jobId>` y reproduce
 (`ready` directo). Sin `job` o con trabajo expirado → estado `idle`/`expired` con **Preparar de nuevo**. El botón "Cerrar ventana" llama `window.close()`.
 
+### Diálogo de lista (`YoutubePlaylistDialog`, FR-015–FR-018, FR-027)
+
+`modal` de daisyUI cargado con `LazyYoutubePlaylistDialog` y `v-if`. Dos modos:
+
+- **Con `videoId`** (desde la ficha o el historial): pestañas "Nueva lista" (campo Nombre, `youtubePlaylistSchema`) y "Agregar a una existente". Toasts "Lista creada",
+  "Agregado a {lista}" y "Ya estaba en {lista}".
+- **Con `playlistId`** (detalle, al tocar una tarjeta): carga `GET /api/youtube/playlists/:id` y lista los videos (miniatura, título, duración, quién lo agregó). Por video:
+  **Abrir** (enlace a `/youtube/<id>`), **Descargar** (`YoutubeFormatPicker` + `enqueue([id], formato, título)`) y **Quitar** (`ConfirmDialog`). **Renombrar** y **Eliminar**
+  (`ConfirmDialog`) solo si la persona es autora o administradora.
+
+| Vista | cargando | vacío | error | contenido |
+|-------|----------|-------|-------|-----------|
+| Detalle de lista | `SkeletonList` (3 filas) | `EmptyState` "Esta lista aún no tiene videos" | `ErrorState` + Reintentar | videos con sus acciones |
+
 ## Componentes
 
 | Componente | Responsabilidad | Props / eventos clave |
@@ -68,14 +87,14 @@ Layout sin barra lateral (`app/layouts/player.vue`): fondo `bg-base-300`, el `Yo
 | `YoutubeUrlInput` | campo grande + validación del enlace | emite `submit(videoId)` |
 | `YoutubeServiceBanner` | `alert` "Despertando el servicio…" / "ocupado" con Reintentar | `state`, emite `retry` |
 | `YoutubePlaylistRow` / `YoutubePlaylistCard` | fila de listas; tarjeta con 4 miniaturas, autor y botón descargar | `playlist`, emite `open`, `download` |
-| `YoutubePlaylistDialog` (`Lazy`) | crear lista / agregar a existente / detalle de lista (ver, quitar, renombrar, eliminar) | `videoId?`, `playlistId?` |
+| `YoutubePlaylistDialog` (`Lazy`) | crear lista / agregar a existente / detalle de lista (ver, abrir, descargar y quitar cada video; renombrar, eliminar) | `videoId?`, `playlistId?` |
 | `YoutubeHistoryList` | rejilla con selección múltiple y `useInfiniteScroll` | `v-model:selected`, emite `download` |
 | `YoutubeVideoCard` | miniatura, duración, título, canal, quién y cuándo, casilla opcional, `ActionMenu` | `video`, `selectable?` |
 | `YoutubeSelectionBar` | barra fija con N, formato, Descargar, Limpiar | `count`, emite `download(format)`, `clear` |
 | `YoutubeFormatPicker` | menú de formato (radio) | `v-model`, `heights?` |
 | `YoutubePlayer` | `<video>` + controles + estados de preparación | `videoId`, `poster`, `initialJobId?`, expone `fullscreen()` |
 | `YoutubeVideoMeta` | título, canal, duración, acciones | `video` |
-| `YoutubeDownloadTray` (`Lazy`, en layout `dashboard`) | bandeja de trabajos: nombre, lote N de M, avance, estado por video, Guardar archivo, Cancelar | estado de `useYoutubeDownloads` |
+| `YoutubeDownloadTray` (`Lazy`, en layout `dashboard`) | bandeja de trabajos: nombre, lote N de M, avance, estado por video ("Entregado en {n}p" si 1080p no estaba disponible), Guardar archivo, Cancelar | estado de `useYoutubeDownloads` |
 
 ## Composables
 

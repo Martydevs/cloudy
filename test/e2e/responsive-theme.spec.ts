@@ -8,7 +8,7 @@ import { createPage, setup } from '@nuxt/test-utils/e2e'
 import type { BrowserContext, Locator, Page } from 'playwright-core'
 import { afterAll, describe, expect, it } from 'vitest'
 import { ALLOWED_TYPES, getExtension } from '../../shared/constants/files'
-import { E2E_URL, email, ensureAccount, login, runId, setProfile, signedInAs, testSql, viewports, waitForHydration } from './setup/fixtures'
+import { E2E_URL, email, ensureAccount, login, routeYoutubeThumbnails, runId, setProfile, signedInAs, testSql, viewports, waitForHydration } from './setup/fixtures'
 
 await setup({ host: E2E_URL, browser: true })
 
@@ -173,7 +173,11 @@ describe('US9 · tema', () => {
 // ---------------------------------------------------------------- T151 · recorrido de rutas
 // Matriz de contracts/ui-routes.md; cada página declara su `access` en `definePageMeta`.
 // Los parámetros se sustituyen por una carpeta y un archivo sembrados en esta corrida.
-const PRIVATE_ROUTES = ['/', '/archivos', '/archivos/:folderId', '/archivos/ver/:fileId', '/solicitudes', '/papelera', '/usuarios', '/actividad', '/perfil']
+const PRIVATE_ROUTES = [
+  '/', '/archivos', '/archivos/:folderId', '/archivos/ver/:fileId', '/solicitudes', '/papelera', '/usuarios', '/actividad', '/perfil',
+  // Página YouTube (feature 005): `:id` es un video del stub del servicio.
+  '/youtube', '/youtube/:id', '/youtube/:id/ventana',
+]
 const PUBLIC_ROUTES = ['/login', '/registro', '/recuperar', '/restablecer', '/enviar', '/upload', '/acceso-denegado']
 const PENDING_ROUTES = ['/pendiente']
 
@@ -203,6 +207,8 @@ async function pageAs(role: 'admin' | 'editor', label: string, viewport: Viewpor
     await signedInAs(page, role, label)
     sessions.set(label, await page.context().cookies())
   }
+  // Las miniaturas de YouTube se sirven desde un fixture local (los e2e nunca contactan a YouTube).
+  await routeYoutubeThumbnails(page)
   return page
 }
 
@@ -365,7 +371,7 @@ describe('US9 · recorrido de rutas (T151)', () => {
       for (const viewport of VIEWPORTS) {
         const { page, errors } = await pool.get(viewport)
         const { folderId, fileId } = await seeded()
-        const path = pattern.replace(':folderId', folderId).replace(':fileId', fileId)
+        const path = pattern.replace(':folderId', folderId).replace(':fileId', fileId).replace(':id', 'okShortVid1')
         for (const theme of THEMES) await audit(page, errors, path, theme, viewport)
       }
     })
@@ -450,6 +456,38 @@ describe('US9 · recorrido de rutas (T151)', () => {
       const [toastBox, newFolderBox, uploadBox] = await Promise.all([toast.boundingBox(), newFolder.boundingBox(), upload.boundingBox()])
       expect(toastBox && newFolderBox && overlaps(toastBox, newFolderBox), 'el aviso tapa «Nueva carpeta»').toBe(false)
       expect(toastBox && uploadBox && overlaps(toastBox, uploadBox), 'el aviso tapa «Subir»').toBe(false)
+    })
+
+    it('YouTube a 360 px: la barra de selección y la bandeja de descargas no generan scroll horizontal ni objetivos pequeños', async () => {
+      const { page } = await pool.get('phone')
+      // La ficha registra el video en el historial: así hay al menos una tarjeta que marcar.
+      await page.goto(`${E2E_URL}/youtube/okShortVid1`)
+      await waitForHydration(page)
+      await expect.poll(() => page.getByRole('heading', { name: 'Alabanza de prueba' }).isVisible()).toBe(true)
+      for (const theme of THEMES) {
+        await page.context().addCookies([{ name: 'cloudy-theme', value: theme, url: E2E_URL }])
+        await page.goto(`${E2E_URL}/youtube`)
+        await waitForHydration(page)
+        await page.getByLabel('Seleccionar Alabanza de prueba').check()
+        const bar = page.getByRole('region', { name: 'Selección' })
+        await expect.poll(() => bar.isVisible()).toBe(true)
+        const download = page.waitForEvent('download')
+        await bar.getByRole('button', { name: 'Descargar selección' }).click()
+        await page.getByRole('menuitemradio', { name: 'Audio MP3' }).click()
+        await download
+        await expect.poll(() => page.getByRole('heading', { name: /Descargas/ }).isVisible()).toBe(true)
+        const layout = await page.evaluate(() => {
+          const short: string[] = []
+          for (const el of document.querySelectorAll('[aria-label="Selección"] button, section[aria-labelledby] button')) {
+            const rect = el.getBoundingClientRect()
+            if (rect.width > 0 && rect.height > 0 && rect.height < 44) short.push(el.getAttribute('aria-label') ?? el.textContent?.trim() ?? '')
+          }
+          return { overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth, short }
+        })
+        expect(layout.overflow, `${theme}: scroll horizontal`).toBeLessThanOrEqual(0)
+        expect(layout.short, `${theme}: objetivos de menos de 44 px`).toEqual([])
+        await bar.getByRole('button', { name: 'Limpiar' }).click()
+      }
     })
 
     it('el aviso «Comentario publicado» no tapa el botón «Comentar»', async () => {

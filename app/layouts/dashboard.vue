@@ -13,6 +13,8 @@ usePulsePolling()
 const badges = computed(() => ({ '/solicitudes': pendingCount.value + openAccessRequests.value, '/usuarios': pendingUsers.value }))
 
 const upload = useUploadDialog()
+// Bandeja de descargas de YouTube (feature 005): se monta, diferida, solo cuando hay trabajos.
+const youtubeDownloads = useYoutubeDownloads()
 
 // El panel móvil se cierra al navegar, con Esc y al pasar a escritorio (edge case).
 // `afterEach` y no `useRoute()`: la ruta se actualiza recién cuando la página nueva terminó de
@@ -77,7 +79,13 @@ watch(phoneOpen, async (open) => {
       <AppTopbar @toggle-menu="mobileOpen = !mobileOpen" />
       <!-- Justo bajo la barra: los avisos se centran sobre esta columna, no sobre el viewport. -->
       <AppToast />
-      <main id="contenido" tabindex="-1" class="mx-auto w-full max-w-7xl flex-1 p-4 outline-none lg:p-6">
+      <!-- Con la bandeja abierta, relleno inferior para que no tape el último contenido. -->
+      <main
+        id="contenido"
+        tabindex="-1"
+        class="mx-auto w-full max-w-7xl flex-1 p-4 outline-none lg:p-6"
+        :class="{ 'pb-72 sm:pb-24': youtubeDownloads.active.value }"
+      >
         <slot />
       </main>
     </div>
@@ -92,5 +100,6 @@ watch(phoneOpen, async (open) => {
       />
     </div>
     <LazyUploadDialog v-if="upload.isOpen.value" :folder-id="upload.folderId.value" @close="upload.close()" @uploaded="upload.notifyUploaded()" />
+    <LazyYoutubeDownloadTray v-if="youtubeDownloads.active.value" />
   </div>
 </template>

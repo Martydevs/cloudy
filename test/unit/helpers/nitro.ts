@@ -28,6 +28,10 @@ import * as trash from '../../../server/utils/trash'
 import * as uploads from '../../../server/utils/uploads'
 import * as users from '../../../server/utils/users'
 import * as validation from '../../../server/utils/validation'
+import * as cloudyApi from '../../../server/utils/cloudy-api'
+import * as youtubeVideos from '../../../server/utils/youtube-videos'
+import * as youtubePlaylists from '../../../server/utils/youtube-playlists'
+import * as youtubeDownloads from '../../../server/utils/youtube-downloads'
 import type { AuthContext, ProfileRow } from '../../../server/utils/session'
 import { fakeDb } from './fake-db'
 
@@ -73,6 +77,10 @@ export function installNitro(results: unknown[] = [], overrides: Record<string, 
     ...uploads,
     ...users,
     ...validation,
+    ...cloudyApi,
+    ...youtubeVideos,
+    ...youtubePlaylists,
+    ...youtubeDownloads,
     defineEventHandler: (handler: unknown) => handler,
     useDb: () => fake.db,
     useRuntimeConfig: () => RUNTIME_CONFIG,

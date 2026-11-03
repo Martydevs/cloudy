@@ -10,12 +10,15 @@ export type Action =
   | 'users.manage'
   | 'activity.read'
   | 'comments.moderate'
+  /** Renombrar o eliminar una lista de YouTube ajena (feature 005, research D12). */
+  | 'youtube.moderate'
 
 const ADMIN_ONLY: ReadonlySet<Action> = new Set<Action>([
   'trash.empty',
   'users.manage',
   'activity.read',
   'comments.moderate',
+  'youtube.moderate',
 ])
 
 export function can(role: Role | null | undefined, action: Action): boolean {

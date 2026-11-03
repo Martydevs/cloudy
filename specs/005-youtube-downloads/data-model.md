@@ -55,6 +55,18 @@ tablas existentes. Los trabajos de descarga **no** se guardan (viven en el servi
 **Agregar un video repetido**: `INSERT … ON CONFLICT DO NOTHING RETURNING` → si no devuelve fila, el endpoint responde `200 { added: false }` y la UI dice
 "Ya estaba en la lista" (FR-018).
 
+## `youtube_downloads` — última descarga de cada video
+
+| Columna | Tipo | Reglas |
+|---------|------|--------|
+| `video_id` | `text` PK, FK → `youtube_videos.video_id` | sin cascada: la limpieza diaria no borra un video mientras tenga aquí su fila |
+| `format` | `text` NOT NULL | CHECK `mp4_720` \| `mp4_1080` \| `mp3` |
+| `downloaded_by` | `text` NOT NULL FK → `profiles.user_id` | |
+| `downloaded_at` | `timestamptz` NOT NULL | `defaultNow()`; la hora del servidor al registrar |
+
+**Una fila por video**: descargarlo otra vez la actualiza, así la tabla no se acumula con repeticiones. **Índice**: `youtube_downloads_recent_idx` sobre
+`(downloaded_at DESC, video_id DESC)` para el listado keyset de la sección «Descargas».
+
 ## Relaciones y reglas
 
 ```text

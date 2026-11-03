@@ -43,8 +43,8 @@ describe('GET /api/cron/cleanup', () => {
       [{ id: 'r1' }, { id: 'r2' }, { id: 'r3' }],
     ])
     const handler = await loadHandler('api/cron/cleanup.get.ts')
-    expect(await handler(authorized())).toEqual({ purgedTrash: 0, expiredSubmissions: 1, orphanUploads: 2, rateLimitRows: 2, accessRequests: 3 })
-    const purge = sqlText(fake.calls.filter(c => c.method === 'where').at(-1)?.args[0])
+    expect(await handler(authorized())).toEqual({ purgedTrash: 0, expiredSubmissions: 1, orphanUploads: 2, rateLimitRows: 2, accessRequests: 3, orphanVideos: 0 })
+    const purge = sqlText(fake.calls.filter(c => c.method === 'where').at(-2)?.args[0])
     expect(purge).toContain(`now() - interval '24 hours'`)
     expect(purge).toContain('"guest_access_requests"."used_at"')
     expect(fake.calls.find(c => c.method === 'set')?.args[0]).toEqual({ status: 'expired' })
@@ -54,13 +54,29 @@ describe('GET /api/cron/cleanup', () => {
       [`pre/files/${UUID}`, `pre/thumbs/${UUID}.webp`, `pre/textsrc/${UUID}.jpg`],
       ['pre/guest/s2/b', 'pre/textsrc/g1.jpg'],
     ])
-    expect(fake.calls.filter(c => c.method === 'delete')).toHaveLength(6)
+    expect(fake.calls.filter(c => c.method === 'delete')).toHaveLength(7)
+  })
+
+  it('borra los videos de YouTube huérfanos en lotes y conserva los que tienen historial, lista o menos de 24 h', async () => {
+    const batch = Array.from({ length: 500 }, (_, i) => ({ videoId: `v${String(i).padStart(10, '0')}` }))
+    // Papelera, envíos, subidas (equipo e invitados), envíos vacíos, rate limits y solicitudes: nada.
+    const fake = installNitro([{ rows: [] }, [], [], [], [], [], [], batch, [{ videoId: 'okShortVid1' }]])
+    const handler = await loadHandler('api/cron/cleanup.get.ts')
+    expect(await handler(authorized())).toMatchObject({ orphanVideos: 501 })
+    const wheres = fake.calls.filter(c => c.method === 'where').map(c => sqlText(c.args[0]))
+    const orphan = wheres.filter(text => text.includes('youtube_videos'))
+    expect(orphan).toHaveLength(2)
+    expect(orphan[0]).toContain('last_viewed_at IS NULL')
+    expect(orphan[0]).toContain(`updated_at < now() - interval '24 hours'`)
+    expect(orphan[0]).toContain('NOT EXISTS (SELECT 1 FROM youtube_playlist_items')
+    expect(orphan[0]).toContain('NOT EXISTS (SELECT 1 FROM youtube_downloads')
+    expect(orphan[0]).toContain('500')
   })
 
   it('sin nada que limpiar devuelve ceros', async () => {
     installNitro([{ rows: [] }, [], [], [], [], [], []])
     const handler = await loadHandler('api/cron/cleanup.get.ts')
-    expect(await handler(authorized())).toEqual({ purgedTrash: 0, expiredSubmissions: 0, orphanUploads: 0, rateLimitRows: 0, accessRequests: 0 })
+    expect(await handler(authorized())).toEqual({ purgedTrash: 0, expiredSubmissions: 0, orphanUploads: 0, rateLimitRows: 0, accessRequests: 0, orphanVideos: 0 })
     expect(s3.deleteMany).not.toHaveBeenCalled()
   })
 

@@ -272,6 +272,47 @@ export const stubCalls = () => stubRequest<StubCalls>('/__stub/calls')
 export const setStubMode = (mode: { fail?: boolean, delayMs?: number }) => stubRequest('/__stub/mode', mode)
 export const resetStub = () => stubRequest('/__stub/reset', {})
 
+// ---------------------------------------------------------------- YouTube (feature 005)
+
+async function cloudyStubRequest<T>(path: string, body?: unknown): Promise<T> {
+  const res = await fetch(`${inject('cloudyStubUrl')}${path}`, body === undefined
+    ? {}
+    : { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
+  return res.json() as Promise<T>
+}
+
+export interface CloudyStubCalls {
+  jobsCreated: number
+  unauthorized: number
+  formats: string[]
+}
+
+/** `asleep`: el stub responde 502 a todo, como Render mientras levanta la instancia. */
+export const setCloudyStubState = (state: 'up' | 'asleep' | 'degraded') => cloudyStubRequest('/__stub/state', { state })
+export const cloudyStubCalls = () => cloudyStubRequest<CloudyStubCalls>('/__stub/calls')
+export const resetCloudyStub = () => cloudyStubRequest('/__stub/reset', {})
+
+/**
+ * Las miniaturas apuntan a `i.ytimg.com` como las reales; en los e2e se sirven desde un fixture local para que el
+ * navegador nunca contacte a YouTube.
+ */
+export async function routeYoutubeThumbnails(page: Page) {
+  await page.route('https://i.ytimg.com/**', route => route.fulfill({ path: fixture('foto.jpg'), contentType: 'image/jpeg' }))
+}
+
+/** Siembra `count` videos en el historial con `viewer` como quien los abrió (más reciente primero). */
+export async function seedYoutubeHistory(viewer: string, count: number, prefix = 'seed'): Promise<string[]> {
+  const ids = Array.from({ length: count }, (_, i) => `${prefix}${String(i).padStart(11 - prefix.length, '0')}`.slice(0, 11))
+  await testSql().query(
+    `INSERT INTO youtube_videos (video_id, title, channel, duration_seconds, thumbnail_url, last_viewed_at, last_viewed_by)
+     SELECT id, 'Video ' || id, 'Canal Cloudy', 95, 'https://i.ytimg.com/vi/' || id || '/hqdefault.jpg', now() - (n || ' seconds')::interval, $2
+     FROM unnest($1::text[]) WITH ORDINALITY AS t(id, n)
+     ON CONFLICT (video_id) DO UPDATE SET last_viewed_at = excluded.last_viewed_at, last_viewed_by = excluded.last_viewed_by`,
+    [ids, viewer],
+  )
+  return ids
+}
+
 /**
  * Siembra una imagen `ready` como las subidas antes de la feature (`text_status` en `NULL`): sube los
  * bytes del fixture al bucket de pruebas bajo `e2e/<runId>/` y crea la fila. Con `withBytes: false`

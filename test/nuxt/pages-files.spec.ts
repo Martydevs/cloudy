@@ -74,8 +74,9 @@ describe('FileExplorer · los cuatro estados', () => {
     expect(useUploadDialog().isOpen.value).toBe(true)
     useUploadDialog().close()
     await buttons(wrapper, 'Nueva carpeta').at(-1)!.trigger('click')
-    // `LazyItemDialogs`: el diálogo llega en su propio chunk al abrirse.
-    await vi.waitFor(() => expect(wrapper.find('dialog h2').text()).toBe('Nueva carpeta'))
+    // `LazyItemDialogs`: el diálogo llega en su propio chunk al abrirse. Con toda la suite en paralelo (y la cobertura)
+    // compilar ese chunk puede pasar del segundo por defecto de `waitFor`: se espera más, la afirmación es la misma.
+    await vi.waitFor(() => expect(wrapper.find('dialog h2').text()).toBe('Nueva carpeta'), { timeout: 5000 })
   })
 
   it('vacío por filtro de tipo ofrece quitar el filtro', async () => {

@@ -114,7 +114,7 @@ Las referencias al servicio vienen de `C:\Users\andre.perez\Dev\cloudy-api` (REA
 - **Razón**: `POST /v1/jobs` hace el *preflight* de todos los videos antes de responder `202` (`routers/jobs.py::_preflight`), lo que
   con 10 videos puede tardar decenas de segundos.
 - **Riesgo**: el tiempo máximo de la función de Vercel depende del plan. **Verificar en el despliegue** que `createJob` (45 s)
-  cabe; si no, bajar el lote a 5 videos (`MAX_BATCH_CLIENT`, constante en `shared/constants/youtube.ts`) sin tocar el servicio.
+  cabe; si no, bajar el lote a 5 videos (`YOUTUBE_MAX_BATCH`, constante en `shared/constants/youtube.ts`) sin tocar el servicio.
   Queda como paso de quickstart §6.
 
 ## D9. Datos: videos, historial y listas (FR-015–FR-026, FR-032)
@@ -142,6 +142,9 @@ Las referencias al servicio vienen de `C:\Users\andre.perez\Dev\cloudy-api` (REA
   falla por error del video (privado, no encontrado) y ya existe una fila, se devuelve esa fila con `downloadable: false` y el motivo; si no
   existe, se responde el error sin registrar nada (sin título no hay qué mostrar).
 - **Razón**: una sola petición abre la ficha y deja el historial consistente; no hay estado a medias si falla la sonda.
+- **Efecto en un `GET` (decisión aceptada)**: el registro es una escritura idempotente dentro de una lectura. Es seguro porque Nuxt solo precarga el JS de los enlaces (no
+  ejecuta `useApiFetch`), la hidratación reutiliza el dato del SSR y repetir la petición (Reintentar, recarga) solo vuelve a subir el video al inicio del historial, que es
+  lo que pide FR-022. No se separa en un `POST /history` para no duplicar la petición ni dejar la ficha sin registrar si el cliente falla entre ambas.
 - **Alternativas**: registrar al terminar una descarga (el spec dice "al abrir la página", y quien solo mira también quiere encontrarlo luego).
 
 ## D11. Paginación del historial y orden de las listas (FR-023, SC-007; Constitución I)
@@ -176,7 +179,7 @@ Las referencias al servicio vienen de `C:\Users\andre.perez\Dev\cloudy-api` (REA
 
 - **Decisión**:
   - `app/pages/youtube/index.vue` (Inicio de la feature), `app/pages/youtube/[id]/index.vue` (video) y `app/pages/youtube/[id]/ventana.vue`
-    (ventana externa). **Se mueve el stub sin seguir `app/pages/youtube.vue`** (archivo sin versionar creado por la persona): un `youtube.vue`
+    (ventana externa). **El stub `app/pages/youtube.vue` se movió a `app/pages/youtube/index.vue`** (hecho por la persona): un `youtube.vue`
     junto a la carpeta `youtube/` se convertiría en ruta padre y exigiría `<NuxtPage />`.
   - La ventana externa abre `window.open('/youtube/<id>/ventana?job=<jobId>', 'cloudy-player', 'popup,width=1100,height=640')`. Es una página de
     Cloudy (misma sesión) con layout propio `player` y el mismo `YoutubePlayer`, porque abrir el `downloadUrl` descargaría el archivo
@@ -195,7 +198,7 @@ Las referencias al servicio vienen de `C:\Users\andre.perez\Dev\cloudy-api` (REA
 
 ## D16. Configuración del servicio y variables de entorno (hallazgo)
 
-- **Decisión**: `runtimeConfig.cloudyApiUrl` y `cloudyApiKey` ya existen en `nuxt.config.ts` (sin versionar). Nuxt los lee de
+- **Decisión**: `runtimeConfig.cloudyApiUrl` y `cloudyApiKey` ya existen en `nuxt.config.ts`. Nuxt los lee de
   **`NUXT_CLOUDY_API_URL`** y **`NUXT_CLOUDY_API_KEY`** (camelCase → `CLOUDY_API_URL`). **`.env.example` hoy declara `NUXT_CLOUDY_APIURL`, que no
   mapea a `cloudyApiUrl`** (sería `cloudyApiurl`) y no declara la clave: hay que corregirlo y añadir `NUXT_CLOUDY_API_KEY` en `.env.example`,
   `.env.development`, `.env.test` y `.env`. Un valor vacío en URL o clave = la feature responde `503` "no configurado" en lugar de fallar con un error de
@@ -206,7 +209,7 @@ Las referencias al servicio vienen de `C:\Users\andre.perez\Dev\cloudy-api` (REA
 
 - **Decisión**: igual que el stub de OpenRouter (`test/e2e/setup/openrouter-stub.ts`), `test/e2e/setup/cloudy-api-stub.ts` implementa el contrato
   del servicio (`/healthz`, `/v1/videos/:id`, `/v1/jobs`, `/v1/jobs/:id`, `/v1/jobs/:id/file`) con videos de prueba (un MP4 y un MP3 diminutos
-  generados en código) y escenarios por ID de video (`privateVideo`, `tooLong`, `slow`, `failsAfterStart`, …). Los unitarios simulan `fetch` en
+  generados en código) y escenarios por ID de video (`privateVid1`, `tooLongVid1`, `liveVideo01`, `slowJobVid1`, `failMidVid1`, `unavailVid1`, `lowResVid01`, …; deben tener 11 caracteres). Los unitarios simulan `fetch` en
   `cloudy-api.ts` (no hay red). Los e2e de la feature nunca llaman a Render ni a YouTube.
 - **Razón**: determinista, rápido y sin depender de que YouTube cambie. El servicio ya tiene su propia suite (`cloudy-api/tests`) que cubre yt-dlp.
 - **Alternativas**: apuntar los e2e al servicio real (frágil, lento, depende de YouTube y de una instancia que duerme).

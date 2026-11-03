@@ -146,6 +146,26 @@ describe('ActionMenu', () => {
     expect(wrapper.find('[role="menu"]').exists()).toBe(false)
     wrapper.unmount()
   })
+
+  it('abre hacia arriba cuando abajo no cabe y hacia abajo cuando sí', async () => {
+    const wrapper = await mountSuspended(ActionMenu, { props: { label: 'Acciones de foto.jpg', items }, attachTo: document.body })
+    const button = wrapper.get('button[aria-label="Acciones de foto.jpg"]')
+    const rectAt = (top: number) => vi.spyOn(wrapper.get('.dropdown').element, 'getBoundingClientRect')
+      .mockReturnValue({ top, bottom: top + 45, left: 0, right: 45, width: 45, height: 45, x: 0, y: top, toJSON: () => ({}) })
+
+    // Pegado al borde inferior: no caben las 3 opciones debajo.
+    rectAt(window.innerHeight - 60)
+    await button.trigger('click')
+    expect(wrapper.get('.dropdown').classes()).toContain('dropdown-top')
+    await button.trigger('click')
+
+    // Arriba de la pantalla: hay espacio debajo.
+    rectAt(10)
+    await button.trigger('click')
+    expect(wrapper.get('.dropdown').classes()).not.toContain('dropdown-top')
+    wrapper.unmount()
+    vi.restoreAllMocks()
+  })
 })
 
 describe('tarjetas y listas de archivos', () => {

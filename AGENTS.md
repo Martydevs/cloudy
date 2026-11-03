@@ -197,6 +197,16 @@ Never print or commit their values.
 - `Permissions-Policy` opens only `camera=(self)` (guest camera, feature 003); everything else stays `()`.
   `getUserMedia` needs a secure context: from a phone in dev use an HTTPS tunnel. `test/e2e/camera.spec.ts` uses
   Chromium's `--use-fake-ui-for-media-stream` / `--use-fake-device-for-media-stream` and forces `(pointer: coarse)`.
+- YouTube (feature 005): download jobs live **only** in the `cloudy-api` service (in memory, files for 30 min); the browser
+  creates them, polls every 2.5 s and chains batches of `YOUTUBE_MAX_BATCH` one at a time (`useYoutubeDownloads`). The tray
+  survives navigation but not a reload. The free Render instance sleeps: `/api/youtube/health` wakes it and the banner retries
+  every 5 s. The signed `downloadUrl` is `Content-Disposition: attachment`, so the external player window is a Cloudy page
+  (`/youtube/<id>/ventana?job=`), never the file URL. E2E run against `test/e2e/setup/cloudy-api-stub.ts` (scenario video IDs
+  such as `okShortVid1`, `privateVid1`, `tooLongVid1`, `lowResVid01`; `setCloudyStubState('asleep')`) and serve `i.ytimg.com`
+  thumbnails from a fixture with `routeYoutubeThumbnails(page)`.
+- `useFetch`/`useApiFetch` errors are `NuxtError`s (`statusCode`, and the server's JSON body in `data`), not ofetch `FetchError`s:
+  read `error.value.statusCode` / `error.value.data.data.code`. And `serverMessage(error, fallback, byStatus)` only uses
+  `byStatus` for 4xx: name a 503 explicitly (e.g. `messages.youtube.service.waking`).
 - `guest_access_requests.submission_id` is written **after** the submission row is inserted, in the same
   `db.batch` (the FK is not deferrable). Access-request expiry uses Postgres `now()`, but `created_at` is stamped
   with the server clock, like the pulse cursor: with Postgres' clock a skew of seconds would drop the live toast.

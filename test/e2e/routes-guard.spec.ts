@@ -5,7 +5,11 @@ import { E2E_URL, ensureAccount, email, login, setProfile, signedInAs } from './
 
 await setup({ host: E2E_URL, browser: true })
 
-const PRIVATE_ROUTES = ['/', '/archivos', '/archivos/ver/00000000-0000-0000-0000-000000000000', '/perfil', '/usuarios', '/actividad', '/solicitudes', '/papelera']
+const PRIVATE_ROUTES = [
+  '/', '/archivos', '/archivos/ver/00000000-0000-0000-0000-000000000000', '/perfil', '/usuarios', '/actividad', '/solicitudes', '/papelera',
+  // Página YouTube (feature 005).
+  '/youtube', '/youtube/okShortVid1', '/youtube/okShortVid1/ventana',
+]
 
 describe('US6 · protección de rutas', () => {
   it.each(PRIVATE_ROUTES)('sin sesión, %s lleva a login con redirect', async (path) => {
@@ -136,6 +140,23 @@ describe('US6 · protección de rutas', () => {
       ['GET', '/api/access-requests'],
       ['POST', `/api/access-requests/${id}/approve`],
       ['POST', `/api/access-requests/${id}/reject`],
+      // Página YouTube (feature 005).
+      ['GET', '/api/youtube/health'],
+      ['GET', '/api/youtube/videos/okShortVid1'],
+      ['POST', '/api/youtube/jobs'],
+      ['GET', `/api/youtube/jobs/${'a'.repeat(32)}`],
+      ['DELETE', `/api/youtube/jobs/${'a'.repeat(32)}`],
+      ['GET', '/api/youtube/history'],
+      ['DELETE', '/api/youtube/history/okShortVid1'],
+      ['GET', '/api/youtube/downloads'],
+      ['POST', '/api/youtube/downloads'],
+      ['GET', '/api/youtube/playlists'],
+      ['POST', '/api/youtube/playlists'],
+      ['GET', `/api/youtube/playlists/${id}`],
+      ['PATCH', `/api/youtube/playlists/${id}`],
+      ['DELETE', `/api/youtube/playlists/${id}`],
+      ['POST', `/api/youtube/playlists/${id}/items`],
+      ['DELETE', `/api/youtube/playlists/${id}/items/okShortVid1`],
     ] as const
     for (const [method, path] of commentRoutes) {
       const init: { method: string, headers: Record<string, string>, body?: string } = method === 'GET' || method === 'DELETE'
