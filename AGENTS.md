@@ -7,8 +7,8 @@ send material from a public page into an approval queue that the team reviews li
 **Governance**: `.specify/memory/constitution.md` (v1.1.1) is the source of truth and overrides this
 file. Keep this guide aligned with it whenever the constitution is amended.
 
-**Active feature**: `specs/003-guest-upload-access-code/` (builds on `specs/001-shared-media-drive/` and
-`specs/002-note-text-extraction/`). Read `spec.md` (what), `plan.md` + `research.md`
+**Active feature**: `specs/005-youtube-downloads/` (YouTube page: downloads and team playlists through the external `cloudy-api`
+download service; builds on `specs/001-shared-media-drive/`, `specs/002-note-text-extraction/` and `specs/003-guest-upload-access-code/`). Read `spec.md` (what), `plan.md` + `research.md`
 (how), `data-model.md` and `contracts/` (interfaces) before changing related code.
 
 ## Stack
@@ -97,8 +97,8 @@ hover. Check every screen at 360 px and ≥ 1280 px.
 **IV. Code quality** — `<script setup lang="ts">`, Composition API, small single-purpose components,
 logic in composables. No `any` without a justifying comment. Shared rules live once in `shared/`.
 Every endpoint validates input and calls the session/role guard server-side — hiding UI is not
-authorization. Neon Auth, storage, AI and background work are accessed **only** through `server/utils/auth.ts`,
-`server/utils/storage.ts`, `server/ai/` (via `server/utils/image-text.ts`) and `server/utils/background.ts`. No demo code, dead code or secrets. Typecheck and build must pass.
+authorization. Neon Auth, storage, AI, the YouTube download service and background work are accessed **only** through `server/utils/auth.ts`,
+`server/utils/storage.ts`, `server/ai/` (via `server/utils/image-text.ts`), `server/utils/cloudy-api.ts` and `server/utils/background.ts`. No demo code, dead code or secrets. Typecheck and build must pass.
 Forms validate with a zod schema from `app/utils/form-schemas.ts` through `useFormSchema` — never `useRegle`/`useRegleSchema`
 directly (`test/unit/architecture.spec.ts` enforces it). Schemas mirror `shared/validation` (messages and limits come from there);
 the server stays the authority and `test/nuxt/form-schemas.spec.ts` checks both agree.
@@ -154,7 +154,8 @@ files: set the same names per environment in the project settings.
 `NUXT_NEON_AUTH_COOKIE_SECRET`, `NUXT_AWS_ENDPOINT_URL_S3`, `NUXT_AWS_ACCESS_KEY_ID`,
 `NUXT_AWS_SECRET_ACCESS_KEY`, `NUXT_AWS_REGION`, `NUXT_S3_BUCKET`, `NUXT_PUBLIC_SITE_URL`,
 `NUXT_OPENROUTER_APIKEY` (empty = no image-text reads), `NUXT_OPENROUTER_BASE_URL` (empty = OpenRouter; e2e only),
-`CRON_SECRET`, `NUXT_RATE_LIMIT_SALT`. `NUXT_NEON_JWKS_URL` is present but intentionally unused in v1. There is no Neon Realtime
+`NUXT_CLOUDY_API_URL` + `NUXT_CLOUDY_API_KEY` (YouTube download service; empty = the page answers "not configured"; e2e point the URL
+at `test/e2e/setup/cloudy-api-stub.ts`), `CRON_SECRET`, `NUXT_RATE_LIMIT_SALT`. `NUXT_NEON_JWKS_URL` is present but intentionally unused in v1. There is no Neon Realtime
 config: "realtime" is client polling (`/api/realtime/pulse`, `/api/public/access/current`).
 Never print or commit their values.
 
