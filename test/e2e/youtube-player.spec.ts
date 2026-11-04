@@ -1,9 +1,9 @@
-// T068 — US4 (feature 005, quickstart escenarios 16–18): reproducir, pantalla completa sobre el contenedor y ventana
-// externa que reproduce el mismo video; trabajo expirado → Preparar de nuevo; todo con teclado; rutas protegidas.
+// T068 — US4 (feature 005, quickstart escenarios 16–18): el reproductor incrustado de YouTube arranca solo al pulsar
+// Play (sin preparar nada ni llamar al servicio de descargas) y la ventana externa lo muestra ya en marcha; rutas protegidas.
 import { createPage, setup } from '@nuxt/test-utils/e2e'
 import type { Cookie, Page } from 'playwright-core'
 import { describe, expect, it } from 'vitest'
-import { E2E_URL, ensureAccount, email, login, routeYoutubeThumbnails, setProfile, signedInAs, viewports, waitForHydration } from './setup/fixtures'
+import { E2E_URL, ensureAccount, email, login, routeYoutubeEmbed, routeYoutubeThumbnails, setProfile, signedInAs, viewports, waitForHydration } from './setup/fixtures'
 
 await setup({ host: E2E_URL, browser: true })
 
@@ -17,76 +17,55 @@ async function editorPage(): Promise<Page> {
     session = await page.context().cookies()
   }
   await routeYoutubeThumbnails(page)
+  await routeYoutubeEmbed(page)
   return page
 }
 
-async function readyPlayer(page: Page) {
-  await page.goto(`${E2E_URL}/youtube/okShortVid1`)
-  await waitForHydration(page)
-  await page.getByRole('button', { name: 'Preparar y reproducir' }).click()
-  await expect.poll(() => page.getByText(/Preparando el video…/).isVisible()).toBe(true)
-  await expect.poll(() => page.locator('video').evaluate((v: HTMLVideoElement) => v.readyState), { timeout: 15000 }).toBeGreaterThanOrEqual(2)
-}
-
-describe('US4 · pantalla completa y ventana externa', () => {
-  it('Pantalla completa pone el contenedor del reproductor en pantalla completa y Escape la libera', async () => {
+describe('US4 · reproductor incrustado y ventana externa', () => {
+  it('Reproducir monta el reproductor oficial al instante, sin crear ningún trabajo', async () => {
     const page = await editorPage()
+    const jobRequests: string[] = []
+    page.on('request', request => { if (request.url().includes('/api/youtube/jobs')) jobRequests.push(request.url()) })
     await page.goto(`${E2E_URL}/youtube/okShortVid1`)
     await waitForHydration(page)
-    expect(await page.getByRole('button', { name: 'Pantalla completa' }).isDisabled()).toBe(true)
-    await readyPlayer(page)
-    await page.getByRole('button', { name: 'Pantalla completa' }).first().click()
-    await expect.poll(() => page.evaluate(() => document.fullscreenElement?.getAttribute('role'))).toBe('region')
-    await page.keyboard.press('Escape')
-    await expect.poll(() => page.evaluate(() => document.fullscreenElement === null)).toBe(true)
+    expect(await page.locator('iframe').count()).toBe(0)
+    await page.getByRole('button', { name: /^Reproducir/ }).click()
+    const frame = page.locator('iframe[title^="YouTube"]')
+    await expect.poll(() => frame.getAttribute('src')).toMatch(/^https:\/\/www\.youtube-nocookie\.com\/embed\/okShortVid1\?autoplay=1/)
+    await expect.poll(() => page.frameLocator('iframe[title^="YouTube"]').locator('#embed-id').textContent()).toBe('okShortVid1')
+    expect(jobRequests).toEqual([])
+    expect(await page.getByRole('button', { name: 'Pantalla completa' }).count()).toBe(0)
     await page.close()
   })
 
-  it('Abrir en ventana nueva abre /ventana?job=… que reproduce desde el inicio sin barra lateral', async () => {
+  it('Abrir en ventana nueva abre /ventana con el video ya en marcha y sin barra lateral', async () => {
     const page = await editorPage()
-    await readyPlayer(page)
+    await page.goto(`${E2E_URL}/youtube/okShortVid1`)
+    await waitForHydration(page)
+    // En el contexto, no en la ventana: la ventana pide el embed al abrirse, antes de que un listener propio exista.
+    await routeYoutubeThumbnails(page.context())
+    await routeYoutubeEmbed(page.context())
     const [popup] = await Promise.all([
       page.waitForEvent('popup'),
       page.getByRole('button', { name: 'Abrir en ventana nueva' }).click(),
     ])
-    await routeYoutubeThumbnails(popup)
-    await popup.waitForURL(url => /^\/youtube\/okShortVid1\/ventana$/.test(url.pathname) && /^[0-9a-f]{32}$/.test(url.searchParams.get('job') ?? ''))
-    await expect.poll(() => popup.locator('video').evaluate((v: HTMLVideoElement) => v.readyState), { timeout: 15000 }).toBeGreaterThanOrEqual(2)
-    expect(await popup.locator('video').evaluate((v: HTMLVideoElement) => v.currentTime)).toBeLessThan(1)
+    await popup.waitForURL(url => /^\/youtube\/okShortVid1\/ventana$/.test(url.pathname) && url.search === '')
+    await expect.poll(() => popup.frameLocator('iframe[title^="YouTube"]').locator('#embed-id').textContent(), { timeout: 15000 }).toBe('okShortVid1')
     expect(await popup.getByRole('navigation').count()).toBe(0)
     expect(await popup.getByRole('button', { name: 'Cerrar ventana' }).isVisible()).toBe(true)
     await popup.close()
     await page.close()
   })
 
-  it('con un trabajo expirado la ventana ofrece Preparar de nuevo y reproduce tras pulsarlo', async () => {
+  it('con teclado: Tab llega al botón Reproducir y Enter monta el reproductor', async () => {
     const page = await editorPage()
-    await page.goto(`${E2E_URL}/youtube/okShortVid1/ventana?job=${'e'.repeat(32)}`)
+    await page.goto(`${E2E_URL}/youtube/okShortVid1`)
     await waitForHydration(page)
-    await expect.poll(() => page.getByText('La copia expiró').isVisible()).toBe(true)
-    await page.getByRole('button', { name: 'Preparar de nuevo' }).click()
-    await expect.poll(() => page.locator('video').evaluate((v: HTMLVideoElement) => v.readyState), { timeout: 15000 }).toBeGreaterThanOrEqual(2)
-    await page.close()
-  })
-
-  it('solo con teclado: Tab llega al reproductor y Espacio, flechas y F funcionan', async () => {
-    const page = await editorPage()
-    await readyPlayer(page)
-    const region = page.getByRole('region', { name: /Reproductor/ })
-    await region.focus()
-    await page.keyboard.press(' ')
-    await expect.poll(() => page.locator('video').evaluate((v: HTMLVideoElement) => v.paused)).toBe(true)
-    await page.keyboard.press(' ')
-    await expect.poll(() => page.locator('video').evaluate((v: HTMLVideoElement) => v.paused)).toBe(false)
-    await page.keyboard.press('ArrowDown')
-    await expect.poll(() => page.locator('video').evaluate((v: HTMLVideoElement) => v.volume)).toBeLessThan(1)
-    await page.keyboard.press('ArrowRight')
-    await page.keyboard.press('f')
-    await expect.poll(() => page.evaluate(() => !!document.fullscreenElement)).toBe(true)
-    await page.keyboard.press('Escape')
-    // Los botones de la barra tienen nombre y se alcanzan con Tab.
-    for (const name of ['Pausar', 'Silenciar']) expect(await page.getByRole('button', { name }).count(), name).toBeGreaterThan(0)
-    expect(await page.getByRole('slider', { name: 'Posición' }).count()).toBe(1)
+    const play = page.getByRole('button', { name: /^Reproducir/ })
+    await play.focus()
+    expect(await play.evaluate(el => el === document.activeElement)).toBe(true)
+    await page.keyboard.press('Enter')
+    await expect.poll(() => page.locator('iframe[title^="YouTube"]').count()).toBe(1)
     await page.close()
   })
 })

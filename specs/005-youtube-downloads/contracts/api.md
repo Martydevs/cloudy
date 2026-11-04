@@ -59,6 +59,17 @@ El servicio de descargas (`cloudy-api`) se llama **solo** desde `server/utils/cl
 - `UPDATE … SET last_viewed_at = NULL, last_viewed_by = NULL` si el video existe. **204**; si no existía o ya estaba fuera, **204** igualmente.
 - No toca las listas. La limpieza diaria borra el video si queda huérfano.
 
+## Guardar en el drive (importar un video al drive)
+
+Sin endpoint nuevo: el archivo nunca pasa por el servidor de Cloudy. El navegador crea el trabajo (`POST /api/youtube/jobs`, solo `mp4_720` o `mp3`), baja el archivo del enlace firmado del
+servicio (necesita el origen de Cloudy en `ALLOWED_ORIGINS` del servicio) y lo sube con el flujo de subidas del drive (`POST /api/uploads` con `folderId: null` → PUT prefirmado →
+`POST /api/uploads/:fileId/complete`). El archivo debe caber en `MAX_FILE_SIZE` (100 MB); si no, se rechaza antes de subir.
+
+Guardar varios videos (selección del historial o una lista, FR-033) tampoco agrega endpoints: el navegador repite este mismo flujo **de uno en uno** (cola en `useYoutubeDriveImport`), un trabajo de un solo video por importación.
+
+`POST /api/uploads/:fileId/complete` acepta un cuerpo opcional `{ source?: { videoId, format: 'mp4_720' | 'mp3' } }` (`youtubeImportSource`; 422 si no es válido). Con él, la actividad
+`file.upload` guarda `meta: { size, source: 'youtube', videoId, format }`; sin él, el comportamiento no cambia.
+
 ## Descargas guardadas
 
 ### `GET /api/youtube/downloads` — últimos videos descargados por el equipo

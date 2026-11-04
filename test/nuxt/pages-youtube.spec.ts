@@ -2,6 +2,7 @@
 // (cuatro estados, selección múltiple, barra de selección, quitar con confirmación, página siguiente).
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { mountSuspended } from '@nuxt/test-utils/runtime'
+import { DOMWrapper } from '@vue/test-utils'
 import { nextTick } from 'vue'
 import type { Me, YoutubeDownloadItem, YoutubeHistoryItem, YoutubeHistoryPage, YoutubePlaylist } from '#shared/types/api'
 import YoutubePage from '~/pages/youtube/index.vue'
@@ -19,6 +20,8 @@ function setMe(role: 'admin' | 'editor', userId = 'u1') {
 }
 
 const button = (wrapper: Queryable, text: string) => buttonsWithText(wrapper, text)[0]
+/** El menú de opciones de una lista es flotante (va en `body`, fuera del componente). */
+const floatingItems = () => Array.from(document.body.querySelectorAll<HTMLElement>('[role="menuitem"]')).map(el => new DOMWrapper(el))
 const ids = (n: number) => Array.from({ length: n }, (_, i) => `video${String(i).padStart(6, '0')}`)
 
 const playlist = (changes: Partial<YoutubePlaylist> = {}): YoutubePlaylist => ({
@@ -88,8 +91,8 @@ describe('/youtube · fila Listas', () => {
     mockApi('GET', '/api/youtube/playlists/p1', { ...playlist({ itemCount: 12 }), items: ids(12).map(videoId => ({ videoId, title: videoId, channel: null, durationSeconds: 1, thumbnailUrl: null, addedAt: '2026-11-01T10:00:00.000Z', addedBy: { userId: 'u1', name: 'Ana', active: true } })) })
     const wrapper = await mountSuspended(YoutubePage)
     await flush()
-    await wrapper.get('[aria-label="Descargar Domingo"]').trigger('click')
-    await wrapper.findAll('[role="menuitemradio"]').find(o => o.text().includes('Audio MP3'))!.trigger('click')
+    await wrapper.get('[aria-label="Opciones de Domingo"]').trigger('click')
+    await floatingItems().find(o => o.text().includes('Descargar audio MP3'))!.trigger('click')
     await flush()
     const posts = calls.filter(c => c.method === 'POST' && c.url === '/api/youtube/jobs')
     expect(posts).toHaveLength(1)
@@ -99,19 +102,36 @@ describe('/youtube · fila Listas', () => {
 })
 
 describe('YoutubePlaylistCard', () => {
-  it('4 miniaturas, nombre, «N videos» y autor; el botón de descarga es alcanzable sin hover', async () => {
+  it('4 miniaturas, nombre, «N videos» y autor; el botón de opciones es alcanzable sin hover', async () => {
     const wrapper = await mountSuspended(YoutubePlaylistCard, { props: { playlist: playlist() } })
     expect(wrapper.findAll('img')).toHaveLength(1)
     expect(wrapper.findAll('img')[0]!.attributes('loading')).toBe('lazy')
     expect(wrapper.text()).toContain('Domingo')
     expect(wrapper.text()).toContain('2 videos')
     expect(wrapper.text()).toContain('Creada por Ana')
-    const download = wrapper.get('[aria-label="Descargar Domingo"]')
-    expect(download.element.tagName).toBe('BUTTON')
+    const options = wrapper.get('[aria-label="Opciones de Domingo"]')
+    expect(options.element.tagName).toBe('BUTTON')
     // Visible siempre en móvil; en escritorio también con el foco dentro (no solo con hover).
-    expect(download.element.closest('div.absolute')!.className).toContain('lg:group-focus-within:opacity-100')
+    expect(options.element.closest('div.absolute')!.className).toContain('lg:group-focus-within:opacity-100')
     await wrapper.get('[aria-label^="Abrir la lista Domingo"]').trigger('click')
     expect(wrapper.emitted('open')).toHaveLength(1)
+  })
+
+  it('el menú agrupa las descargas y «Guardar en el drive», y emite el formato elegido', async () => {
+    const wrapper = await mountSuspended(YoutubePlaylistCard, { props: { playlist: playlist() } })
+    await wrapper.get('[aria-label="Opciones de Domingo"]').trigger('click')
+    expect(floatingItems().map(o => o.text())).toEqual([
+      'Descargar video 720p',
+      'Descargar video 1080p',
+      'Descargar audio MP3',
+      'Guardar en el drive: video 720p',
+      'Guardar en el drive: audio MP3',
+    ])
+    await floatingItems().find(o => o.text().includes('Descargar video 1080p'))!.trigger('click')
+    expect(wrapper.emitted('download')).toEqual([[expect.objectContaining({ id: 'p1' }), 'mp4_1080']])
+    await wrapper.get('[aria-label="Opciones de Domingo"]').trigger('click')
+    await floatingItems().find(o => o.text().includes('Guardar en el drive: audio MP3'))!.trigger('click')
+    expect(wrapper.emitted('drive')).toEqual([[expect.objectContaining({ id: 'p1' }), 'mp3']])
   })
 
   it('autor inactivo y lista vacía', async () => {
@@ -119,7 +139,7 @@ describe('YoutubePlaylistCard', () => {
     expect(wrapper.text()).toContain('Usuario que ya no está activo')
     expect(wrapper.text()).toContain('1 video')
     const empty = await mountSuspended(YoutubePlaylistCard, { props: { playlist: playlist({ itemCount: 0 }) } })
-    expect(empty.get('[aria-label="Descargar Domingo"]').attributes('disabled')).toBeDefined()
+    expect(empty.get('[aria-label="Opciones de Domingo"]').attributes('disabled')).toBeDefined()
   })
 })
 
@@ -242,8 +262,8 @@ describe('/youtube · acciones de la tarjeta, enlace y aviso del servicio', () =
     mockApi('GET', '/api/youtube/playlists/p1', failWith(500))
     const wrapper = await mountSuspended(YoutubePage, { attachTo: document.body })
     await flush()
-    await wrapper.get('[aria-label="Descargar Domingo"]').trigger('click')
-    await wrapper.findAll('[role="menuitemradio"]').find(o => o.text().includes('Audio MP3'))!.trigger('click')
+    await wrapper.get('[aria-label="Opciones de Domingo"]').trigger('click')
+    await floatingItems().find(o => o.text().includes('Descargar audio MP3'))!.trigger('click')
     await flush()
     expect(useToast().toasts.value.at(-1)?.type).toBe('error')
     await wrapper.get('[aria-label^="Abrir la lista Domingo"]').trigger('click')

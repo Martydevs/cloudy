@@ -147,6 +147,44 @@ describe('ActionMenu', () => {
     wrapper.unmount()
   })
 
+  it('flotante: el menú va en body con posición fija junto al botón, se desactiva si no hay opciones y se cierra al desplazar o con Esc', async () => {
+    const wrapper = await mountSuspended(ActionMenu, { props: { label: 'Opciones de lista', items, floating: true }, attachTo: document.body })
+    const button = wrapper.get('button[aria-label="Opciones de lista"]')
+    vi.spyOn(wrapper.get('.dropdown').element, 'getBoundingClientRect')
+      .mockReturnValue({ top: 10, bottom: 55, left: 200, right: 245, width: 45, height: 45, x: 200, y: 10, toJSON: () => ({}) })
+
+    await button.trigger('click')
+    // Fuera de la tarjeta (y de cualquier contenedor con desplazamiento): en `body`, fijo y anclado al botón.
+    expect(wrapper.find('[role="menu"]').exists()).toBe(false)
+    const menu = document.body.querySelector<HTMLElement>('[role="menu"]')!
+    expect(menu.parentElement).toBe(document.body)
+    expect(menu.className).toContain('fixed')
+    expect(menu.style.top).toBe('59px')
+    expect(menu.style.right).toBe(`${window.innerWidth - 245}px`)
+    expect(button.attributes('aria-controls')).toBe(menu.id)
+
+    // Elegir una opción emite y cierra.
+    menu.querySelector<HTMLElement>('[role="menuitem"]')!.click()
+    await nextTick()
+    expect(wrapper.emitted('select')).toEqual([['rename']])
+    expect(document.body.querySelector('[role="menu"]')).toBeNull()
+
+    // Desplazar la página lo cierra (no sigue a su tarjeta); Esc dentro del menú también.
+    await button.trigger('click')
+    window.dispatchEvent(new Event('scroll'))
+    await nextTick()
+    expect(document.body.querySelector('[role="menu"]')).toBeNull()
+    await button.trigger('click')
+    document.body.querySelector('[role="menu"]')!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    await nextTick()
+    expect(document.body.querySelector('[role="menu"]')).toBeNull()
+
+    await wrapper.setProps({ disabled: true })
+    expect(button.attributes('disabled')).toBeDefined()
+    wrapper.unmount()
+    vi.restoreAllMocks()
+  })
+
   it('abre hacia arriba cuando abajo no cabe y hacia abajo cuando sí', async () => {
     const wrapper = await mountSuspended(ActionMenu, { props: { label: 'Acciones de foto.jpg', items }, attachTo: document.body })
     const button = wrapper.get('button[aria-label="Acciones de foto.jpg"]')

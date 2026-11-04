@@ -3,11 +3,15 @@ import { eq } from 'drizzle-orm'
 import { createError } from 'h3'
 import type { FileItem } from '#shared/types/api'
 import { isImageTextEligible } from '#shared/constants/image-text'
+import { youtubeImportSource } from '#shared/validation/youtube'
 import { files } from '../../../db/schema'
 import { deleteMany, head, readRange } from '../../../utils/storage'
 
 export default defineEventHandler(async (event): Promise<FileItem> => {
   const { profile } = requireRole(event, 'editor')
+  // Opcional: una importación de YouTube declara su origen para el registro de actividad.
+  const body = await readBody<{ source?: unknown } | null>(event).catch(() => null)
+  const source = body?.source === undefined ? null : unwrap(youtubeImportSource(body.source))
   const row = await getOwnUpload(paramId(event, 'fileId'), profile.userId)
 
   const object = await head(row.storageKey)
@@ -37,7 +41,10 @@ export default defineEventHandler(async (event): Promise<FileItem> => {
         .set({ name: finalName, uploadStatus: 'ready', thumbKey: validThumb ? thumbKey : null, updatedAt: new Date() })
         .where(eq(files.id, row.id))
         .returning(),
-      activityInsert(profile, 'file.upload', { type: 'file', id: row.id, label: finalName }, { size: Number(row.sizeBytes) }),
+      activityInsert(profile, 'file.upload', { type: 'file', id: row.id, label: finalName }, {
+        size: Number(row.sizeBytes),
+        ...(source ? { source: 'youtube', videoId: source.videoId, format: source.format } : {}),
+      }),
     ])
     return rows[0]!
   })

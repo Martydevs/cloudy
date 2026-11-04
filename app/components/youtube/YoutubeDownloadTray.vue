@@ -38,7 +38,10 @@ const STATUS_TEXT: Record<DownloadRow['status'], string> = {
 
 const ITEM_TEXT = { queued: 'En cola', running: 'Descargando', done: 'Listo', failed: 'Falló' } as const
 
-const busyCount = computed(() => downloads.rows.value.filter(row => isActiveDownload(row.status)).length)
+const drive = useYoutubeDriveImport()
+const busyCount = computed(() =>
+  downloads.rows.value.filter(row => isActiveDownload(row.status)).length
+  + drive.list.value.filter(item => drive.isActive(item.stage)).length)
 
 /** Videos con su estado y la calidad entregada cuando 1080p no estaba disponible (FR-007). */
 function itemsOf(row: DownloadRow) {
@@ -63,6 +66,17 @@ watch(() => downloads.rows.value.map(row => ({ id: row.id, status: row.status, p
     else if (quarter > before.quarter && row.status === 'running') announcement.value = `${name}: ${row.progress} %`
   }
 }, { deep: true, immediate: true })
+
+// Importaciones al drive: se anuncia solo el cambio de etapa (en cola, listo, falló), no cada avance.
+const driveStages = new Map<string, string>()
+watch(() => drive.list.value.map(item => ({ videoId: item.videoId, title: item.title, stage: item.stage })), (current) => {
+  for (const { videoId, title, stage } of current) {
+    if (driveStages.get(videoId) === stage) continue
+    driveStages.set(videoId, stage)
+    const text = stage === 'done' ? 'Guardado en el drive' : stage === 'error' ? 'No se pudo guardar' : stage === 'queued' ? m.drive.queued : null
+    if (text) announcement.value = `${title}: ${text}`
+  }
+}, { immediate: true })
 </script>
 
 <template>
@@ -157,6 +171,19 @@ watch(() => downloads.rows.value.map(row => ({ id: row.id, status: row.status, p
             Preparar de nuevo
           </button>
         </div>
+      </li>
+      <li v-if="drive.hasImports.value" class="flex flex-col gap-3">
+        <h3 class="text-sm font-semibold text-base-content/70">{{ m.drive.trayTitle }}</h3>
+        <ul class="flex flex-col gap-3" :aria-label="m.drive.trayTitle">
+          <YoutubeDriveImportRow
+            v-for="item in drive.list.value"
+            :key="item.videoId"
+            :item="item"
+            @retry="drive.retry"
+            @dismiss="drive.dismiss"
+            @cancel="drive.cancel"
+          />
+        </ul>
       </li>
     </ul>
   </section>

@@ -1,10 +1,10 @@
 <script setup lang="ts">
-// Ficha de un video (feature 005, contracts/ui.md § /youtube/:id): reproductor, datos, acciones e historial reciente.
-// Abrirla registra el video en el historial compartido (FR-022). La sonda del servicio puede tardar, así que la ficha
-// se pide en el cliente y la página muestra su esqueleto al instante.
+// Ficha de un video (feature 005, contracts/ui.md § /youtube/:id): reproductor incrustado, datos, acciones e historial reciente.
+// Abrirla registra el video en el historial compartido (FR-022). El reproductor solo necesita el ID de la URL: se muestra
+// al instante, sin esperar a la sonda del servicio (que puede tardar o estar dormido); los datos y las acciones llegan
+// después, con su esqueleto, y cualquier error del servicio aparece debajo del reproductor.
 import type { YoutubeVideoDetail } from '#shared/types/api'
 import { BLOCK_REASON_MESSAGES, isBlockReason, YOUTUBE_VIDEO_ID_RE } from '#shared/constants/youtube'
-import type { PlaybackState } from '~/composables/useYoutubePlayback'
 
 definePageMeta({
   layout: 'dashboard',
@@ -27,7 +27,8 @@ const { data: video, error, pending, refresh } = useApiFetch<YoutubeVideoDetail>
 useHead({ title: () => `${video.value?.title ?? 'Video'} · YouTube · Cloudy` })
 
 // El error de `useFetch` es un `NuxtError`: trae el estado y, en `data`, el cuerpo que respondió el servidor.
-const status = computed(() => (error.value ? error.value.statusCode ?? 0 : null))
+// Con la ficha ya cargada un error viejo no cuenta: al despertar el servicio, el aviso se va con los datos.
+const status = computed(() => (error.value && !video.value ? error.value.statusCode ?? 0 : null))
 const sleeping = computed(() => status.value === 503 || status.value === 429)
 const videoError = computed(() => {
   if (status.value !== 404) return null
@@ -48,6 +49,8 @@ const bannerState = computed(() => {
   if (status.value === 429) return 'busy' as const
   const s = service.state.value
   if (s === 'up' || s === 'unknown') return sleeping.value ? 'waking' as const : null
+  // La ficha llegó, así que el servicio ya respondió aunque el siguiente ping tarde en notarlo.
+  if (s === 'waking' && video.value) return null
   return s
 })
 
@@ -56,17 +59,9 @@ function retry() {
   refresh()
 }
 
-// Reproductor (US4): pantalla completa y ventana externa se habilitan solas cuando la copia está lista.
-const player = useTemplateRef<{ fullscreen: () => Promise<void> }>('player')
-const playerState = ref<PlaybackState>('idle')
-const playerJob = ref<string | null>(null)
-function onPlayerState(state: PlaybackState, jobId: string | null) {
-  playerState.value = state
-  playerJob.value = jobId
-}
+// Reproductor (US4): el incrustado de YouTube; la ventana externa lo muestra a ventana completa.
 function openWindow() {
-  if (!playerJob.value) return
-  window.open(`/youtube/${videoId.value}/ventana?job=${playerJob.value}`, 'cloudy-player', 'popup,width=1100,height=640')
+  window.open(`/youtube/${videoId.value}/ventana`, 'cloudy-player', 'popup,width=1100,height=640')
 }
 
 const playlistDialog = ref(false)
@@ -85,15 +80,18 @@ const recentHeading = useId()
 
     <YoutubeServiceBanner v-if="bannerState" :state="bannerState" @retry="retry" />
 
-    <div v-if="!video && (pending || status === null)" class="flex flex-col gap-4" aria-busy="true">
+    <YoutubePlayer :video-id="videoId" :poster="video?.thumbnailUrl" :title="video?.title" />
+
+    <!-- Reserva el alto de `YoutubeVideoMeta` (título, canal, calidades, 4 acciones y aviso) para que al llegar los datos nada salte (CLS). -->
+    <div v-if="!video && (pending || status === null)" class="flex flex-col gap-3" aria-busy="true">
       <span class="sr-only" role="status">Cargando el video…</span>
-      <div class="skeleton aspect-video w-full" />
-      <div class="skeleton h-7 w-3/4" />
-      <div class="skeleton h-4 w-1/3" />
-      <div class="flex gap-2">
-        <div class="skeleton h-11 w-32" />
-        <div class="skeleton h-11 w-32" />
+      <div class="skeleton h-7 w-3/4 sm:h-8" />
+      <div class="skeleton h-6 w-1/3" />
+      <div class="skeleton h-6 w-1/2" />
+      <div class="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+        <div v-for="n in 4" :key="n" class="skeleton h-[45px] w-full sm:w-44" />
       </div>
+      <div class="skeleton h-5 w-2/3" />
     </div>
 
     <div v-else-if="videoError" role="alert" class="alert alert-error alert-soft flex flex-col items-start gap-3 sm:flex-row sm:items-center">
@@ -106,22 +104,7 @@ const recentHeading = useId()
 
     <ErrorState v-else-if="!video && error" :message="messages.youtube.load.video" @retry="refresh()" />
 
-    <template v-else-if="video">
-      <LazyYoutubePlayer
-        ref="player"
-        :video-id="video.videoId"
-        :poster="video.thumbnailUrl"
-        :title="video.title"
-        @state="onPlayerState"
-      />
-      <YoutubeVideoMeta
-        :video="video"
-        :player-ready="playerState === 'ready'"
-        @playlist="playlistDialog = true"
-        @fullscreen="player?.fullscreen()"
-        @open-window="openWindow"
-      />
-    </template>
+    <YoutubeVideoMeta v-else-if="video" :video="video" @playlist="playlistDialog = true" @open-window="openWindow" />
 
     <section class="flex min-w-0 flex-col gap-3" :aria-labelledby="recentHeading">
       <h2 :id="recentHeading" class="text-lg font-semibold">Historial reciente</h2>

@@ -1,6 +1,6 @@
 // T022/T035 — Bandeja de descargas (feature 005, research D3–D4): una fila por trabajo con lote, avance, estado por
 // video («Entregado en 480p»), acciones por estado, anuncios moderados y alto publicado para la barra de selección.
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mockNuxtImport, mountSuspended } from '@nuxt/test-utils/runtime'
 import type { YoutubeJob, YoutubeJobItem } from '#shared/types/api'
 import type { DownloadRow } from '~/composables/useYoutubeDownloads'
@@ -131,6 +131,76 @@ describe('YoutubeDownloadTray', () => {
     expect(wrapper.get('ul').attributes('style')).toContain('display: none')
     await wrapper.get('[aria-label="Mostrar descargas"]').trigger('click')
     expect(wrapper.get('ul').attributes('style') ?? '').not.toContain('display: none')
+  })
+
+  describe('Guardar en el drive', () => {
+    const entry = (videoId: string, changes: Record<string, unknown> = {}) => ({ videoId, title: `Video ${videoId}`, format: 'mp3', stage: 'queued', progress: 0, message: null, ...changes })
+    const setImports = (...entries: ReturnType<typeof entry>[]) => {
+      useState('youtube-drive-imports').value = Object.fromEntries(entries.map(e => [e.videoId, e]))
+    }
+    afterEach(() => {
+      useState('youtube-drive-imports').value = {}
+    })
+
+    it('sección con una fila por video: en cola, subiendo con su avance, y suma «en curso»', async () => {
+      setRows([])
+      setImports(entry('aaaaaaaaaaa', { stage: 'uploading', progress: 40 }), entry('bbbbbbbbbbb'))
+      const wrapper = await mountSuspended(YoutubeDownloadTray)
+      await flush()
+      const section = wrapper.get('ul[aria-label="Guardar en el drive"]')
+      expect(section.findAll('li')).toHaveLength(2)
+      expect(section.text()).toContain('Audio MP3 · Subiendo al drive…')
+      expect(section.text()).toContain('Audio MP3 · En cola')
+      // Solo la que corre muestra barra de avance.
+      expect(section.findAll('progress')).toHaveLength(1)
+      expect(section.get('progress').attributes('value')).toBe('40')
+      expect(wrapper.text()).toContain('2 en curso')
+      expect(wrapper.get('[aria-live="polite"]').text()).toContain('En cola')
+      expect(section.find('[aria-label^="Cerrar"]').exists()).toBe(false)
+    })
+
+    it('Cancelar sale en las importaciones en curso o en cola (no en las terminadas) y saca la pendiente', async () => {
+      setRows([])
+      setImports(
+        entry('aaaaaaaaaaa', { stage: 'uploading', progress: 10 }),
+        entry('bbbbbbbbbbb'),
+        entry('ccccccccccc', { stage: 'done', progress: 100, message: 'Coro.mp3' }),
+      )
+      const wrapper = await mountSuspended(YoutubeDownloadTray)
+      await flush()
+      expect(wrapper.find('[aria-label="Cancelar Video aaaaaaaaaaa"]').exists()).toBe(true)
+      expect(wrapper.find('[aria-label="Cancelar Video ccccccccccc"]').exists()).toBe(false)
+      await wrapper.get('[aria-label="Cancelar Video bbbbbbbbbbb"]').trigger('click')
+      await flush()
+      expect(useState<Record<string, unknown>>('youtube-drive-imports').value).not.toHaveProperty('bbbbbbbbbbb')
+      expect(wrapper.text()).not.toContain('Video bbbbbbbbbbb')
+      expect(useToast().toasts.value.at(-1)).toMatchObject({ message: 'Guardado cancelado' })
+    })
+
+    it('terminada: enlace «Ver en el drive» y cerrar; fallida: motivo, Reintentar y cerrar', async () => {
+      setRows([])
+      setImports(
+        entry('aaaaaaaaaaa', { stage: 'done', progress: 100, message: 'Alabanza.mp3' }),
+        entry('bbbbbbbbbbb', { stage: 'error', message: 'No pudimos preparar el archivo. Inténtalo de nuevo.' }),
+      )
+      mockApi('POST', '/api/youtube/jobs', () => new Promise(() => {}))
+      const wrapper = await mountSuspended(YoutubeDownloadTray)
+      await flush()
+      expect(wrapper.text()).toContain('«Alabanza.mp3» ya está en el drive')
+      expect(wrapper.get('a[href="/archivos"]').text()).toContain('Ver en el drive')
+      expect(wrapper.text()).toContain('No pudimos preparar el archivo')
+      expect(wrapper.get('[role="alert"]').text()).toContain('No pudimos preparar el archivo')
+      expect(wrapper.get('[aria-live="polite"]').text()).toContain('No se pudo guardar')
+
+      await button(wrapper, 'Reintentar')!.trigger('click')
+      await flush()
+      expect(calls.some(c => c.method === 'POST' && c.url === '/api/youtube/jobs')).toBe(true)
+      expect(useState<Record<string, { stage: string }>>('youtube-drive-imports').value.bbbbbbbbbbb!.stage).toBe('preparing')
+
+      await wrapper.get('[aria-label="Cerrar Video aaaaaaaaaaa"]').trigger('click')
+      await flush()
+      expect(wrapper.text()).not.toContain('Alabanza.mp3')
+    })
   })
 
   it('anuncia el avance cada 25 % y no en cada sondeo', async () => {

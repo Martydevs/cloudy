@@ -1,22 +1,34 @@
 <script setup lang="ts">
-// Datos del video y sus acciones (FR-006–FR-008, FR-013, FR-015): Descargar (con formato), Crear lista y, con el
-// reproductor listo, Pantalla completa y Abrir en ventana nueva. En móvil se apilan; desde `sm:` van en fila.
+// Datos del video y sus acciones (FR-006–FR-008, FR-013, FR-015): Descargar (con formato), Guardar en el drive (audio o
+// video, con su avance), Crear lista y Abrir en ventana nueva. La pantalla completa es la del reproductor de YouTube. En móvil se apilan; desde `sm:` van en fila.
 import type { YoutubeFormat, YoutubeVideoDetail } from '#shared/types/api'
-import { BLOCK_REASON_MESSAGES } from '#shared/constants/youtube'
+import { BLOCK_REASON_MESSAGES, YOUTUBE_DRIVE_FORMATS } from '#shared/constants/youtube'
+import type { YoutubeDriveFormat } from '#shared/constants/youtube'
 
-const props = withDefaults(defineProps<{ video: YoutubeVideoDetail, playerReady?: boolean }>(), { playerReady: false })
-const emit = defineEmits<{ playlist: [], fullscreen: [], openWindow: [] }>()
+const props = defineProps<{ video: YoutubeVideoDetail }>()
+const emit = defineEmits<{ playlist: [], openWindow: [] }>()
 
 const downloads = useYoutubeDownloads()
+const drive = useYoutubeDriveImport()
 const format = ref<YoutubeFormat>('mp4_720')
+const driveFormat = ref<YoutubeDriveFormat>('mp3')
 const reasonId = useId()
-const hintId = useId()
 
 const blocked = computed(() => (props.video.downloadable ? null : BLOCK_REASON_MESSAGES[props.video.reason ?? 'unavailable']))
+const driveImport = computed(() => drive.of(props.video.videoId))
+const driveBusy = computed(() => !!driveImport.value && drive.isActive(driveImport.value.stage))
+const driveStage = computed(() => {
+  const stage = driveImport.value?.stage
+  return stage === 'queued' || stage === 'preparing' || stage === 'downloading' || stage === 'uploading' ? messages.youtube.drive[stage] : null
+})
 const heights = computed(() => [...props.video.availableHeights].sort((a, b) => b - a))
 
 function download(chosen: YoutubeFormat) {
   downloads.enqueue([props.video.videoId], chosen, props.video.title)
+}
+
+function saveToDrive(chosen: YoutubeDriveFormat) {
+  void drive.start({ videoId: props.video.videoId, title: props.video.title }, chosen)
 }
 </script>
 
@@ -49,33 +61,40 @@ function download(chosen: YoutubeFormat) {
           @select="download"
         />
       </div>
+      <div :title="blocked ?? undefined" class="w-full sm:w-auto">
+        <YoutubeFormatPicker
+          v-model="driveFormat"
+          :label="messages.youtube.drive.action"
+          icon="lucide:hard-drive-upload"
+          :formats="YOUTUBE_DRIVE_FORMATS"
+          :primary="false"
+          :disabled="!video.downloadable || driveBusy"
+          block
+          @select="saveToDrive"
+        />
+      </div>
       <button type="button" class="btn btn-block sm:w-auto" @click="emit('playlist')">
         <Icon name="lucide:list-plus" class="size-5" aria-hidden="true" />
         Crear lista
       </button>
-      <button
-        type="button"
-        class="btn btn-block sm:w-auto"
-        :disabled="!playerReady"
-        :aria-describedby="playerReady ? undefined : hintId"
-        @click="emit('fullscreen')"
-      >
-        <Icon name="lucide:maximize" class="size-5" aria-hidden="true" />
-        Pantalla completa
-      </button>
-      <button
-        type="button"
-        class="btn btn-block sm:w-auto"
-        :disabled="!playerReady"
-        :aria-describedby="playerReady ? undefined : hintId"
-        @click="emit('openWindow')"
-      >
+      <button type="button" class="btn btn-block sm:w-auto" @click="emit('openWindow')">
         <Icon name="lucide:external-link" class="size-5" aria-hidden="true" />
         Abrir en ventana nueva
       </button>
     </div>
+    <div v-if="driveStage && driveImport" class="flex flex-col gap-1" aria-busy="true">
+      <p class="flex items-center justify-between gap-2 text-sm" role="status">
+        <span>{{ driveStage }}</span>
+        <span class="tabular-nums" aria-hidden="true">{{ driveImport.progress }} %</span>
+      </p>
+      <progress class="progress progress-primary w-full" :value="driveImport.progress" max="100" :aria-label="driveStage" />
+    </div>
+    <p v-else-if="driveImport?.stage === 'error'" role="alert" class="text-sm text-error">{{ driveImport.message }}</p>
+    <p v-else-if="driveImport?.stage === 'done'" role="status" class="flex items-center gap-1 text-sm">
+      <Icon name="lucide:check" class="size-4" aria-hidden="true" />
+      {{ messages.youtube.drive.done(driveImport.message ?? '') }}
+    </p>
     <p v-if="blocked" :id="reasonId" class="text-sm text-error">{{ blocked }}</p>
-    <p v-if="!playerReady" :id="hintId" class="text-sm text-base-content/70">{{ messages.youtube.player.actionsHint }}</p>
     <p class="text-sm text-base-content/70">{{ messages.youtube.compliance }}</p>
   </section>
 </template>

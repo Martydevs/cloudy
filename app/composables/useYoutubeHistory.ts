@@ -21,15 +21,19 @@ export function useYoutubeHistory({ exclude, recent = false }: { exclude?: Maybe
 
   const more = ref<YoutubeHistoryItem[]>([])
   const removed = ref<Set<string>>(new Set())
-  const nextCursor = ref<string | null>(null)
+  // Cursor de la última página cargada con «Cargar más»; sin ella manda el de la primera. Es derivado (no se copia en un
+  // `watch`): en el servidor los `watch` no se vuelven a ejecutar cuando llegan los datos y «Cargar más» no se pintaba,
+  // lo que desajustaba la hidratación en cuanto el historial pasaba de una página.
+  const laterCursor = ref<{ value: string | null } | null>(null)
+  const nextCursor = computed(() => (recent ? null : laterCursor.value ? laterCursor.value.value : firstPage.value?.nextCursor ?? null))
   const loadingMore = ref(false)
   const moreFailed = ref(false)
-  watch(firstPage, (page) => {
+  watch(firstPage, () => {
     more.value = []
     removed.value = new Set()
-    nextCursor.value = recent ? null : page?.nextCursor ?? null
+    laterCursor.value = null
     moreFailed.value = false
-  }, { immediate: true })
+  })
 
   const items = computed(() => [...(firstPage.value?.items ?? []), ...more.value].filter(item => !removed.value.has(item.videoId)))
 
@@ -40,7 +44,7 @@ export function useYoutubeHistory({ exclude, recent = false }: { exclude?: Maybe
     try {
       const page = await api<YoutubeHistoryPage>('/api/youtube/history', { query: { ...query.value, cursor: nextCursor.value } })
       more.value = [...more.value, ...page.items]
-      nextCursor.value = page.nextCursor
+      laterCursor.value = { value: page.nextCursor }
     }
     catch {
       moreFailed.value = true

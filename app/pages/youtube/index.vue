@@ -2,6 +2,8 @@
 // Página YouTube (feature 005, contracts/ui.md § /youtube): pegar un enlace, listas del equipo e historial compartido
 // con selección múltiple y descarga por lotes de 10.
 import type { YoutubeFormat, YoutubeHistoryItem, YoutubePlaylist, YoutubePlaylistDetail } from '#shared/types/api'
+import type { YoutubeDriveFormat } from '#shared/constants/youtube'
+import type { DriveDialogVideo } from '~/components/youtube/YoutubeDriveDialog.vue'
 
 definePageMeta({ layout: 'dashboard', access: 'private', roles: ['editor', 'admin'] })
 useHead({ title: 'YouTube · Cloudy' })
@@ -40,8 +42,47 @@ async function downloadPlaylist(playlist: YoutubePlaylist, format: YoutubeFormat
   }
 }
 
+// ---- Guardar en el drive: un video va directo; varios (selección o lista) pasan por el diálogo con casillas.
+const driveImport = useYoutubeDriveImport()
+const historyList = useTemplateRef<{ videosOf: (ids: readonly string[]) => YoutubeHistoryItem[] }>('historyList')
+const driveDialog = ref<{ heading: string, format: YoutubeDriveFormat, videos: DriveDialogVideo[], fromSelection: boolean } | null>(null)
+
+function startDrive(videos: DriveDialogVideo[], format: YoutubeDriveFormat) {
+  const queued = driveImport.startMany(videos, format)
+  if (queued > 0) toast.info(messages.youtube.drive.queuedCount(queued))
+}
+
+async function drivePlaylist(playlist: YoutubePlaylist, format: YoutubeDriveFormat) {
+  try {
+    const detail = await api<YoutubePlaylistDetail>(`/api/youtube/playlists/${playlist.id}`)
+    if (detail.items.length === 0) return
+    driveDialog.value = { heading: playlist.name, format, videos: detail.items, fromSelection: false }
+  }
+  catch (error) {
+    toast.error(serverMessage(error, messages.youtube.load.playlist))
+  }
+}
+
+function onDriveConfirm(videos: DriveDialogVideo[]) {
+  if (!driveDialog.value) return
+  const { format, fromSelection } = driveDialog.value
+  startDrive(videos, format)
+  if (fromSelection) selected.value = []
+}
+
 // ---- Historial y selección (sobrevive a un error de descarga; se limpia con «Limpiar»)
 const selected = useState<string[]>('youtube-history-selected', () => [])
+
+function driveSelection(format: YoutubeDriveFormat) {
+  const videos = historyList.value?.videosOf(selected.value) ?? []
+  if (videos.length === 0) return
+  if (videos.length === 1) {
+    startDrive(videos, format)
+    selected.value = []
+    return
+  }
+  driveDialog.value = { heading: messages.youtube.drive.action, format, videos, fromSelection: true }
+}
 
 function downloadSelection(format: YoutubeFormat) {
   const files = downloads.enqueue(selected.value, format, 'Selección')
@@ -92,6 +133,7 @@ const sectionTitle = computed(() => SECTIONS.find(s => s.value === section.value
       @retry="refreshPlaylists()"
       @open="playlist => (dialog = { playlistId: playlist.id })"
       @download="downloadPlaylist"
+      @drive="drivePlaylist"
     />
 
     <section class="flex flex-col gap-3" :aria-labelledby="sectionHeadingId">
@@ -112,7 +154,7 @@ const sectionTitle = computed(() => SECTIONS.find(s => s.value === section.value
         </div>
       </header>
 
-      <YoutubeHistoryList v-show="section === 'history'" v-model:selected="selected" @playlist="addToPlaylist" />
+      <YoutubeHistoryList ref="historyList" v-show="section === 'history'" v-model:selected="selected" @playlist="addToPlaylist" />
       <LazyYoutubeDownloadsGrid v-if="downloadsOpened" v-show="section === 'downloads'" />
     </section>
 
@@ -120,7 +162,17 @@ const sectionTitle = computed(() => SECTIONS.find(s => s.value === section.value
       v-if="selected.length > 0 && section === 'history'"
       :count="selected.length"
       @download="downloadSelection"
+      @drive="driveSelection"
       @clear="selected = []"
+    />
+
+    <LazyYoutubeDriveDialog
+      v-if="driveDialog"
+      :videos="driveDialog.videos"
+      :format="driveDialog.format"
+      :heading="driveDialog.heading"
+      @confirm="onDriveConfirm"
+      @close="driveDialog = null"
     />
 
     <LazyYoutubePlaylistDialog

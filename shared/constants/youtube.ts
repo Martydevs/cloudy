@@ -30,6 +30,10 @@ export const YOUTUBE_FORMATS: readonly YoutubeFormatInfo[] = [
 
 export const YOUTUBE_FORMAT_VALUES = YOUTUBE_FORMATS.map(f => f.value) as readonly YoutubeFormat[]
 
+/** Formatos que se pueden guardar en el drive: audio o video (1080p casi nunca cabe en el tope de 100 MB). */
+export const YOUTUBE_DRIVE_FORMATS = ['mp4_720', 'mp3'] as const satisfies readonly YoutubeFormat[]
+export type YoutubeDriveFormat = (typeof YOUTUBE_DRIVE_FORMATS)[number]
+
 export function youtubeFormatLabel(format: YoutubeFormat): string {
   return YOUTUBE_FORMATS.find(f => f.value === format)?.label ?? format
 }
@@ -51,6 +55,10 @@ export const YOUTUBE_HISTORY_MAX_LIMIT = 48
 export const YOUTUBE_RECENT_LIMIT = 12
 /** Sondeo de un trabajo en curso (research D2). */
 export const YOUTUBE_JOB_POLL_MS = 2500
+
+/** «Guardar en el drive»: tope de cada petición a la API y tiempo sin avance tras el cual se aborta una descarga o subida. */
+export const YOUTUBE_IMPORT_REQUEST_MS = 45_000
+export const YOUTUBE_IMPORT_STALL_MS = 60_000
 /** Reintento del ping mientras el servicio no responde (research D7). */
 export const YOUTUBE_HEALTH_RETRY_MS = 5000
 

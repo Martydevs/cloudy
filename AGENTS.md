@@ -200,10 +200,18 @@ Never print or commit their values.
 - YouTube (feature 005): download jobs live **only** in the `cloudy-api` service (in memory, files for 30 min); the browser
   creates them, polls every 2.5 s and chains batches of `YOUTUBE_MAX_BATCH` one at a time (`useYoutubeDownloads`). The tray
   survives navigation but not a reload. The free Render instance sleeps: `/api/youtube/health` wakes it and the banner retries
-  every 5 s. The signed `downloadUrl` is `Content-Disposition: attachment`, so the external player window is a Cloudy page
-  (`/youtube/<id>/ventana?job=`), never the file URL. E2E run against `test/e2e/setup/cloudy-api-stub.ts` (scenario video IDs
+  every 5 s. The player is YouTube's official embed (`youtube-nocookie.com/embed/<id>`, `YoutubePlayer`): a thumbnail until Play,
+  then the iframe (no 720p copy, no cloudy-api job; `preconnect` on hover/focus). The external player window is a Cloudy page
+  (`/youtube/<id>/ventana`) that autoplays the same embed. Cloudy sets no CSP, so no `frame-src` is needed. E2E run against `test/e2e/setup/cloudy-api-stub.ts` (scenario video IDs
   such as `okShortVid1`, `privateVid1`, `tooLongVid1`, `lowResVid01`; `setCloudyStubState('asleep')`) and serve `i.ytimg.com`
-  thumbnails from a fixture with `routeYoutubeThumbnails(page)`.
+  thumbnails from a fixture with `routeYoutubeThumbnails(page)` and the embed iframe from a local page with `routeYoutubeEmbed(page)`.
+- YouTube → drive: "Guardar en el drive" (`useYoutubeDriveImport`) moves the file **through the browser** (job in cloudy-api → `fetch` of the signed
+  `downloadUrl` → the normal upload flow to the drive root), so the service's `ALLOWED_ORIGINS` must include the Cloudy origin (the e2e stub sends `access-control-allow-origin: *`).
+  Files over `MAX_FILE_SIZE` (100 MB) are refused; `POST /api/uploads/:id/complete` takes an optional `source` that tags the `file.upload` activity (no new enum value).
+  The action is offered on the video page, the history card menu, the selection bar and each playlist card's ⋯ menu (FR-033). One video uploads directly;
+  several (selection or playlist) open `YoutubeDriveDialog` (checkboxes, all ticked) first. `startMany` queues them and they run **one at a time** (each file is
+  buffered whole in the browser): the queue is driven by the `youtube-drive-imports` state itself (`pump`), not by module variables, so it can't leak between
+  tests or stay stuck behind a hung import. Each import also has an `AbortController` (a module map, not state): API calls time out (`YOUTUBE_IMPORT_REQUEST_MS`), a download or upload with no progress for `YOUTUBE_IMPORT_STALL_MS` is aborted ("La conexión se quedó sin respuesta"), and the tray's **Cancelar** aborts a running import (or drops a queued one) so the queue keeps moving; the service job is always released. Progress lives in a "Guardar en el drive" section of `YoutubeDownloadTray` (the layout mounts the tray for downloads **or** imports).
 - `useFetch`/`useApiFetch` errors are `NuxtError`s (`statusCode`, and the server's JSON body in `data`), not ofetch `FetchError`s:
   read `error.value.statusCode` / `error.value.data.data.code`. And `serverMessage(error, fallback, byStatus)` only uses
   `byStatus` for 4xx: name a 503 explicitly (e.g. `messages.youtube.service.waking`).

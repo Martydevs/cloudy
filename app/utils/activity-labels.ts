@@ -1,5 +1,7 @@
 // Registro de actividad (FR-023): cada acción del enum `activity_action` con su texto en español.
 
+import { youtubeFormatLabel } from '#shared/constants/youtube'
+
 export const ACTIVITY_LABELS: Record<string, string> = {
   'file.upload': 'subió el archivo',
   'file.rename': 'renombró el archivo',
@@ -52,6 +54,9 @@ export function activityIcon(action: string): string {
 export function activityDetail(action: string, meta: Record<string, unknown> | null): string {
   if (!meta) return ''
   const role = (value: unknown) => roleLabel(value === 'admin' || value === 'editor' ? value : null)
+  if (action === 'file.upload' && meta.source === 'youtube') {
+    return `desde YouTube${meta.format === 'mp3' || meta.format === 'mp4_720' ? ` (${youtubeFormatLabel(meta.format)})` : ''}`
+  }
   if (action === 'user.role_change') return `${role(meta.from)} → ${role(meta.to)}`
   if (action === 'user.activate' && typeof meta.role === 'string') return `como ${role(meta.role)}`
   if ((action === 'file.rename' || action === 'folder.rename') && typeof meta.from === 'string') return `antes «${meta.from}»`

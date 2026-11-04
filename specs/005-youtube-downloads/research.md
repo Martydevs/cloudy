@@ -74,6 +74,11 @@ Las referencias al servicio vienen de `C:\Users\andre.perez\Dev\cloudy-api` (REA
   copia 720p ahorra una conversión de yt-dlp en una instancia de capacidad mínima.
 - **Alternativas**: el iframe de YouTube (no es un `<video>` nativo, no usa el tema y no es lo que pidió la persona); crear la copia al
   abrir la página (satura la cola); `controls` nativos (no respetan el tema `cloudy`).
+- **Revisión (2026-11-04) — reemplazada por el reproductor incrustado oficial de YouTube**: preparar una copia 720p era lento con
+  redes débiles (conversión + descarga del archivo) y dependía del servicio gratuito dormido. Ahora `YoutubePlayer` muestra la
+  miniatura y, al pulsar, monta `youtube-nocookie.com/embed/<id>` (sin cookies hasta reproducir, `preconnect` al acercarse). Ya no se
+  crean trabajos `mp4_720` para ver un video, no hay copia que reutilizar (Descargar → Video 720p crea su trabajo) ni `?job=` en la
+  ventana externa, y la pantalla completa y los atajos son los de YouTube. Lo anterior de esta decisión queda como historia.
 
 ## D6. Errores del servicio → mensajes en español (FR-010, FR-011)
 

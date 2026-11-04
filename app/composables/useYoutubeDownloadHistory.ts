@@ -18,14 +18,17 @@ export function useYoutubeDownloadHistory() {
   })
 
   const more = ref<YoutubeDownloadItem[]>([])
-  const nextCursor = ref<string | null>(null)
+  // Cursor de la última página cargada con «Cargar más»; sin ella manda el de la primera. Derivado (no copiado en un
+  // `watch`): en el servidor los `watch` no se vuelven a ejecutar cuando llegan los datos (ver `useYoutubeHistory`).
+  const laterCursor = ref<{ value: string | null } | null>(null)
+  const nextCursor = computed(() => (laterCursor.value ? laterCursor.value.value : firstPage.value?.nextCursor ?? null))
   const loadingMore = ref(false)
   const moreFailed = ref(false)
-  watch(firstPage, (page) => {
+  watch(firstPage, () => {
     more.value = []
-    nextCursor.value = page?.nextCursor ?? null
+    laterCursor.value = null
     moreFailed.value = false
-  }, { immediate: true })
+  })
 
   // Un video descargado de nuevo sube a la primera página: no se repite si ya venía en una página siguiente.
   const items = computed(() => {
@@ -44,7 +47,7 @@ export function useYoutubeDownloadHistory() {
     try {
       const page = await api<YoutubeDownloadsPage>('/api/youtube/downloads', { query: { ...query, cursor: nextCursor.value } })
       more.value = [...more.value, ...page.items]
-      nextCursor.value = page.nextCursor
+      laterCursor.value = { value: page.nextCursor }
     }
     catch {
       moreFailed.value = true

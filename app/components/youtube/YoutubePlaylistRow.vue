@@ -2,9 +2,15 @@
 // Fila «Listas» de /youtube (FR-016, contracts/ui.md): desplazable en horizontal dentro de su contenedor, sin mover la
 // página, con sus cuatro estados.
 import type { YoutubeFormat, YoutubePlaylist } from '#shared/types/api'
+import type { YoutubeDriveFormat } from '#shared/constants/youtube'
 
 defineProps<{ playlists: YoutubePlaylist[] | null, pending: boolean, error: unknown }>()
-const emit = defineEmits<{ retry: [], open: [playlist: YoutubePlaylist], download: [playlist: YoutubePlaylist, format: YoutubeFormat] }>()
+const emit = defineEmits<{
+  retry: []
+  open: [playlist: YoutubePlaylist]
+  download: [playlist: YoutubePlaylist, format: YoutubeFormat]
+  drive: [playlist: YoutubePlaylist, format: YoutubeDriveFormat]
+}>()
 const headingId = useId()
 </script>
 
@@ -25,6 +31,7 @@ const headingId = useId()
           :playlist="playlist"
           @open="emit('open', $event)"
           @download="(p, format) => emit('download', p, format)"
+          @drive="(p, format) => emit('drive', p, format)"
         />
       </li>
     </ul>

@@ -1,23 +1,19 @@
-// T067 — Ficha y ventana externa (feature 005, US1/US4): la ficha muestra sus estados y abre la ventana con el trabajo
-// listo; la ventana reproduce con `?job=`, ofrece Preparar de nuevo si expiró y se cierra con su botón.
+// T067 — Ficha y ventana externa (feature 005, US1/US4): la ficha muestra sus estados y abre la ventana externa; la
+// ventana monta el reproductor incrustado de YouTube ya en marcha y se cierra con su botón.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mountSuspended } from '@nuxt/test-utils/runtime'
-import type { YoutubeJob, YoutubeVideoDetail } from '#shared/types/api'
+import type { YoutubeVideoDetail } from '#shared/types/api'
 import VideoPage from '~/pages/youtube/[id]/index.vue'
 import WindowPage from '~/pages/youtube/[id]/ventana.vue'
 import type { Queryable } from './helpers/api'
 import { buttonsWithText, failWith, flush, mockApi, resetCalls } from './helpers/api'
 
-const JOB = 'd'.repeat(32)
 const button = (wrapper: Queryable, text: string) => buttonsWithText(wrapper, text)[0]
 
 const detail = (changes: Partial<YoutubeVideoDetail> = {}): YoutubeVideoDetail => ({
   videoId: 'okShortVid1', title: 'Alabanza', channel: 'Iglesia', durationSeconds: 185, thumbnailUrl: null,
   availableHeights: [720], downloadable: true, reason: null, ...changes,
 })
-const done: YoutubeJob = {
-  jobId: JOB, status: 'done', format: 'mp4_720', progress: 100, items: [], downloadUrl: 'https://svc.test/file', filename: 'a.mp4', sizeBytes: 1, expiresAt: null,
-}
 
 let open: ReturnType<typeof vi.spyOn>
 let close: ReturnType<typeof vi.spyOn>
@@ -32,7 +28,6 @@ beforeEach(() => {
   }
   useMe().loaded.value = true
   mockApi('GET', '/api/me', () => useMe().me.value)
-  useState('youtube-preview-jobs').value = {}
   useState('youtube-downloads').value = { rows: [], groups: [] }
   mockApi('GET', '/api/youtube/health', { state: 'up' })
   mockApi('GET', '/api/youtube/history', { items: [], nextCursor: null })
@@ -47,6 +42,17 @@ afterEach(() => {
 })
 
 describe('/youtube/:id', () => {
+  it('el reproductor aparece al instante, antes de que lleguen los datos del servicio', async () => {
+    mockApi('GET', '/api/youtube/videos/okShortVid1', () => new Promise(() => {}))
+    const wrapper = await mountSuspended(VideoPage, { route: '/youtube/okShortVid1' })
+    await flush(10)
+    expect(wrapper.find('[aria-busy="true"]').exists()).toBe(true)
+    expect(wrapper.find('button[aria-label="Reproducir"]').exists()).toBe(true)
+    await wrapper.get('button[aria-label="Reproducir"]').trigger('click')
+    expect(wrapper.get('iframe').attributes('src')).toContain('/embed/okShortVid1?')
+    expect(wrapper.find('h1').exists()).toBe(false)
+  })
+
   it('muestra la ficha y su historial reciente vacío', async () => {
     const wrapper = await mountSuspended(VideoPage, { route: '/youtube/okShortVid1' })
     await flush(10)
@@ -67,6 +73,9 @@ describe('/youtube/:id', () => {
     const wrapper = await mountSuspended(VideoPage, { route: '/youtube/okShortVid1' })
     await flush(10)
     expect(wrapper.text()).toContain('Despertando el servicio')
+    // El reproductor no depende del servicio: está ahí, con la miniatura de YouTube, aunque la ficha no cargue.
+    expect(wrapper.find('button[aria-label="Reproducir"]').exists()).toBe(true)
+    expect(wrapper.get('img').attributes('src')).toBe('https://i.ytimg.com/vi/okShortVid1/hqdefault.jpg')
     expect(button(wrapper, 'Reintentar')).toBeDefined()
   })
 
@@ -79,6 +88,8 @@ describe('/youtube/:id', () => {
     await button(busy, 'Reintentar')!.trigger('click')
     await flush(10)
     expect(busy.get('h1').text()).toBe('Alabanza')
+    // Con la ficha cargada el aviso del servicio ya no se muestra.
+    expect(busy.text()).not.toContain('El servicio está ocupado')
     busy.unmount()
 
     clearNuxtData()
@@ -86,6 +97,7 @@ describe('/youtube/:id', () => {
     const broken = await mountSuspended(VideoPage, { route: '/youtube/okShortVid1' })
     await flush(10)
     expect(broken.text()).toContain('No pudimos cargar el video')
+    expect(broken.find('button[aria-label="Reproducir"]').exists()).toBe(true)
     broken.unmount()
 
     clearNuxtData()
@@ -93,6 +105,14 @@ describe('/youtube/:id', () => {
     const missing = await mountSuspended(VideoPage, { route: '/youtube/okShortVid1' })
     await flush(10)
     expect(missing.get('[role="alert"]').text()).toMatch(/No encontramos ese video|No pudimos cargar el video/)
+  })
+
+  it('si la ficha cargó aunque el último ping siga en «despertando», no muestra el aviso (el servicio ya respondió)', async () => {
+    mockApi('GET', '/api/youtube/health', failWith(502))
+    const wrapper = await mountSuspended(VideoPage, { route: '/youtube/okShortVid1' })
+    await flush(10)
+    expect(wrapper.get('h1').text()).toBe('Alabanza')
+    expect(wrapper.text()).not.toContain('Despertando el servicio')
   })
 
   it('con el servicio caído (down) pero la ficha cargada, muestra el aviso; Crear lista abre el diálogo', async () => {
@@ -103,44 +123,25 @@ describe('/youtube/:id', () => {
     expect(wrapper.text()).toContain('El servicio de descargas no está disponible ahora')
     await button(wrapper, 'Crear lista')!.trigger('click')
     await vi.waitFor(() => expect(wrapper.find('dialog').exists()).toBe(true), { timeout: 5000 })
-    await button(wrapper, 'Abrir en ventana nueva')?.trigger('click')
-    expect(open).not.toHaveBeenCalled()
   })
 
-  it('con la copia lista, «Abrir en ventana nueva» abre la ventana externa con el trabajo', async () => {
-    useYoutubeDownloads().setPreviewJob('okShortVid1', JOB)
-    mockApi('GET', `/api/youtube/jobs/${JOB}`, done)
+  it('muestra el reproductor con su miniatura y «Abrir en ventana nueva» abre la ventana externa', async () => {
     const wrapper = await mountSuspended(VideoPage, { route: '/youtube/okShortVid1' })
     await flush(15)
-    const action = button(wrapper, 'Abrir en ventana nueva')!
-    expect(action.attributes('disabled')).toBeUndefined()
-    await action.trigger('click')
-    expect(open).toHaveBeenCalledWith(`/youtube/okShortVid1/ventana?job=${JOB}`, 'cloudy-player', 'popup,width=1100,height=640')
+    expect(wrapper.find('[aria-label="Reproducir: Alabanza"]').exists()).toBe(true)
+    expect(wrapper.find('iframe').exists()).toBe(false)
+    await button(wrapper, 'Abrir en ventana nueva')!.trigger('click')
+    expect(open).toHaveBeenCalledWith('/youtube/okShortVid1/ventana', 'cloudy-player', 'popup,width=1100,height=640')
   })
 })
 
 describe('/youtube/:id/ventana', () => {
-  it('con ?job= vigente reproduce directo', async () => {
-    mockApi('GET', `/api/youtube/jobs/${JOB}`, done)
-    const wrapper = await mountSuspended(WindowPage, { route: `/youtube/okShortVid1/ventana?job=${JOB}` })
+  it('reproduce el video incrustado ya en marcha, con su título; Cerrar ventana cierra', async () => {
+    const wrapper = await mountSuspended(WindowPage, { route: '/youtube/okShortVid1/ventana' })
     await flush(15)
-    expect(wrapper.get('video').attributes('src')).toBe('https://svc.test/file')
     expect(wrapper.get('h1').text()).toBe('Alabanza')
-  })
-
-  it('con un trabajo expirado ofrece Preparar de nuevo; Cerrar ventana cierra', async () => {
-    mockApi('GET', `/api/youtube/jobs/${JOB}`, failWith(404, { code: 'expired' }))
-    const wrapper = await mountSuspended(WindowPage, { route: `/youtube/okShortVid1/ventana?job=${JOB}` })
-    await flush(15)
-    expect(wrapper.text()).toContain('La copia expiró')
-    expect(button(wrapper, 'Preparar de nuevo')).toBeDefined()
+    expect(wrapper.get('iframe').attributes('src')).toContain('https://www.youtube-nocookie.com/embed/okShortVid1?autoplay=1')
     await button(wrapper, 'Cerrar ventana')!.trigger('click')
     expect(close).toHaveBeenCalled()
-  })
-
-  it('sin job (o con uno sin forma) muestra el póster para preparar', async () => {
-    const wrapper = await mountSuspended(WindowPage, { route: '/youtube/okShortVid1/ventana?job=nope' })
-    await flush(10)
-    expect(wrapper.find('[aria-label="Preparar y reproducir"]').exists()).toBe(true)
   })
 })

@@ -2,12 +2,15 @@
 // Barra de la selección múltiple del historial (FR-020): fija abajo, al alcance del pulgar, sobre la bandeja de
 // descargas si está abierta (`--youtube-tray-h`) y respetando el área segura inferior.
 import type { YoutubeFormat } from '#shared/types/api'
+import { YOUTUBE_DRIVE_FORMATS } from '#shared/constants/youtube'
+import type { YoutubeDriveFormat } from '#shared/constants/youtube'
 
 const props = defineProps<{ count: number }>()
-const emit = defineEmits<{ download: [format: YoutubeFormat], clear: [] }>()
+const emit = defineEmits<{ download: [format: YoutubeFormat], drive: [format: YoutubeDriveFormat], clear: [] }>()
 
 const { filesFor } = useYoutubeDownloads()
 const format = ref<YoutubeFormat>('mp3')
+const driveFormat = ref<YoutubeDriveFormat>('mp3')
 const files = computed(() => filesFor(props.count))
 </script>
 
@@ -19,13 +22,24 @@ const files = computed(() => filesFor(props.count))
     aria-label="Selección"
   >
     <div class="flex flex-col gap-2 sm:flex-row sm:items-center">
-      <p class="flex-1 font-medium" role="status">
+      <p class="flex-1 font-medium max-sm:pr-24" role="status">
         {{ pluralize(count, 'seleccionado', 'seleccionados') }}
         <span v-if="files > 1" class="block text-sm font-normal text-base-content/70 sm:inline sm:pl-2">{{ messages.youtube.downloads.filesCount(files) }}</span>
       </p>
       <div class="flex flex-col gap-2 sm:flex-row">
         <YoutubeFormatPicker v-model="format" label="Descargar selección" top block @select="f => emit('download', f)" />
-        <button type="button" class="btn btn-ghost btn-block sm:w-auto" @click="emit('clear')">Limpiar</button>
+        <YoutubeFormatPicker
+          v-model="driveFormat"
+          :label="messages.youtube.drive.action"
+          icon="lucide:hard-drive-upload"
+          :formats="YOUTUBE_DRIVE_FORMATS"
+          :primary="false"
+          top
+          block
+          @select="f => emit('drive', f)"
+        />
+        <!-- En móvil «Limpiar» sube a la fila del conteo para que la barra ocupe menos pantalla. -->
+        <button type="button" class="btn btn-ghost max-sm:absolute max-sm:right-2 max-sm:top-0 sm:w-auto" @click="emit('clear')">Limpiar</button>
       </div>
     </div>
   </div>

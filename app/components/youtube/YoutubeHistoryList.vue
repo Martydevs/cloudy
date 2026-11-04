@@ -6,6 +6,7 @@ import type { YoutubeFormat, YoutubeHistoryItem } from '#shared/types/api'
 import type { YoutubeCardAction } from './YoutubeVideoCard.vue'
 
 const downloads = useYoutubeDownloads()
+const drive = useYoutubeDriveImport()
 const selected = defineModel<string[]>('selected', { default: () => [] })
 const emit = defineEmits<{ download: [videoIds: string[], format: YoutubeFormat], playlist: [video: YoutubeHistoryItem] }>()
 
@@ -25,6 +26,8 @@ async function onAction(key: YoutubeCardAction, video: YoutubeHistoryItem) {
   else if (key === 'playlist') emit('playlist', video)
   else if (key === 'download-mp4') downloads.enqueue([video.videoId], 'mp4_720', video.title)
   else if (key === 'download-mp3') downloads.enqueue([video.videoId], 'mp3', video.title)
+  else if (key === 'drive-mp4') void drive.start({ videoId: video.videoId, title: video.title }, 'mp4_720')
+  else if (key === 'drive-mp3') void drive.start({ videoId: video.videoId, title: video.title }, 'mp3')
   else if (await history.remove(video)) selected.value = selected.value.filter(id => id !== video.videoId)
 }
 
@@ -35,7 +38,13 @@ watch(sentinelVisible, (visible) => {
   if (visible) loadMore()
 })
 
-defineExpose({ refresh })
+/** Los videos cargados con esos IDs, en el orden pedido (la selección puede incluir páginas ya cargadas con «Cargar más»). */
+function videosOf(ids: readonly string[]): YoutubeHistoryItem[] {
+  const byId = new Map(items.value.map(video => [video.videoId, video]))
+  return ids.flatMap(id => byId.get(id) ?? [])
+}
+
+defineExpose({ refresh, videosOf })
 </script>
 
 <template>

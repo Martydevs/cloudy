@@ -28,6 +28,12 @@ describe('YoutubeFormatPicker', () => {
     wrapper.unmount()
   })
 
+  it('con `formats` solo ofrece esas opciones (Guardar en el drive: audio o video 720p)', async () => {
+    const wrapper = await mountSuspended(YoutubeFormatPicker, { props: { label: 'Guardar en el drive', formats: ['mp4_720', 'mp3'] } })
+    await wrapper.get('button[aria-haspopup="menu"]').trigger('click')
+    expect(wrapper.findAll('[role="menuitemradio"]').map(o => o.text().trim())).toEqual(['Video 720p', 'Audio MP3'])
+  })
+
   it('solo icono: nombre accesible del label, menú alineado a la derecha; con alturas < 1080 avisa en esa opción', async () => {
     const wrapper = await mountSuspended(YoutubeFormatPicker, { props: { label: 'Descargar Domingo', iconOnly: true, heights: [240, 480] } })
     const trigger = wrapper.get('button[aria-label="Descargar Domingo"]')

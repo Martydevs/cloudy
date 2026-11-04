@@ -9,7 +9,7 @@ const props = withDefaults(defineProps<{ video: YoutubeHistoryItem, selectable?:
   selected: false,
   compact: false,
 })
-export type YoutubeCardAction = 'open' | 'playlist' | 'download-mp4' | 'download-mp3' | 'remove'
+export type YoutubeCardAction = 'open' | 'playlist' | 'download-mp4' | 'download-mp3' | 'drive-mp4' | 'drive-mp3' | 'remove'
 
 const emit = defineEmits<{ toggle: [videoId: string], action: [key: YoutubeCardAction, video: YoutubeHistoryItem] }>()
 
@@ -24,6 +24,8 @@ const menu: ActionMenuItem[] = [
   { key: 'playlist', label: 'Agregar a lista', icon: 'lucide:list-plus' },
   { key: 'download-mp4', label: 'Descargar video 720p', icon: 'lucide:film' },
   { key: 'download-mp3', label: 'Descargar audio MP3', icon: 'lucide:music' },
+  { key: 'drive-mp4', label: 'Guardar en el drive: video 720p', icon: 'lucide:hard-drive-upload' },
+  { key: 'drive-mp3', label: 'Guardar en el drive: audio MP3', icon: 'lucide:hard-drive-upload' },
   { key: 'remove', label: 'Quitar del historial', icon: 'lucide:trash-2', danger: true },
 ]
 </script>

@@ -44,9 +44,12 @@ Cada fila es la **Independent Test** de su historia; pasar `agent-browser` con e
 | 13 | US3 | Abrir tres videos distintos y volver a `/youtube` | los tres en el historial, el último arriba con tu nombre y "hace N" |
 | 14 | US3 | Marcar los tres → **Descargar selección** (MP3) | barra "3 seleccionados"; un `.zip` con 3 pistas; **Limpiar** deja la barra oculta |
 | 15 | US3 | Quitar una entrada del historial | confirma, desaparece; si estaba en una lista, la lista la conserva |
-| 16 | US4 | En un video, **Reproducir** → esperar → **Pantalla completa** → `Esc` | prepara con progreso, reproduce, ocupa la pantalla y sale con `Esc` |
-| 17 | US4 | **Abrir en ventana nueva** | ventana separada con `/youtube/<id>/ventana?job=…`, reproduce desde 0; con trabajo expirado ofrece **Preparar de nuevo** |
-| 18 | US4 | Teclado solamente en el reproductor | Espacio, ←/→, ↑/↓ y `F` funcionan; todos los botones tienen nombre accesible |
+| 16 | US4 | En un video, **Reproducir** → botón de pantalla completa de YouTube → `Esc` | el reproductor de YouTube arranca al instante (sin preparar nada), ocupa la pantalla y sale con `Esc` |
+| 17 | US4 | **Abrir en ventana nueva** | ventana separada con `/youtube/<id>/ventana`, el video arranca solo desde 0, sin barra lateral |
+| 18 | US4 | Teclado solamente en el reproductor | Tab llega al botón Reproducir y Enter monta el reproductor; luego los atajos son los de YouTube |
+| 19 | FR-033 | En `/youtube`, abrir el menú ⋯ de una tarjeta del historial → **Guardar en el drive: audio MP3** | sin diálogo; la bandeja muestra la fila «Guardar en el drive» con avance y termina en «ya está en el drive» con **Ver en el drive**; el archivo `.mp3` está en la raíz de `/archivos` |
+| 20 | FR-033 | Marcar 3 videos → **Guardar en el drive → Audio MP3** → desmarcar uno → **Subir 2 al drive** | el diálogo muestra las 3 casillas marcadas; se suben solo 2, de uno en uno (el segundo «En cola» mientras sube el primero); la selección se limpia; un fallo (stub) deja **Reintentar** en su fila sin detener al resto |
+| 21 | FR-033 | En la tarjeta de una lista abrir **Opciones de {lista}** → **Guardar en el drive: video 720p** | el menú trae 3 descargas + 2 guardados y no se recorta dentro de la fila; el diálogo lista los videos de la lista con la nota de 100 MB; **Cancelar** no sube nada |
 
 ## 3. Verificación de rendimiento y accesibilidad
 

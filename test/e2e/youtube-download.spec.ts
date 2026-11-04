@@ -11,6 +11,7 @@ import {
   email,
   login,
   resetCloudyStub,
+  routeYoutubeEmbed,
   routeYoutubeThumbnails,
   setCloudyStubState,
   setProfile,
@@ -32,6 +33,7 @@ async function editorPage(viewport: { width: number, height: number } = viewport
     session = await page.context().cookies()
   }
   await routeYoutubeThumbnails(page)
+  await routeYoutubeEmbed(page)
   return page
 }
 
@@ -59,8 +61,10 @@ describe('US1 · pegar un enlace, ver y descargar', () => {
     await page.waitForURL(url => url.pathname === '/youtube/okShortVid1')
     expect(new URL(page.url()).search).toBe('')
     await expect.poll(() => page.getByRole('heading', { name: 'Alabanza de prueba' }).isVisible()).toBe(true)
-    expect(await page.getByText('Canal Cloudy').isVisible()).toBe(true)
-    expect(await page.getByText('3:05').isVisible()).toBe(true)
+    // Acotado a los datos del video: el historial reciente de abajo también muestra «Canal Cloudy».
+    const meta = page.getByRole('region', { name: 'Datos del video' })
+    expect(await meta.getByText('Canal Cloudy').isVisible()).toBe(true)
+    expect(await meta.getByText('3:05').isVisible()).toBe(true)
     expect(await page.locator('img[src*="i.ytimg.com/vi/okShortVid1"]').count()).toBeGreaterThan(0)
     // Abrir la ficha no prepara el video: la cola de la instancia gratuita queda libre.
     expect((await cloudyStubCalls()).jobsCreated).toBe(0)
@@ -131,10 +135,12 @@ describe('US1 · pegar un enlace, ver y descargar', () => {
       await page.reload()
       await waitForHydration(page)
       await switcher.getByRole('button', { name: 'Descargas' }).click()
+      // La cuadrícula se pide al abrirla: se espera a ver la lista o el estado vacío antes de contar.
+      await page.getByRole('list', { name: 'Videos descargados' }).or(page.getByText('Todavía no hay descargas')).waitFor()
       return tile.count()
     }, { timeout: 15_000 }).toBe(1)
-    await expect(tile).toContainText('Audio MP3')
-    await expect(page.getByRole('heading', { level: 2, name: 'Descargas' })).toBeVisible()
+    expect(await tile.textContent()).toContain('Audio MP3')
+    expect(await page.getByRole('heading', { level: 2, name: 'Descargas' }).isVisible()).toBe(true)
     await tile.click()
     await page.waitForURL(url => url.pathname === '/youtube/okShortVid1')
     await page.close()
@@ -192,20 +198,35 @@ describe('US1 · pegar un enlace, ver y descargar', () => {
     await page.close()
   })
 
-  it('Reproducir prepara la copia con avance y la reproduce', async () => {
+  it('Reproducir no crea trabajos: Video 720p genera el suyo al descargar', async () => {
     await resetCloudyStub()
     const page = await editorPage()
     await openVideo(page, 'okShortVid1')
-    await page.getByRole('button', { name: 'Preparar y reproducir' }).click()
-    await expect.poll(() => page.getByText(/Preparando el video…/).isVisible()).toBe(true)
-    await expect.poll(() => page.locator('video').evaluate((v: HTMLVideoElement) => v.readyState), { timeout: 15000 }).toBeGreaterThanOrEqual(2)
-    expect((await cloudyStubCalls()).formats).toEqual(['mp4_720'])
-    // Video 720p reutiliza la copia ya preparada: no se crea otro trabajo.
+    await page.getByRole('button', { name: /^Reproducir/ }).click()
+    await expect.poll(() => page.locator('iframe[title^="YouTube"]').count()).toBe(1)
+    expect((await cloudyStubCalls()).jobsCreated).toBe(0)
     const download = page.waitForEvent('download')
     await page.getByRole('button', { name: 'Descargar' }).click()
     await page.getByRole('menuitemradio', { name: 'Video 720p' }).click()
     await download
-    expect((await cloudyStubCalls()).jobsCreated).toBe(1)
+    expect((await cloudyStubCalls()).formats).toEqual(['mp4_720'])
+    await page.close()
+  })
+
+  it('Guardar en el drive → Audio MP3 sube el archivo a la raíz del drive', async () => {
+    await resetCloudyStub()
+    const page = await editorPage()
+    await openVideo(page, 'okShortVid1')
+    await page.getByRole('button', { name: 'Guardar en el drive' }).click()
+    expect(await page.getByRole('menuitemradio').allTextContents()).toEqual([expect.stringContaining('Video 720p'), expect.stringContaining('Audio MP3')])
+    await page.getByRole('menuitemradio', { name: 'Audio MP3' }).click()
+    await expect.poll(() => page.getByText(/ya está en el drive/).first().isVisible(), { timeout: 30000 }).toBe(true)
+    expect((await cloudyStubCalls()).formats).toEqual(['mp3'])
+
+    await page.goto(`${E2E_URL}/archivos`)
+    await waitForHydration(page)
+    await expect.poll(() => page.getByText(/Alabanza de prueba.*\.mp3/).first().isVisible()).toBe(true)
+
     await page.close()
   })
 

@@ -72,8 +72,6 @@ function saveFile(url: string, filename: string | null) {
 
 export function useYoutubeDownloads() {
   const state = useState<DownloadsState>('youtube-downloads', () => ({ rows: [], groups: [] }))
-  // Copias de reproducción 720p listas (`videoId → jobId`): solo este composable las toca (research D5).
-  const previewJobs = useState<Record<string, string>>('youtube-preview-jobs', () => ({}))
   const api = useApi()
   const toast = useToast()
   const m = messages.youtube
@@ -89,18 +87,6 @@ export function useYoutubeDownloads() {
   function patch(id: number, changes: Partial<DownloadRow>) {
     const row = findRow(id)
     if (row) Object.assign(row, changes)
-  }
-
-  function setPreviewJob(videoId: string, jobId: string) {
-    previewJobs.value = { ...previewJobs.value, [videoId]: jobId }
-  }
-  function getPreviewJob(videoId: string): string | null {
-    return previewJobs.value[videoId] ?? null
-  }
-  function forgetPreviewJob(videoId: string, jobId?: string) {
-    if (jobId && previewJobs.value[videoId] !== jobId) return
-    const { [videoId]: _, ...rest } = previewJobs.value
-    previewJobs.value = rest
   }
 
   /** El grupo sigue vivo mientras le queden lotes por crear o alguno esté en curso o en pausa. */
@@ -136,24 +122,6 @@ export function useYoutubeDownloads() {
     const row = findRow(rowId)
     if (!row) return
     patch(rowId, { status: 'creating', message: null, rejected: [], job: null, saved: false })
-
-    // Video 720p de un solo video: se reutiliza la copia de reproducción ya lista, sin otra conversión.
-    const [single] = row.videoIds
-    const previewId = row.format === 'mp4_720' && row.videoIds.length === 1 ? getPreviewJob(single!) : null
-    if (previewId) {
-      try {
-        const job = await api<YoutubeJob>(`/api/youtube/jobs/${previewId}`)
-        if (job.status !== 'failed' && job.status !== 'expired') {
-          patch(rowId, { job, status: job.status })
-          if (job.status === 'done') finish(rowId)
-          return
-        }
-      }
-      catch {
-        // Expiró o no responde: se crea uno nuevo abajo.
-      }
-      forgetPreviewJob(single!, previewId)
-    }
 
     try {
       const job = await api<YoutubeJob>('/api/youtube/jobs', { method: 'POST', body: { videoIds: row.videoIds, format: row.format } })
@@ -218,7 +186,6 @@ export function useYoutubeDownloads() {
     catch (error) {
       if (!isExpired(error)) return // Un sondeo fallido se reintenta en el siguiente.
       patch(rowId, { status: 'expired', message: m.downloads.expired })
-      if (row.videoIds.length === 1) forgetPreviewJob(row.videoIds[0]!, row.job.jobId)
       if (ACTIVE.has(before)) await startNext(row.groupId)
     }
   }
@@ -311,9 +278,6 @@ export function useYoutubeDownloads() {
     cancel,
     retry,
     dismiss,
-    setPreviewJob,
-    getPreviewJob,
-    forgetPreviewJob,
     /** Cuántos archivos producirá una descarga de `count` videos. */
     filesFor: (count: number) => chunkVideoIds(Array.from({ length: count }, (_, i) => String(i))).length,
   }

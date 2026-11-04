@@ -61,6 +61,8 @@ describe('US2 · listas de reproducción', () => {
     await page.getByLabel('Nombre').fill('Domingo e2e')
     await page.getByRole('button', { name: 'Crear lista' }).last().click()
     await expect.poll(() => page.getByText('Lista «Domingo e2e» creada').isVisible()).toBe(true)
+    // El aviso sale antes de refrescar las listas: se espera a que el diálogo se cierre para no chocar con él.
+    await expect.poll(() => page.getByRole('dialog').count()).toBe(0)
 
     await page.getByRole('button', { name: 'Crear lista' }).click()
     await page.getByRole('tab', { name: 'Agregar a una existente' }).click()
@@ -110,6 +112,8 @@ describe('US2 · listas de reproducción', () => {
     await page.getByLabel('Nuevo nombre').fill('Renombrada e2e')
     await page.getByRole('button', { name: 'Guardar' }).click()
     await expect.poll(() => page.getByText('Ahora se llama «Renombrada e2e»').isVisible()).toBe(true)
+    // Igual aquí: el detalle se refresca después del aviso; eliminar antes usaría el nombre anterior.
+    await expect.poll(() => page.getByRole('heading', { name: 'Renombrada e2e' }).isVisible()).toBe(true)
     await page.getByRole('button', { name: 'Eliminar lista' }).click()
     await page.getByRole('button', { name: 'Eliminar lista' }).last().click()
     await expect.poll(() => page.getByText('Se eliminó la lista «Renombrada e2e»').isVisible()).toBe(true)
@@ -126,8 +130,8 @@ describe('US2 · listas de reproducción', () => {
     const page = await pageAs('editor', 'yt-list-a')
     await openYoutube(page)
     const download = page.waitForEvent('download')
-    await page.getByRole('button', { name: 'Descargar Tres e2e' }).click()
-    await page.getByRole('menuitemradio', { name: 'Audio MP3' }).click()
+    await page.getByRole('button', { name: 'Opciones de Tres e2e' }).click()
+    await page.getByRole('menuitem', { name: 'Descargar audio MP3' }).click()
     expect((await download).suggestedFilename()).toMatch(/\.zip$/)
     await expect.poll(() => page.getByText('Este video ya no está disponible en YouTube').first().isVisible()).toBe(true)
     await page.close()
@@ -141,8 +145,8 @@ describe('US2 · listas de reproducción', () => {
     await openYoutube(page)
     const files: string[] = []
     page.on('download', d => files.push(d.suggestedFilename()))
-    await page.getByRole('button', { name: 'Descargar Doce e2e' }).click()
-    await page.getByRole('menuitemradio', { name: 'Audio MP3' }).click()
+    await page.getByRole('button', { name: 'Opciones de Doce e2e' }).click()
+    await page.getByRole('menuitem', { name: 'Descargar audio MP3' }).click()
     await expect.poll(() => page.getByText('Recibirás 2 archivos').isVisible()).toBe(true)
     await expect.poll(() => files.length, { timeout: 30000 }).toBe(2)
     expect(files.every(name => name.endsWith('.zip'))).toBe(true)

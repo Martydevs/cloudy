@@ -1,5 +1,5 @@
 // T022 — Orquestación de descargas en el navegador (feature 005, research D2–D5): un solo trabajo por gesto, lotes de
-// uno en uno, guardado al terminar, expiración, reutilización de la copia 720p y sondeo que se pausa sin conexión.
+// uno en uno, guardado al terminar, expiración y sondeo que se pausa sin conexión.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mockNuxtImport } from '@nuxt/test-utils/runtime'
 import { effectScope } from 'vue'
@@ -33,7 +33,6 @@ let click: ReturnType<typeof vi.spyOn>
 
 beforeEach(() => {
   useState('youtube-downloads').value = { rows: [], groups: [] }
-  useState('youtube-preview-jobs').value = {}
   useToast().toasts.value = []
   resetCalls()
   created = 0
@@ -171,29 +170,6 @@ describe('useYoutubeDownloads', () => {
     expect(downloads.rows.value[0]!.status).toBe('queued')
   })
 
-  it('Video 720p reutiliza la copia de reproducción lista sin crear otro trabajo', async () => {
-    const downloads = useYoutubeDownloads()
-    const preview = jobId(99)
-    downloads.setPreviewJob('okShortVid1', preview)
-    expect(downloads.getPreviewJob('okShortVid1')).toBe(preview)
-    mockApi('GET', `/api/youtube/jobs/${preview}`, done(preview, { format: 'mp4_720', filename: 'Alabanza.mp4' }))
-    downloads.enqueue(['okShortVid1'], 'mp4_720', 'Alabanza')
-    await flush()
-    expect(posts()).toHaveLength(0)
-    expect(downloads.rows.value[0]).toMatchObject({ status: 'done', saved: true })
-  })
-
-  it('si la copia de reproducción expiró, se crea un trabajo nuevo y se olvida la copia', async () => {
-    const downloads = useYoutubeDownloads()
-    const preview = jobId(98)
-    downloads.setPreviewJob('okShortVid1', preview)
-    mockApi('GET', `/api/youtube/jobs/${preview}`, failWith(404, { code: 'expired' }))
-    downloads.enqueue(['okShortVid1'], 'mp4_720', 'Alabanza')
-    await flush()
-    expect(posts()).toHaveLength(1)
-    expect(downloads.getPreviewJob('okShortVid1')).toBeNull()
-  })
-
   it('cancelar borra el trabajo, avisa y no crea los lotes que faltaban', async () => {
     mockApi('DELETE', `/api/youtube/jobs/${jobId(1)}`, null)
     const downloads = useYoutubeDownloads()
@@ -256,26 +232,6 @@ describe('useYoutubeDownloads', () => {
     await downloads.retry(999)
     await downloads.saveAgain(999)
     await downloads.dismiss(999)
-  })
-
-  it('la copia de reproducción aún preparándose se sigue sondeando; si falló, se crea otra', async () => {
-    const downloads = useYoutubeDownloads()
-    downloads.setPreviewJob('okShortVid1', jobId(97))
-    mockApi('GET', `/api/youtube/jobs/${jobId(97)}`, job(jobId(97), { status: 'running', format: 'mp4_720' }))
-    downloads.enqueue(['okShortVid1'], 'mp4_720', 'Alabanza')
-    await flush()
-    expect(posts()).toHaveLength(0)
-    expect(downloads.rows.value[0]!.status).toBe('running')
-
-    useState('youtube-downloads').value = { rows: [], groups: [] }
-    downloads.setPreviewJob('lowResVid01', jobId(96))
-    mockApi('GET', `/api/youtube/jobs/${jobId(96)}`, job(jobId(96), { status: 'failed', format: 'mp4_720' }))
-    downloads.enqueue(['lowResVid01'], 'mp4_720', 'Bajo')
-    await flush()
-    expect(posts()).toHaveLength(1)
-    expect(downloads.getPreviewJob('lowResVid01')).toBeNull()
-    downloads.forgetPreviewJob('okShortVid1', 'otro')
-    expect(downloads.getPreviewJob('okShortVid1')).toBe(jobId(97))
   })
 
   it('filesFor cuenta los archivos que recibirá la persona', () => {

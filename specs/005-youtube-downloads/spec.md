@@ -41,6 +41,13 @@ descargarse. Los archivos y los trabajos son temporales (el servicio los borra a
   de más de **30 minutos**, en vivo o de duración desconocida, y no ofrece reproducción en streaming: solo archivos
   descargables. De ahí los supuestos de la sección Assumptions.
 
+### Session 2026-11-04
+
+- Directiva del usuario: replicar **Guardar en el drive** (ya existente en la página de un video) en el historial, la
+  barra de selección y las listas, con una lista de casillas para elegir qué videos subir cuando son varios (FR-033).
+- Decisiones: el avance de estas subidas se ve en una sección de la bandeja de descargas; se elige el formato primero
+  y luego los videos; las subidas en lote van de una en una.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Pegar un enlace, ver el video y descargarlo como video o audio (Priority: P1) 🎯 MVP
@@ -244,9 +251,10 @@ sale con Escape; abrir la ventana externa y comprobar que reproduce el mismo vid
 - **FR-017**: Solo la autora o autor de una lista y los administradores MUST poder renombrarla o eliminarla; eliminar
   MUST pedir confirmación y no elimina los videos del historial.
 - **FR-018**: Un video MUST aparecer una sola vez por lista; agregar uno repetido se informa sin duplicar.
-- **FR-019**: En la fila Listas, cada lista MUST tener un botón de descarga que aparezca al pasar el cursor o enfocar
+- **FR-019**: En la fila Listas, cada lista MUST tener un botón de opciones (⋯) que aparezca al pasar el cursor o enfocar
   con teclado en escritorio y que sea visible de forma permanente en teléfono y tabletas (ninguna acción depende solo
-  de `hover`). Pide el formato y descarga todos sus videos.
+  de `hover`). Su menú agrupa **Descargar** (video 720p, video 1080p, audio MP3: descarga todos sus videos) y
+  **Guardar en el drive** (FR-033).
 - **FR-020**: Descargar una lista o una selección de más de 10 videos MUST dividirse en lotes de hasta 10, procesarse de
   forma ordenada y mostrar el avance por lote; cada lote entrega un solo archivo `.zip`.
 - **FR-021**: Cuando algunos videos de un lote fallan, Cloudy MUST entregar los que sí se bajaron e informar cuáles
@@ -279,6 +287,13 @@ sale con Escape; abrir la ventana externa y comprobar que reproduce el mismo vid
   rápidos: un mismo gesto crea un solo trabajo.
 - **FR-032**: Las listas y el historial MUST guardar solo lo necesario para mostrarse (ID del video, título, canal,
   duración, miniatura y autoría); no se guardan los archivos descargados.
+- **FR-033**: **Guardar en el drive** (Video 720p o Audio MP3, a la raíz del drive) MUST estar disponible, además de en la
+  página de un video, en el menú de cada tarjeta del historial, en la barra de selección del historial y en el menú de
+  opciones de cada lista. Un solo video se sube directo; **varios** (selección o lista) MUST mostrar antes una lista con
+  casillas, todas marcadas por defecto, para que la persona decida cuáles subir. Las subidas en lote MUST ejecutarse de
+  una en una (cada archivo pasa entero por el navegador, tope de 100 MB), mostrar su estado (en cola, preparando,
+  descargando, subiendo, listo, falló con **Reintentar**) en la bandeja de descargas y sobrevivir a la navegación.
+  Un video que ya se está guardando no se vuelve a encolar.
 
 ### Key Entities *(include if feature involves data)*
 

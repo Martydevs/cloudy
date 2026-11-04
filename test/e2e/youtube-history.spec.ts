@@ -3,6 +3,7 @@
 import { createPage, setup } from '@nuxt/test-utils/e2e'
 import type { Cookie, Page } from 'playwright-core'
 import { describe, expect, it } from 'vitest'
+import { YOUTUBE_HISTORY_PAGE } from '../../shared/constants/youtube'
 import {
   E2E_URL,
   email,
@@ -62,6 +63,28 @@ describe('US3 · historial y descarga por lotes', () => {
     await expect.poll(async () => (await cards(page).first().innerText()).includes('Alabanza de prueba')).toBe(true)
     const [{ count }] = await sql`SELECT count(*)::int AS count FROM youtube_videos WHERE video_id = 'okShortVid1'` as { count: number }[]
     expect(count).toBe(1)
+    await page.close()
+  })
+
+  it('con más de una página, el servidor ya pinta «Cargar más» y la hidratación no se desajusta (regresión)', async () => {
+    const page = await createPage(undefined, { viewport: viewports.phone })
+    await signedInAs(page, 'editor', 'yt-history')
+    await routeYoutubeThumbnails(page)
+    const errors: string[] = []
+    page.on('console', (message) => { if (message.type() === 'error') errors.push(message.text()) })
+    const viewer = await profileUserId(email('yt-history'))
+    await seedYoutubeHistory(viewer, YOUTUBE_HISTORY_PAGE + 4, 'hsp')
+    await page.goto(`${E2E_URL}/youtube`)
+    await waitForHydration(page)
+    await expect.poll(() => cards(page).count()).toBe(YOUTUBE_HISTORY_PAGE)
+    expect(await page.getByRole('button', { name: 'Cargar más' }).count()).toBe(1)
+    // El HTML del servidor (sin JavaScript) ya trae el botón: sin él, Vue marcaba «Hydration completed but contains mismatches».
+    const bare = await createPage(undefined, { viewport: viewports.phone, javaScriptEnabled: false })
+    await bare.context().addCookies(await page.context().cookies())
+    await bare.goto(`${E2E_URL}/youtube`)
+    expect(await bare.getByRole('button', { name: 'Cargar más' }).count()).toBe(1)
+    await bare.close()
+    expect(errors).toEqual([])
     await page.close()
   })
 

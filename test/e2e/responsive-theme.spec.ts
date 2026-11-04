@@ -8,7 +8,7 @@ import { createPage, setup } from '@nuxt/test-utils/e2e'
 import type { BrowserContext, Locator, Page } from 'playwright-core'
 import { afterAll, describe, expect, it } from 'vitest'
 import { ALLOWED_TYPES, getExtension } from '../../shared/constants/files'
-import { E2E_URL, email, ensureAccount, login, routeYoutubeThumbnails, runId, setProfile, signedInAs, testSql, viewports, waitForHydration } from './setup/fixtures'
+import { E2E_URL, email, ensureAccount, login, routeYoutubeEmbed, routeYoutubeThumbnails, runId, setProfile, signedInAs, testSql, viewports, waitForHydration } from './setup/fixtures'
 
 await setup({ host: E2E_URL, browser: true })
 
@@ -209,6 +209,7 @@ async function pageAs(role: 'admin' | 'editor', label: string, viewport: Viewpor
   }
   // Las miniaturas de YouTube se sirven desde un fixture local (los e2e nunca contactan a YouTube).
   await routeYoutubeThumbnails(page)
+  await routeYoutubeEmbed(page)
   return page
 }
 
@@ -420,12 +421,13 @@ describe('US9 · recorrido de rutas (T151)', () => {
 
       for (const theme of THEMES) {
         await page.context().addCookies([{ name: 'cloudy-theme', value: theme, url: E2E_URL }])
-        for (const [path, current] of [['/', null], ['/actividad', 'page']] as const) {
+        // El último enlace del menú de la administradora es YouTube.
+        for (const [path, current] of [['/', null], ['/youtube', 'page']] as const) {
           await page.goto(`${E2E_URL}${path}`)
           await waitForHydration(page)
           const ring = await ringOnLastLink()
           expectRing(ring, `${path} · ${theme}`)
-          expect(ring!.label).toBe('Actividad')
+          expect(ring!.label).toBe('YouTube')
           expect(ring!.current).toBe(current)
         }
       }

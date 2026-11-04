@@ -262,6 +262,9 @@ export async function startCloudyApiStub(): Promise<{ url: string, close: () => 
         'content-type': out.type,
         'content-disposition': `attachment; filename*=UTF-8''${encodeURIComponent(out.name)}`,
         'accept-ranges': 'bytes',
+        // Como el servicio real (`ALLOWED_ORIGINS`): el navegador baja el archivo para guardarlo en el drive.
+        'access-control-allow-origin': '*',
+        'access-control-expose-headers': 'Content-Disposition, Content-Length',
       }
       const range = /^bytes=(\d*)-(\d*)$/.exec(req.headers.range ?? '')
       if (range) {

@@ -96,6 +96,23 @@ describe('POST /api/uploads/:fileId/complete', () => {
     expect(s3.deleteMany).not.toHaveBeenCalled()
   })
 
+  it('una importación de YouTube deja su origen en la actividad; un origen no válido es 422 sin tocar nada', async () => {
+    s3.head.mockResolvedValueOnce({ size: 8386 }).mockResolvedValueOnce(null)
+    s3.readRange.mockResolvedValueOnce(JPEG)
+    const fake = installNitro([[uploading()], [], [fileRow()], []])
+    const handler = await loadHandler('api/uploads/[fileId]/complete.post.ts')
+    await handler(makeEvent({ params: { fileId: UUID }, body: { source: { videoId: 'okShortVid1', format: 'mp3' } } }))
+    expect(fake.calls.filter(c => c.method === 'values').map(c => c.args[0])).toEqual([
+      expect.objectContaining({ action: 'file.upload', meta: { size: 8386, source: 'youtube', videoId: 'okShortVid1', format: 'mp3' } }),
+    ])
+
+    const none = installNitro([])
+    for (const source of [{ videoId: 'okShortVid1', format: 'mp4_1080' }, { videoId: 'corto', format: 'mp3' }, 'youtube']) {
+      await expectStatus(Promise.resolve(handler(makeEvent({ params: { fileId: UUID }, body: { source } }))), 422)
+    }
+    expect(none.calls).toHaveLength(0)
+  })
+
   it('una miniatura demasiado grande se descarta sin afectar al archivo', async () => {
     s3.head.mockResolvedValueOnce({ size: 8386 }).mockResolvedValueOnce({ size: 5_000_000 })
     s3.readRange.mockResolvedValueOnce(JPEG)

@@ -45,6 +45,13 @@ describe('YoutubeVideoCard', () => {
     await wrapper.findAll('[role="menuitem"]').find(b => b.text() === 'Quitar del historial')!.trigger('click')
     expect(wrapper.emitted('action')?.[0]?.[0]).toBe('remove')
 
+    // «Guardar en el drive»: video 720p y audio MP3.
+    await wrapper.get('[aria-label="Acciones de Alabanza"]').trigger('click')
+    await wrapper.findAll('[role="menuitem"]').find(b => b.text() === 'Guardar en el drive: video 720p')!.trigger('click')
+    await wrapper.get('[aria-label="Acciones de Alabanza"]').trigger('click')
+    await wrapper.findAll('[role="menuitem"]').find(b => b.text() === 'Guardar en el drive: audio MP3')!.trigger('click')
+    expect(wrapper.emitted('action')?.slice(1).map(a => a[0])).toEqual(['drive-mp4', 'drive-mp3'])
+
     const compact = await mountSuspended(YoutubeVideoCard, { props: { video: video(), compact: true } })
     expect(compact.find('[aria-label="Acciones de Alabanza"]').exists()).toBe(false)
     expect(compact.get('article').classes()).toContain('snap-start')

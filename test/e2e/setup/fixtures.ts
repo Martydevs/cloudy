@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url'
 import { randomUUID } from 'node:crypto'
 import { neon } from '@neondatabase/serverless'
 import { inject } from 'vitest'
-import type { Page } from 'playwright-core'
+import type { BrowserContext, Page } from 'playwright-core'
 import { ALLOWED_TYPES, getExtension } from '../../../shared/constants/files'
 import { readEnvFile, requireVar } from '../../../scripts/env'
 import { E2E_URL } from './constants'
@@ -296,8 +296,20 @@ export const resetCloudyStub = () => cloudyStubRequest('/__stub/reset', {})
  * Las miniaturas apuntan a `i.ytimg.com` como las reales; en los e2e se sirven desde un fixture local para que el
  * navegador nunca contacte a YouTube.
  */
-export async function routeYoutubeThumbnails(page: Page) {
+export async function routeYoutubeThumbnails(page: Page | BrowserContext) {
   await page.route('https://i.ytimg.com/**', route => route.fulfill({ path: fixture('foto.jpg'), contentType: 'image/jpeg' }))
+}
+
+/**
+ * El reproductor incrusta `youtube-nocookie.com/embed/<id>`; en los e2e el iframe responde una página mínima local
+ * (con el ID visible) para que el navegador nunca contacte a YouTube.
+ */
+/** Con un `BrowserContext` también cubre las ventanas que abra la página (se instala antes de que existan). */
+export async function routeYoutubeEmbed(page: Page | BrowserContext) {
+  await page.route('https://www.youtube-nocookie.com/embed/**', (route) => {
+    const id = new URL(route.request().url()).pathname.split('/').pop()
+    return route.fulfill({ contentType: 'text/html', body: `<!doctype html><title>embed</title><p id="embed-id">${id}</p>` })
+  })
 }
 
 /** Siembra `count` videos en el historial con `viewer` como quien los abrió (más reciente primero). */

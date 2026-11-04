@@ -1,6 +1,7 @@
 // Validadores de la página YouTube (feature 005, contracts/api.md § Validadores) y lectura del enlace pegado
 // (research D13). Cliente y servidor usan las mismas reglas.
 import {
+  YOUTUBE_DRIVE_FORMATS,
   YOUTUBE_FORMAT_VALUES,
   YOUTUBE_HISTORY_MAX_LIMIT,
   YOUTUBE_HISTORY_PAGE,
@@ -41,6 +42,12 @@ export const playlistName = () => str({ max: YOUTUBE_PLAYLIST_NAME_MAX })
 export const youtubeJobInput = object({
   videoIds: videoIdList(),
   format: oneOf(YOUTUBE_FORMAT_VALUES as readonly ['mp4_720', 'mp4_1080', 'mp3'], 'Formato no válido'),
+})
+
+/** Origen de un archivo que se importó de YouTube al drive: queda en los metadatos del registro de actividad. */
+export const youtubeImportSource = object({
+  videoId: youtubeVideoId(),
+  format: oneOf(YOUTUBE_DRIVE_FORMATS, 'Formato no válido'),
 })
 
 export const youtubePlaylistInput = object({

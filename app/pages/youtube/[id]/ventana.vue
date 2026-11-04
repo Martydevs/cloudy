@@ -1,8 +1,8 @@
 <script setup lang="ts">
-// Ventana externa del reproductor (FR-013, research D14): una página de Cloudy (misma sesión) con el mismo reproductor
-// ocupando la ventana. Lee `?job=` y reproduce la copia ya preparada; si expiró, ofrece Preparar de nuevo.
+// Ventana externa del reproductor (FR-013, research D14): una página de Cloudy (misma sesión) con el reproductor
+// incrustado de YouTube ocupando la ventana; arranca sola porque se abre con un clic.
 import type { YoutubeVideoDetail } from '#shared/types/api'
-import { YOUTUBE_JOB_ID_RE, YOUTUBE_VIDEO_ID_RE } from '#shared/constants/youtube'
+import { YOUTUBE_VIDEO_ID_RE } from '#shared/constants/youtube'
 
 definePageMeta({
   layout: 'player',
@@ -13,10 +13,6 @@ definePageMeta({
 
 const route = useRoute()
 const videoId = computed(() => String(route.params.id ?? ''))
-const initialJobId = computed(() => {
-  const job = String(route.query.job ?? '')
-  return YOUTUBE_JOB_ID_RE.test(job) ? job : null
-})
 
 // Los datos del video para el título y el póster (la ficha ya lo registró en el historial).
 const { data: video } = useApiFetch<YoutubeVideoDetail>(() => `/api/youtube/videos/${videoId.value}`, { server: false, lazy: true })
@@ -39,12 +35,12 @@ function closeWindow() {
       </button>
     </header>
     <div class="flex min-h-0 flex-1">
-      <LazyYoutubePlayer
+      <YoutubePlayer
         :video-id="videoId"
         :poster="video?.thumbnailUrl ?? null"
         :title="title"
-        :initial-job-id="initialJobId"
         fill
+        autoplay
       />
     </div>
   </div>

@@ -15,6 +15,7 @@ const badges = computed(() => ({ '/solicitudes': pendingCount.value + openAccess
 const upload = useUploadDialog()
 // Bandeja de descargas de YouTube (feature 005): se monta, diferida, solo cuando hay trabajos.
 const youtubeDownloads = useYoutubeDownloads()
+const youtubeDrive = useYoutubeDriveImport()
 
 // El panel móvil se cierra al navegar, con Esc y al pasar a escritorio (edge case).
 // `afterEach` y no `useRoute()`: la ruta se actualiza recién cuando la página nueva terminó de
@@ -100,6 +101,6 @@ watch(phoneOpen, async (open) => {
       />
     </div>
     <LazyUploadDialog v-if="upload.isOpen.value" :folder-id="upload.folderId.value" @close="upload.close()" @uploaded="upload.notifyUploaded()" />
-    <LazyYoutubeDownloadTray v-if="youtubeDownloads.active.value" />
+    <LazyYoutubeDownloadTray v-if="youtubeDownloads.active.value || youtubeDrive.hasImports.value" />
   </div>
 </template>
