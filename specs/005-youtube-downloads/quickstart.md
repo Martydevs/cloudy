@@ -87,10 +87,14 @@ navegador (pestaña Network) durante la verificación de la fase.
 
 | Medición | Meta | Resultado |
 |----------|------|-----------|
-| JS inicial de `/youtube` (gzip) | ≤ 250 KB | La feature agrega ≈ 6,5 KB gzip (página 4,6 + layout 1,9) al JS inicial; total por ruta: _pendiente de la verificación en navegador_ |
-| JS inicial de `/youtube/<id>` (gzip) | ≤ 250 KB | Reproductor diferido; total por ruta: _pendiente de la verificación en navegador_ |
-| CLS de `/youtube` y `/youtube/<id>` | ≤ 0,1 | _pendiente_ |
-| Historial con 5 000 filas: primer bloque (SC-007) | < 2 s | _pendiente_ |
+| JS inicial de `/youtube` (gzip) | ≤ 250 KB | **161,3 KB** (conjunto de precarga del manifiesto de `bun run analyze`, 2026-11-05; layout `dashboard` 148,3 KB). Es la ruta más pesada de la app |
+| JS inicial de `/youtube/<id>` (gzip) | ≤ 250 KB | **150,6 KB**; `/youtube/<id>/ventana` 129,8 KB |
+| Trozos diferidos (`Lazy*`) | fuera del JS inicial | `YoutubeDownloadTray` 3,3 KB, `YoutubePlaylistDialog` 3,3 KB y `YoutubeDriveDialog` 1,9 KB, cada uno `isDynamicEntry`. **`YoutubePlayer` (3,4 KB) no es `Lazy`**: muestra la miniatura que es el LCP de la ficha, y el iframe de YouTube solo se monta al pulsar Play; diferirlo empeoraría el LCP |
+| CLS de `/youtube` y `/youtube/<id>` | ≤ 0,1 | `/youtube` **0** · `/youtube/<id>` **0,0009** (`test/e2e/performance.spec.ts`, móvil 4G, 2026-11-05) |
+| LCP de `/youtube` y `/youtube/<id>` | ≤ 2,5 s | `/youtube` **1,86 s** · `/youtube/<id>` **1,48 s** (mediana de 3 cargas) |
+| Historial con 5 000 filas: primer bloque (SC-007) | < 2 s | **158 ms** con la base caliente (mediana de 3: 174, 158, 153 ms; stub, rama de pruebas); páginas siguientes 190–280 ms. La **primera petición tras un rato inactivo tardó 1–2,2 s** (arranque en frío de Neon en la rama de pruebas; 2026-11-05) |
+| Marcar una casilla con 5 000 filas (INP) | ≤ 200 ms | ≈ 50 ms (navegador, 2026-11-05) |
+| Accesibilidad `/youtube` y `/youtube/<id>` (T077) | 0 hallazgos | 0 en ambos temas × 1280/360 px y con barra, bandeja, menú ⋯ y diálogo abiertos (script propio; sin axe) |
 | Ficha del video con servicio despierto (SC-002) | < 3 s | _pendiente_ |
 | Pegar enlace → archivo, video de 5 min (SC-001) | < 2 min | _pendiente_ |
 | `POST /api/youtube/jobs` con 10 videos en Vercel (D8) | dentro del plazo de la función | _pendiente_ |

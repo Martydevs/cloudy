@@ -24,6 +24,7 @@ export default defineNuxtConfig({
 
     cloudyApiUrl: '',
     cloudyApiKey: '',
+    apifyApiKey: '',
 
     openrouterApikey: '',
     // Vacío = API de OpenRouter; solo los e2e lo apuntan a un stub local.
