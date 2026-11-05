@@ -17,6 +17,15 @@
         "-y",
         "@schedule-x/mcp"
       ]
+    },
+    "apify-webcrawler": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@apify/actors-mcp-server",
+        "--tools",
+        "apify/rag-web-browser"
+      ]
     }
   }
 }

@@ -7,8 +7,9 @@ send material from a public page into an approval queue that the team reviews li
 **Governance**: `.specify/memory/constitution.md` (v1.1.1) is the source of truth and overrides this
 file. Keep this guide aligned with it whenever the constitution is amended.
 
-**Active feature**: `specs/005-youtube-downloads/` (YouTube page: downloads and team playlists through the external `cloudy-api`
-download service; builds on `specs/001-shared-media-drive/`, `specs/002-note-text-extraction/` and `specs/003-guest-upload-access-code/`). Read `spec.md` (what), `plan.md` + `research.md`
+**Active feature**: `specs/006-canciones-lyrics-pptx/` (Canciones page: Letras.com lyrics crawled with the Apify actor `apify/rag-web-browser` through `apify-client`, then
+turned into `.pptx` slides by the external `cloudy-api` service; reuses the shape of `specs/005-youtube-downloads/`, whose YouTube page is the previous active feature, and builds on
+`specs/001-shared-media-drive/`, `specs/002-note-text-extraction/` and `specs/003-guest-upload-access-code/`). Read `spec.md` (what), `plan.md` + `research.md`
 (how), `data-model.md` and `contracts/` (interfaces) before changing related code.
 
 ## Stack
