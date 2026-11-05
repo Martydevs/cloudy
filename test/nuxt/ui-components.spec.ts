@@ -204,6 +204,41 @@ describe('ActionMenu', () => {
     wrapper.unmount()
     vi.restoreAllMocks()
   })
+
+  it('mide el menú ya dibujado: si las etiquetas de dos líneas lo hacen más alto que la estimación, lo voltea hacia arriba', async () => {
+    // Regresión: 7 opciones se estimaban en 336 px, pero dos ocupaban 54 px (346) y el menú se salía 3 px por abajo a 360×740.
+    const wrapper = await mountSuspended(ActionMenu, { props: { label: 'Acciones de video', items }, attachTo: document.body })
+    const button = wrapper.get('button[aria-label="Acciones de video"]')
+    const top = window.innerHeight - 45 - 3 * 44 - 28 - 5 // la estimación (160 px) cabe debajo, por 5 px
+    vi.spyOn(wrapper.get('.dropdown').element, 'getBoundingClientRect')
+      .mockReturnValue({ top, bottom: top + 45, left: 0, right: 45, width: 45, height: 45, x: 0, y: top, toJSON: () => ({}) })
+    const menuHeight = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect')
+    const real = (height: number) => menuHeight.mockImplementation(function (this: HTMLElement) {
+      return { top: 0, bottom: height, left: 0, right: 0, width: 0, height, x: 0, y: 0, toJSON: () => ({}) }
+    })
+
+    // Más alto de lo estimado: no cabe debajo y arriba sí.
+    real(170)
+    await button.trigger('click')
+    await nextTick()
+    expect(wrapper.get('.dropdown').classes()).toContain('dropdown-top')
+    await button.trigger('click')
+
+    // Tampoco cabe arriba: voltearlo solo movería el recorte, se queda debajo.
+    real(window.innerHeight)
+    await button.trigger('click')
+    await nextTick()
+    expect(wrapper.get('.dropdown').classes()).not.toContain('dropdown-top')
+    await button.trigger('click')
+
+    // Mide lo que estimó: se queda debajo.
+    real(160)
+    await button.trigger('click')
+    await nextTick()
+    expect(wrapper.get('.dropdown').classes()).not.toContain('dropdown-top')
+    wrapper.unmount()
+    vi.restoreAllMocks()
+  })
 })
 
 describe('tarjetas y listas de archivos', () => {

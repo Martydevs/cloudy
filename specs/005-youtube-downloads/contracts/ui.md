@@ -116,7 +116,7 @@ Bajo los trabajos de descarga, una sección con una `YoutubeDriveImportRow` por 
 el motivo (`role="alert"`), **Reintentar** (mismo formato) y cerrar. «N en curso» suma descargas e importaciones. El `aria-live` de la bandeja anuncia solo los cambios a *en cola*, *guardado* y *no se pudo guardar*.
 Cada fila en cola o en curso lleva **Cancelar** (`aria-label` «Cancelar {título}»): en cola sale de la cola; en curso aborta la petición, la descarga o el envío, libera el trabajo del servicio y la
 reserva del drive, avisa «Guardado cancelado» y la cola sigue con la siguiente. Una descarga o subida que pasa `YOUTUBE_IMPORT_STALL_MS` (60 s) sin avanzar se aborta con «La conexión se quedó sin respuesta»
-y cada petición a la API tiene tope (`YOUTUBE_IMPORT_REQUEST_MS`), así que ninguna importación bloquea la cola. Las subidas corren **de una en una** y la bandeja sigue siendo la dueña de `--youtube-tray-h`, por lo que la barra de selección queda encima.
+y cada petición a la API tiene tope (`YOUTUBE_IMPORT_REQUEST_MS`), así que ninguna importación bloquea la cola. Las subidas corren **de una en una**. Desde `md` (768 px) la barra de selección va abajo y siempre deja libre la esquina de la bandeja (abajo a la derecha): ocupa el mismo sitio con o sin bandeja, en la misma línea y sin apilarse, así no cambia de ancho cuando la bandeja aparece o se cierra; en pantallas más angostas no caben lado a lado y la barra se apoya encima de la bandeja (`--youtube-tray-h`).
 
 ## Composables
 

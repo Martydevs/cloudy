@@ -370,6 +370,24 @@ describe('YoutubeSelectionBar', () => {
     await bar.findAll('[role="menuitemradio"]').find(o => o.text().includes('Video 1080p'))!.trigger('click')
     expect(bar.emitted('download')).toEqual([['mp4_1080']])
   })
+
+  it('desde md siempre deja libre la esquina de la bandeja: el mismo sitio con o sin ella, sin saltos al abrirla o cerrarla', async () => {
+    const downloads = useState<{ rows: unknown[], groups: unknown[] }>('youtube-downloads')
+    const before = downloads.value
+    const docked = ['md:bottom-4', 'md:right-[26rem]', 'md:max-w-3xl']
+    downloads.value = { rows: [], groups: [] }
+    const bar = await mountSuspended(YoutubeSelectionBar, { props: { count: 1 } })
+    expect(bar.classes()).toEqual(expect.arrayContaining(docked))
+    expect(bar.classes()).not.toContain('md:right-4')
+
+    downloads.value = { rows: [{ id: 1 }], groups: [] }
+    await nextTick()
+    expect(bar.classes()).toEqual(expect.arrayContaining(docked))
+    downloads.value = { rows: [], groups: [] }
+    await nextTick()
+    expect(bar.classes()).toEqual(expect.arrayContaining(docked))
+    downloads.value = before
+  })
 })
 
 describe('useYoutubePlaylists', () => {

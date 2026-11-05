@@ -140,3 +140,12 @@ describe('arquitectura de la feature 002', () => {
     expect(files.find(f => f.path === 'app/utils/heic-copy.ts')!.code).not.toMatch(/^import[^\n]+['"]heic-to['"]/m)
   })
 })
+
+describe('estilos globales', () => {
+  // happy-dom no calcula el CSS de daisyUI: lo único que se puede vigilar sin navegador es que la regla exista,
+  // y en `utilities` (daisyUI vive en `utilities.daisyui.l1.l2.l3`; en `components` o `base` perdería).
+  it('los ítems de .menu se centran en vertical (daisyUI los alinea arriba) desde la capa utilities', () => {
+    const css = readFileSync(join(ROOT, 'app/assets/css/globals.css'), 'utf8')
+    expect(css).toMatch(/@layer utilities\s*\{\s*\.menu :where\(li:not\(\.menu-title\) > :not\(ul, menu, details, \.menu-title, \.btn\)\)\s*\{\s*align-content:\s*center;/)
+  })
+})

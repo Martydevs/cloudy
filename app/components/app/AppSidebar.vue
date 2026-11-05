@@ -280,7 +280,7 @@ useEventListener('scroll', closeAccountMenu, { passive: true, capture: true })
       >
         <li v-if="profile" role="none" class="menu-title">
           <span class="block truncate font-medium text-base-content">{{ profile.name }}</span>
-          <span class="block truncate text-xs font-normal">{{ profile.email }}</span>
+          <span class="block truncate text-xs font-normal text-base-content/70">{{ profile.email }}</span>
         </li>
         <li role="none">
           <ThemeToggle with-label class="min-h-11" :class="FOCUS_RING" />

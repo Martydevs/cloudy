@@ -90,7 +90,7 @@ async function toggle() {
         <button
           type="button"
           role="menuitemradio"
-          class="min-h-11 flex-col items-start gap-0"
+          class="min-h-11 flex! flex-col items-start justify-center gap-0"
           :aria-checked="current === option.value"
           :aria-describedby="option.value === 'mp4_1080' && short1080 ? noteId : undefined"
           @click.stop.prevent="choose(option.value)"

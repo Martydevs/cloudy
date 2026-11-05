@@ -40,18 +40,30 @@ useEventListener(() => (open.value ? window : undefined), 'resize', closeFloatin
 const OPTION_PX = 44
 const MENU_CHROME_PX = 28
 
-function toggle() {
-  if (!open.value && root.value) {
-    const rect = root.value.getBoundingClientRect()
-    const below = window.innerHeight - rect.bottom
-    openUp.value = below < props.items.length * OPTION_PX + MENU_CHROME_PX && rect.top > below
-    // Flotante: anclado al borde derecho del botón, hacia abajo (o hacia arriba si no cabe).
-    position.value = {
-      right: `${Math.max(8, window.innerWidth - rect.right)}px`,
-      ...(openUp.value ? { bottom: `${window.innerHeight - rect.top + 4}px` } : { top: `${rect.bottom + 4}px` }),
-    }
+// Calcula dónde va el menú respecto a su botón: abre hacia arriba cuando abajo no cabe.
+function place(rect: DOMRect, up: boolean) {
+  openUp.value = up
+  // Flotante: anclado al borde derecho del botón, hacia abajo (o hacia arriba si no cabe).
+  position.value = {
+    right: `${Math.max(8, window.innerWidth - rect.right)}px`,
+    ...(up ? { bottom: `${window.innerHeight - rect.top + 4}px` } : { top: `${rect.bottom + 4}px` }),
   }
-  open.value = !open.value
+}
+
+async function toggle() {
+  if (open.value || !root.value) {
+    open.value = !open.value
+    return
+  }
+  const rect = root.value.getBoundingClientRect()
+  const below = window.innerHeight - rect.bottom
+  place(rect, below < props.items.length * OPTION_PX + MENU_CHROME_PX && rect.top > below)
+  open.value = true
+  // La estimación supone 44 px por opción, pero las etiquetas largas ocupan dos líneas y el menú real es más alto:
+  // ya dibujado se mide y, si se sale por abajo y arriba sí cabe, se voltea.
+  await nextTick()
+  const height = panel.value?.getBoundingClientRect().height ?? 0
+  if (open.value && !openUp.value && height > below - 4 && height + 4 <= rect.top) place(rect, true)
 }
 
 function choose(key: string) {

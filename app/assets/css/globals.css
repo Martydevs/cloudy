@@ -88,6 +88,18 @@
   --font-sans: "DM Sans", ui-sans-serif, system-ui, sans-serif;
 }
 
+/*
+  daisyUI alinea los ítems de `.menu` arriba (`align-content: flex-start`). Con nuestros 44 px de área táctil
+  (`min-h-11`) el contenido quedaba alto y el fondo del hover lo hacía visible. Mismo selector que el de daisyUI
+  (`:where` mantiene la especificidad en cero). Va en `utilities` porque daisyUI vive en la subcapa
+  `utilities.daisyui.l1.l2.l3`: en `components` (o `base`) perdería contra él.
+*/
+@layer utilities {
+  .menu :where(li:not(.menu-title) > :not(ul, menu, details, .menu-title, .btn)) {
+    align-content: center;
+  }
+}
+
 @layer base {
   html {
     font-family: var(--font-sans);

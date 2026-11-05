@@ -8,7 +8,7 @@ import { createPage, setup } from '@nuxt/test-utils/e2e'
 import type { BrowserContext, Locator, Page } from 'playwright-core'
 import { afterAll, describe, expect, it } from 'vitest'
 import { ALLOWED_TYPES, getExtension } from '../../shared/constants/files'
-import { E2E_URL, email, ensureAccount, login, routeYoutubeEmbed, routeYoutubeThumbnails, runId, setProfile, signedInAs, testSql, viewports, waitForHydration } from './setup/fixtures'
+import { E2E_URL, email, ensureAccount, login, profileUserId, routeYoutubeEmbed, routeYoutubeThumbnails, runId, seedFolder, setProfile, signedInAs, testSql, viewports, waitForHydration } from './setup/fixtures'
 
 await setup({ host: E2E_URL, browser: true })
 
@@ -144,6 +144,44 @@ describe('US5 · bugs visuales del shell', () => {
     await waitForHydration(page)
     await page.getByRole('button', { name: 'Imágenes' }).click()
     await expect.poll(() => filtersOverflow(page)).toBeLessThanOrEqual(0)
+    await page.close()
+  })
+})
+
+// daisyUI alinea los ítems de `.menu` arriba; con `min-h-11` el contenido quedaba alto y el hover lo delataba.
+// happy-dom no calcula el CSS de daisyUI, así que esto solo se puede medir con estilos reales.
+describe('menús · contenido centrado en su fila', () => {
+  /** Distancia vertical entre el centro del contenido (iconos y texto) y el de la fila, con el cursor encima. */
+  async function contentOffset(item: Locator): Promise<number> {
+    await item.hover()
+    return item.evaluate((el) => {
+      const range = document.createRange()
+      range.selectNodeContents(el)
+      const rects = [...range.getClientRects(), ...[...el.querySelectorAll('svg, .iconify')].map(k => k.getBoundingClientRect())]
+        .filter(r => r.height > 0)
+      const box = el.getBoundingClientRect()
+      const content = (Math.min(...rects.map(r => r.top)) + Math.max(...rects.map(r => r.bottom))) / 2
+      return Math.abs(content - (box.top + box.bottom) / 2)
+    })
+  }
+
+  it('el menú de cuenta y el ⋯ de una carpeta centran icono y texto en su fila', async () => {
+    const page = await createPage(undefined, { viewport: viewports.desktop })
+    const { email: account } = await signedInAs(page, 'editor', 'menu-align')
+    await seedFolder(`Menús ${runId()}`, await profileUserId(account))
+
+    await page.getByRole('button', { name: 'Menú de usuario' }).click()
+    const profile = page.getByRole('menuitem', { name: 'Mi perfil' })
+    expect((await profile.boundingBox())!.height).toBeGreaterThanOrEqual(44)
+    expect(await contentOffset(profile)).toBeLessThanOrEqual(2)
+    await page.keyboard.press('Escape')
+
+    await page.goto(`${E2E_URL}/archivos`)
+    await waitForHydration(page)
+    await page.getByRole('button', { name: /^Acciones de la carpeta Menús / }).click()
+    const first = page.getByRole('menuitem').first()
+    expect((await first.boundingBox())!.height).toBeGreaterThanOrEqual(44)
+    expect(await contentOffset(first)).toBeLessThanOrEqual(2)
     await page.close()
   })
 })

@@ -6,6 +6,9 @@ const mobileOpen = ref(false)
 // `initOnMounted` evita un desajuste de hidratación: el SSR no conoce el localStorage.
 const collapsed = useLocalStorage('cloudy-sidebar-collapsed', false, { initOnMounted: true })
 const isDesktop = useBreakpoints(breakpointsTailwind).greaterOrEqual('lg')
+// Ancho del menú lateral en escritorio (`w-64`/`w-20` de AppSidebar), publicado como `--app-sidebar-w` para centrar lo
+// que flota abajo sobre la columna de contenido (barra de selección de YouTube).
+const sidebarWidth = computed(() => (collapsed.value && isDesktop.value ? '5rem' : '16rem'))
 
 const { pendingCount, pendingUsers, openAccessRequests } = usePulse()
 usePulsePolling()
@@ -70,7 +73,7 @@ watch(phoneOpen, async (open) => {
 </script>
 
 <template>
-  <div class="drawer min-h-dvh bg-base-200 lg:drawer-open">
+  <div class="drawer min-h-dvh bg-base-200 lg:drawer-open" :style="{ '--app-sidebar-w': sidebarWidth }">
     <input id="app-drawer" v-model="mobileOpen" type="checkbox" class="drawer-toggle" tabindex="-1" aria-hidden="true">
     <div ref="content" class="drawer-content relative flex min-w-0 flex-col">
       <a
@@ -80,12 +83,12 @@ watch(phoneOpen, async (open) => {
       <AppTopbar @toggle-menu="mobileOpen = !mobileOpen" />
       <!-- Justo bajo la barra: los avisos se centran sobre esta columna, no sobre el viewport. -->
       <AppToast />
-      <!-- Con la bandeja abierta, relleno inferior para que no tape el último contenido. -->
+      <!-- Con la bandeja abierta, relleno inferior del alto real de la bandeja (`--youtube-tray-h`) para que no tape el último contenido. -->
       <main
         id="contenido"
         tabindex="-1"
         class="mx-auto w-full max-w-7xl flex-1 p-4 outline-none lg:p-6"
-        :class="{ 'pb-72 sm:pb-24': youtubeDownloads.active.value }"
+        :class="{ 'pb-[calc(var(--youtube-tray-h,18rem)+1.5rem)] lg:pb-[calc(var(--youtube-tray-h,18rem)+1.5rem)]': youtubeDownloads.active.value || youtubeDrive.hasImports.value }"
       >
         <slot />
       </main>
