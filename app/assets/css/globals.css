@@ -46,7 +46,8 @@
 
 /*
   Cloudy — tema claro, derivado del oscuro. El naranja se oscurece para leerse sobre blanco.
-  Contraste: base-content/base-100 16.8:1; cada color/su -content ≥ 5.1:1.
+  Contraste: base-content/base-100 16.8:1; cada color/su -content ≥ 5.1:1; el texto primario sobre su fondo suave
+  (`btn-soft`, `badge-soft`: 8 % de color sobre base-100) ≥ 5.1:1 (con L 55 % quedaba en 4.5:1).
   `warning` es amarillo claro: úsalo como fondo (con warning-content), no como color de texto.
 */
 @plugin "daisyui/theme" {
@@ -58,7 +59,7 @@
   --color-base-200: oklch(96% 0.005 75);
   --color-base-300: oklch(91% 0.008 70);
   --color-base-content: oklch(22% 0.01 60);
-  --color-primary: oklch(55% 0.17 48);
+  --color-primary: oklch(52% 0.17 48);
   --color-primary-content: oklch(100% 0 0);
   --color-secondary: oklch(50% 0.1 220);
   --color-secondary-content: oklch(100% 0 0);
@@ -99,6 +100,42 @@
     align-content: center;
   }
 }
+
+/*
+  Borde de los campos (WCAG 1.4.11, componentes de interfaz ≥ 3:1). daisyUI lo pinta con `base-content` al 20 %
+  (1.5–1.8:1). Aquí sube a 40 % en el tema oscuro (3.5:1) y 50 % en el claro (3.3:1) sobre base-100 y base-200.
+  Solo cambia el estado de reposo: con foco, error o color explícito (`input-error`, `select-primary`…) manda daisyUI.
+  Va en `utilities` (la subcapa de daisyUI pierde contra ella), por eso las excepciones se listan en `:not()`.
+  Las casillas `checkbox-primary` ya pintan su borde con el color primario (≥ 5:1) y no necesitan este ajuste.
+*/
+@layer utilities {
+  :root {
+    --field-border-mix: 40%;
+  }
+
+  :root[data-theme="cloudy-light"] {
+    --field-border-mix: 50%;
+  }
+
+  :is(.input, .select, .textarea):not(
+    :focus,
+    :focus-within,
+    [class*="-primary"],
+    [class*="-secondary"],
+    [class*="-accent"],
+    [class*="-neutral"],
+    [class*="-info"],
+    [class*="-success"],
+    [class*="-warning"],
+    [class*="-error"],
+    [class*="-ghost"]
+  ) {
+    --input-color: color-mix(in oklab, var(--color-base-content) var(--field-border-mix), transparent);
+  }
+}
+
+/* Solo los dispositivos con hover: ahí las acciones de una tarjeta pueden revelarse al pasar el cursor o al enfocar. */
+@custom-variant can-hover (@media (hover: hover));
 
 @layer base {
   html {
