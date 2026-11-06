@@ -39,6 +39,16 @@ onMounted(() => {
   hydrated.value = true
 })
 
+// Al enviar con Enter el foco queda en el último campo: la página navega, el formulario se desmonta y el navegador dispara
+// `blur` sobre ese input cuando Regle ya liberó su estado (`r$.$fields` es `undefined`). Antes de desmontar ya no se toca.
+let leaving = false
+onBeforeUnmount(() => {
+  leaving = true
+})
+function touch(name: string) {
+  if (!leaving) r$.$fields[name]?.$touch()
+}
+
 const inputId = (name: string) => `${formId}-${name}`
 const errorId = (name: string) => `${formId}-${name}-error`
 /** Primer error visible del campo (tras salir de él o enviar). */
@@ -90,7 +100,7 @@ async function onSubmit() {
           :class="{ 'input-error': errorOf(field.name) }"
           :aria-invalid="errorOf(field.name) ? 'true' : undefined"
           :aria-describedby="errorOf(field.name) ? errorId(field.name) : undefined"
-          @blur="r$.$fields[field.name]?.$touch()"
+          @blur="touch(field.name)"
         >
         <p v-if="errorOf(field.name)" :id="errorId(field.name)" class="text-sm text-error">
           {{ errorOf(field.name) }}

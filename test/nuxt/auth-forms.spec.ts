@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { mountSuspended } from '@nuxt/test-utils/runtime'
 import type { VueWrapper } from '@vue/test-utils'
 import AuthForm from '~/components/auth/AuthForm.vue'
@@ -136,6 +136,29 @@ describe('AuthForm', () => {
     expect(document.activeElement).toBe(field(wrapper, 'Correo electrónico').element)
     expect(wrapper.emitted('submit')).toBeUndefined()
     wrapper.unmount()
+  })
+
+  // Regresión: al enviar con Enter el foco queda en el último campo; la página navega, el formulario se desmonta y el navegador
+  // dispara `blur` sobre ese input cuando Regle ya liberó su estado. Salía «Cannot read properties of undefined (reading
+  // 'password' / 'confirm')» en el overlay de desarrollo.
+  it('al desmontarse con el foco en un campo, el `blur` del navegador no lanza errores', async () => {
+    const errors: unknown[] = []
+    const nuxtApp = useNuxtApp()
+    const stop = nuxtApp.hook('vue:error', error => void errors.push(error))
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const wrapper = await mountSuspended(AuthForm, {
+      props: { legend: 'Iniciar sesión', fields: loginFields, schema: loginSchema, submitLabel: 'Entrar' },
+      attachTo: document.body,
+    })
+    const input = field(wrapper, 'Contraseña').element
+    wrapper.unmount()
+    input.dispatchEvent(new Event('blur'))
+    await flush()
+    stop()
+    const unhandled = warn.mock.calls.filter(call => String(call[0]).includes('Unhandled error'))
+    warn.mockRestore()
+    expect(errors).toEqual([])
+    expect(unhandled).toEqual([])
   })
 
   it('emite los datos como el servidor: recorta, correo en minúsculas y contraseña intacta', async () => {
