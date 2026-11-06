@@ -38,7 +38,7 @@ con generación por lotes. Es la misma forma de la feature 005 (YouTube) con otr
   - Servidor: `session.ts` (`requireRole`), `validation.ts` (`readValid`, `queryValid`, `paramId`), `pagination.ts` (`encodeCursor`/`decodeCursor`), `db.ts`, `cron.ts` (limpieza diaria), `cloudy-api.ts` (`config`, `request`, `fail`).
   - Compartido: `permissions.ts` (acción nueva `songs.moderate`), `validation/core.ts`, `types/api.ts`.
   - Cliente: `useApi`/`useApiFetch`, `useToast`, `useConfirm`, `useRelativeTime`, `useFormSchema`, `useYoutubeService`, `YoutubeServiceBanner`, `SkeletonList`, `EmptyState`, `ErrorState`, `ConfirmDialog`, `ActionMenu`.
-  - VueUse: `useLocalStorage` (color de letra) y `useElementVisibility` (siguiente página del historial, como en `/youtube`).
+  - VueUse: `useElementVisibility` (siguiente página del historial, como en `/youtube`).
 
 **Storage**:
 
@@ -65,15 +65,15 @@ con generación por lotes. Es la misma forma de la feature 005 (YouTube) con otr
 
 - Funciones sin estado: la cola de presentaciones vive en el navegador; ningún trabajo en memoria del servidor.
 - `NUXT_APIFY_API_KEY` y `NUXT_CLOUDY_API_KEY` solo en el servidor; jamás en el cliente ni en respuestas (SC-010).
-- Plazos: rastreo ≤ 55 s de espera del actor; generación ≤ 90 s (arranque en frío de Render). La duración máxima de la función de Vercel se fija y verifica ([research D15](./research.md), [quickstart § 6](./quickstart.md)).
-- Letra: 1–500 000 caracteres y ≤ 300 líneas (contrato del servicio); título ≤ 200.
+- Plazos: rastreo ≤ 55 s de espera del actor; generación ≤ 90 s (arranque en frío de Render). El máximo de una función en el proyecto de Vercel es 300 s (pasado, `504 FUNCTION_INVOCATION_TIMEOUT`); se fija `maxDuration` explícito ([research D15](./research.md), [quickstart § 6](./quickstart.md)).
+- Letra: 1–500 000 caracteres y ≤ 300 líneas (contrato del servicio); título ≤ 200 (`SONG_TITLE_MAX`, mismo valor en la tabla `songs`). Color de letra fijo: blanco (`SONG_FONT_COLOR`), sin selector.
 - Un rastreo cuesta dinero: solo canciones nuevas o **Volver a obtener la letra** rastrean (FR-007).
 
 **Scale/Scope**:
 
 - Volumen: un equipo de decenas de personas, cientos de canciones, decenas de colecciones.
 - Servidor: 13 endpoints nuevos, 2 módulos de frontera (1 nuevo, 1 ampliado), 3 módulos de dominio (`songs`, `song-collections`, `lyrics-parser`), 1 paso nuevo en la limpieza diaria.
-- Cliente: 2 páginas, 11 componentes, 4 composables.
+- Cliente: 2 páginas, 10 componentes, 4 composables.
 - 4 historias: US1 (P1, MVP Fase 1) enlace → letra; US2 (P2, Fase 2) presentación; US3 (P3) colecciones; US4 (P4) historial y lotes.
 
 ## Constitution Check
@@ -103,7 +103,7 @@ Evaluado contra la constitución **v1.1.1**.
 - **II. Funcional y efectivo**:
   - 4 historias desplegables en orden P1→P4; US2 depende de US1, US3 y US4 de US1–US2. La Fase 1 (US1) se puede entregar sola.
   - Sin dependencias nuevas; sin cuotas por persona, sin edición de letra, sin plantillas: YAGNI (spec, Alcance excluido).
-  - Sin huérfanos: un rastreo fallido o sin letra no inserta nada (el `INSERT` ocurre tras parsear con éxito); crear colección con canción va en un solo `db.batch`; canciones sin historial ni colección se limpian a los 30 días.
+  - Sin huérfanos: un rastreo fallido o sin letra no inserta nada (el `INSERT` ocurre tras parsear con éxito); crear colección con canción va en un solo `db.batch`; canciones sin historial ni colección se limpian a los 30 días (FR-034).
   - Cada error dice qué hacer (reintentar, corregir el enlace, **Volver a obtener la letra**).
 - **III. Mobile first**:
   - Campo y botones `btn-block` a 360 px; los botones de acción de la ficha se acomodan en filas sin ocultar ninguno; **Generar presentación** visible sin recorrer la letra.
@@ -122,7 +122,7 @@ Evaluado contra la constitución **v1.1.1**.
   - **Cobertura ≥ 92 % en cada archivo nuevo** (meta de la feature) y gate global 92 % intacto; `server/utils/**` y `shared/**` ≥ 80 % (constitución).
 - **VI. Consistencia de UX**:
   - Solo tokens daisyUI; lucide; DM Sans; `SkeletonList`/`EmptyState`/`ErrorState` en colecciones, historial y ficha; `ConfirmDialog` al eliminar colecciones, quitar canciones y volver a obtener la letra; toasts por acción.
-  - Copy en español en `app/utils/messages.ts` y `shared/constants/songs.ts`; sin `text-warning` sobre `base-100` claro; el selector de color expone etiqueta y valor al lector de pantalla.
+  - Copy en español en `app/utils/messages.ts` y `shared/constants/songs.ts`; sin `text-warning` sobre `base-100` claro; junto a **Generar presentación** se indica que la letra va en blanco para fondo oscuro.
 - **Restricciones técnicas**:
   - Stack sin cambios; sin estado en el servidor; secretos solo por `runtimeConfig` (`NUXT_APIFY_API_KEY`, `NUXT_APIFY_BASE_URL`, `NUXT_CLOUDY_API_URL`, `NUXT_CLOUDY_API_KEY`).
   - Esquema solo con migración Drizzle `0007`; la persona la aplica a cada rama.
@@ -152,8 +152,8 @@ specs/006-canciones-lyrics-pptx/
 
 ```text
 shared/
-├── constants/songs.ts            # LYRICS_MAX_LINES, LYRICS_MAX_CHARS, límites de título/artista/colección, SONG_SERVICE_MESSAGES, SONG_ERROR_MESSAGES, PRESET de color
-├── validation/songs.ts           # parseLetrasUrl, songUrlInput, songFontColor, songPresentationInput, songCollection*, songHistoryQuery
+├── constants/songs.ts            # LYRICS_MAX_LINES, LYRICS_MAX_CHARS, límites de título (200)/artista/colección, SONG_FONT_COLOR ('FFFFFF'), SONG_SERVICE_MESSAGES, SONG_ERROR_MESSAGES
+├── validation/songs.ts           # parseLetrasUrl, songUrlInput, songCollection*, songHistoryQuery
 ├── permissions.ts                # + acción 'songs.moderate' (solo admin)
 └── types/api.ts                  # + DTOs Song* (data-model.md)
 
@@ -193,7 +193,6 @@ app/
 │   ├── SongMeta.vue
 │   ├── SongActions.vue
 │   ├── SongLyrics.vue
-│   ├── SongColorPicker.vue
 │   ├── SongCollectionRow.vue
 │   ├── SongCollectionCard.vue
 │   ├── SongCollectionDialog.vue

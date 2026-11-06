@@ -11,7 +11,7 @@ Migración Drizzle `0007_*` (generada con `bun run db:generate` desde `server/db
 |---------|------|-------|
 | `id` | `uuid` PK `defaultRandom()` | Es el `<id>` de `/canciones/<id>`. |
 | `source_url` | `text` NOT NULL **UNIQUE** | URL normalizada: `https://letras.com/<artista>/<cancion>` (D6). |
-| `title` | `text` NOT NULL | 1–300 caracteres (se recorta al guardar). |
+| `title` | `text` NOT NULL | 1–200 caracteres (se recorta al guardar; límite del servicio de presentaciones). |
 | `artist` | `text` | `NULL` si la página no lo indica; ≤ 200. |
 | `lyrics` | `jsonb` NOT NULL | `string[][]`: estrofas → líneas, sin vacías. Nunca HTML (D5). |
 | `last_viewed_at` | `timestamptz` | `NULL` = fuera del historial. |
@@ -23,7 +23,7 @@ Migración Drizzle `0007_*` (generada con `bun run db:generate` desde `server/db
 - `songs_history_idx` sobre `(last_viewed_at DESC, id DESC) WHERE last_viewed_at IS NOT NULL` — keyset del historial.
 - `songs_source_url_key` (UNIQUE) — identidad natural y `ON CONFLICT`.
 - CHECK `songs_source_url_format`: `source_url ~ '^https://letras\.com/[a-z0-9-]+/[a-z0-9-]+$'`.
-- CHECK `songs_title_length`: `char_length(title) BETWEEN 1 AND 300`.
+- CHECK `songs_title_length`: `char_length(title) BETWEEN 1 AND 200`.
 - CHECK `songs_artist_length`: `artist IS NULL OR char_length(artist) <= 200`.
 - CHECK `songs_lyrics_array`: `jsonb_typeof(lyrics) = 'array' AND jsonb_array_length(lyrics) >= 1`.
 - CHECK `songs_last_viewed_pair`: `(last_viewed_at IS NULL) = (last_viewed_by IS NULL)`.
@@ -73,7 +73,7 @@ song_collections 1──* song_collection_items *──1 songs
 | Una canción por colección (FR-023) | PK compuesta + `ON CONFLICT DO NOTHING RETURNING` |
 | Renombrar/eliminar: autor o `songs.moderate` (FR-022) | `canManageCollection` en `song-collections.ts`; el cliente espeja con `can()` |
 | Eliminar colección no elimina canciones (FR-022) | `ON DELETE CASCADE` solo sobre `song_collection_items` |
-| Limpieza (D13) | `cron.ts`: canciones sin historial ni colección y con `updated_at` > 30 días |
+| Limpieza (FR-034, D13) | `cron.ts`: canciones sin historial ni colección y con `updated_at` > 30 días |
 
 ## Transiciones
 
@@ -86,6 +86,8 @@ guardada ──refresh OK──▶ letra y updated_at reemplazadas (si falla: si
 en historial ──quitar del historial──▶ guardada, fuera del historial
 fuera del historial, sin colección, > 30 días ──limpieza──▶ (borrada)
 ```
+
+Los elementos de una colección se ordenan por `added_at` (no hay columna de posición ni reordenación).
 
 **Elemento de la cola de presentaciones** (solo cliente, D10)
 
@@ -135,7 +137,6 @@ export interface SongCollection {
 export interface SongCollectionItem extends Song { addedAt: string; addedBy: SongPerson }
 export interface SongCollectionDetail extends SongCollection { items: SongCollectionItem[] }
 
-export type SongFontColor = string  // 'RRGGBB' normalizado
 export interface SongPresentationMeta { slideCount: number | null; arrangedBy: 'llm' | 'fallback' | null; filename: string }
 export type SongErrorCode =
   | 'not_configured' | 'misconfigured' | 'quota' | 'busy' | 'crawl_failed'
@@ -150,12 +151,10 @@ Las colecciones no tienen portada (no hay imágenes: no se rastrean medios); la 
 |-----------|--------|
 | `parseLetrasUrl(text)` | Ver D6; devuelve `{ ok: true, url, artist, slug }` o `{ ok: false, reason }` |
 | `songUrlInput` | `{ url }` → `parseLetrasUrl` en el servidor |
-| `songFontColor()` | `#?RRGGBB` → `RRGGBB` mayúsculas; opcional, por defecto `000000` |
-| `songPresentationInput` | `{ fontColor? }` |
 | `songCollectionInput` | `{ name, songId? }` — `name` 1–80 sin espacios al borde; `songId` UUID opcional |
 | `songCollectionRename` | `{ name }` |
 | `songCollectionItemInput` | `{ songId }` UUID |
 | `songHistoryQuery` | `limit` 1–48 (24 por defecto), `cursor` ≤ 500, `exclude` UUID opcional |
 
-Constantes (`shared/constants/songs.ts`): `LYRICS_MAX_LINES = 300`, `LYRICS_MAX_CHARS = 500_000`, `SONG_TITLE_MAX = 300`, `SONG_ARTIST_MAX = 200`, `SONG_COLLECTION_NAME_MAX = 80`, `SONG_HISTORY_PAGE = 24`,
-`SONG_HISTORY_MAX_LIMIT = 48`, `SONG_RECENT_LIMIT = 12`, `SONG_DEFAULT_FONT_COLOR = '000000'`, `SONG_PRESENTATION_TIMEOUT_MS = 90_000`, `SONG_SERVICE_MESSAGES`, `SONG_ERROR_MESSAGES`.
+Constantes (`shared/constants/songs.ts`): `LYRICS_MAX_LINES = 300`, `LYRICS_MAX_CHARS = 500_000`, `SONG_TITLE_MAX = 200`, `SONG_ARTIST_MAX = 200`, `SONG_COLLECTION_NAME_MAX = 80`, `SONG_HISTORY_PAGE = 24`,
+`SONG_HISTORY_MAX_LIMIT = 48`, `SONG_RECENT_LIMIT = 12`, `SONG_FONT_COLOR = 'FFFFFF'` (blanco fijo, D12), `SONG_PRESENTATION_TIMEOUT_MS = 90_000`, `SONG_SERVICE_MESSAGES`, `SONG_ERROR_MESSAGES`.

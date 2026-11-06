@@ -60,6 +60,15 @@ rastreo ni con el servicio de presentaciones: lo hace el servidor de Cloudy, que
   (`/canciones`: campo de enlace, colecciones, historial) y la **página de canción** (`/canciones/<id>`). En la página
   de canción, la parte superior muestra, en este orden, los **metadatos** de la canción, los **botones de acción** y
   la **letra**; el historial reciente queda debajo de la letra.
+- Decisiones tras `/speckit-analyze` (2026-11-05):
+  - **Color de letra**: no hay selector. La letra de las diapositivas va **siempre en blanco** (para proyectar sobre un
+    fondo oscuro); Cloudy envía ese color fijo al servicio.
+  - **Título**: límite de 200 caracteres en todo Cloudy (es el límite del servicio de presentaciones).
+  - **Colecciones**: también se pueden crear desde la fila Colecciones (botón **Nueva colección**, visible en la
+    cabecera de la fila y en su estado vacío), no solo desde una canción.
+  - **Retención**: una canción fuera del historial y sin colección se elimina a los 30 días (limpieza diaria).
+  - **Plazo de las funciones**: el máximo de una función en el proyecto de Vercel es de 5 minutos (300 s); pasado ese
+    plazo responde `504 FUNCTION_INVOCATION_TIMEOUT`. Los 90 s de espera de una generación caben de sobra.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -108,8 +117,8 @@ esperar un nuevo rastreo.
 
 ### User Story 2 - Generar y descargar la presentación PowerPoint (Priority: P2) (Fase 2)
 
-En la página de una canción, la persona pulsa **Generar presentación**, opcionalmente elige el color de la letra, y
-Cloudy le entrega un archivo `.pptx` con la letra repartida en diapositivas. Mientras se genera ve un estado de
+En la página de una canción, la persona pulsa **Generar presentación** y Cloudy le entrega un archivo `.pptx` con la
+letra repartida en diapositivas, con el texto en blanco para proyectarlo sobre un fondo oscuro. Mientras se genera ve un estado de
 progreso (puede tardar varios segundos porque un modelo de lenguaje decide el reparto). Al terminar, el archivo se
 descarga con el título de la canción como nombre y se informa cuántas diapositivas tiene.
 
@@ -126,8 +135,8 @@ diapositivas, y que se muestra el número de diapositivas.
    progreso, no permite lanzar una segunda generación de la misma canción y, al terminar, el navegador descarga un
    `.pptx` cuyo nombre es el título de la canción (conservando tildes y eñes) y un aviso indica «N diapositivas
    generadas».
-2. **Given** el selector de color de letra, **When** la persona elige blanco (para proyectar sobre un fondo oscuro) o
-   cualquier otro color antes de generar, **Then** la presentación usa ese color; sin elegir, usa negro.
+2. **Given** una presentación generada, **When** se abre sobre un fondo oscuro, **Then** la letra va en blanco; Cloudy
+   no ofrece selector de color y junto al botón explica que la letra va en blanco para proyectar sobre fondo oscuro.
 3. **Given** una generación en la que el modelo de lenguaje no estuvo disponible, **When** el archivo llega con el
    reparto automático de respaldo, **Then** Cloudy entrega el archivo igualmente y muestra una nota breve:
    «Las diapositivas se agruparon automáticamente (el reparto con IA no estuvo disponible)».
@@ -140,8 +149,8 @@ diapositivas, y que se muestra el número de diapositivas.
    persona genera, **Then** ve un mensaje genérico en español con la acción **Reintentar** (sin mostrar detalles del
    servicio ni credenciales); los fallos de espera o del servidor se pueden reintentar, los errores definitivos
    (sin letra, demasiado larga) no.
-7. **Given** una canción cuya presentación ya se generó, **When** la persona la genera de nuevo con otro color,
-   **Then** se descarga una presentación nueva sin volver a rastrear la letra.
+7. **Given** una canción cuya presentación ya se generó, **When** la persona la genera de nuevo, **Then** se descarga
+   una presentación nueva sin volver a rastrear la letra.
 
 ---
 
@@ -171,15 +180,15 @@ desde otra cuenta del equipo, descargar la colección completa y comprobar que l
 4. **Given** una colección con varias canciones, **When** la persona la abre, **Then** ve sus canciones con título y
    artista, y puede abrir una, quitarla (con confirmación) o generar su presentación.
 5. **Given** la fila Colecciones, **When** la persona pasa el cursor sobre una colección en escritorio o toca su botón
-   de descarga en teléfono, **Then** elige el color de letra y Cloudy genera **una presentación por canción**,
-   diciendo antes cuántos archivos recibirá y mostrando el avance de cada una.
+   de descarga en teléfono, **Then** Cloudy genera **una presentación por canción**, diciendo antes cuántos archivos
+   recibirá y mostrando el avance de cada una.
 6. **Given** una colección en la que algunas canciones fallan al generar, **When** se descarga, **Then** se entregan
    las presentaciones que sí se generaron e informa cuáles fallaron y por qué, sin detener las demás.
 7. **Given** una colección, **When** su autora o autor (o un administrador) la renombra o la elimina, **Then** el
    cambio se aplica a todo el equipo tras confirmar; un editor que no es la autora o autor no puede renombrarla ni
    eliminarla, pero sí agregar y quitar canciones.
 8. **Given** que aún no hay colecciones, **When** se abre Canciones, **Then** la fila Colecciones muestra un estado
-   vacío que invita a crear la primera desde una canción.
+   vacío con el botón **Nueva colección** para crear la primera ahí mismo (o desde una canción).
 
 ---
 
@@ -200,7 +209,7 @@ primero), marcar las tres y generar sus presentaciones: llegan tres `.pptx`.
 1. **Given** una canción obtenida o abierta, **When** se ve el historial, **Then** aparece al inicio con quién la
    consultó y cuándo; si ya estaba, sube al inicio sin duplicarse.
 2. **Given** el historial en Canciones, **When** la persona marca dos o más canciones con casillas, **Then** aparece
-   una barra de acción con el número marcado, el selector de color de letra y el botón «Generar selección».
+   una barra de acción con el número marcado y el botón «Generar selección».
 3. **Given** una selección de varias canciones, **When** pulsa generar, **Then** Cloudy avisa de cuántos archivos
    recibirá, las procesa de una en una, muestra el avance de cada una y descarga cada archivo al terminar.
 4. **Given** una entrada del historial, **When** la persona la genera de nuevo, **Then** Cloudy usa la letra guardada
@@ -249,6 +258,10 @@ primero), marcar las tres y generar sus presentaciones: llegan tres `.pptx`.
   no rompe el resto de Cloudy; las canciones ya guardadas siguen funcionando.
 - La letra incluye indicaciones como «(Coro)» o «x2»: se conservan tal como vienen; el reparto en diapositivas es
   decisión del servicio de presentaciones.
+- Una canción quitada del historial y de todas sus colecciones: sigue guardada 30 días (volver a pegar el enlace la
+  abre sin rastrear); después se elimina y pegar el enlace vuelve a rastrear.
+- La presentación se abre en PowerPoint sin fondo: la letra blanca no se ve sobre el fondo blanco del programa; es
+  normal, está pensada para proyectarse sobre un fondo oscuro propio, y Cloudy lo avisa junto al botón de generar.
 
 ## Requirements *(mandatory)*
 
@@ -283,8 +296,8 @@ primero), marcar las tres y generar sus presentaciones: llegan tres `.pptx`.
   la letra se obtuvo completa; un rastreo fallido o sin letra MUST NOT dejar canciones ni filas a medias.
 - **FR-010**: La página de una canción (`/canciones/<id>`) MUST mostrar en su parte superior, de arriba abajo y en este
   orden: (1) los **metadatos**: título, artista (si existe), enlace a la página de origen en Letras.com y fecha de
-  obtención; (2) los **botones de acción**: **Generar presentación** con su selector de color de letra, **Crear
-  colección** / **Agregar a colección** y **Volver a obtener la letra**; (3) la **letra** completa ordenada por
+  obtención; (2) los **botones de acción**: **Generar presentación**, **Crear colección** / **Agregar a colección** y
+  **Volver a obtener la letra**; (3) la **letra** completa ordenada por
   estrofas, en solo lectura. El historial reciente (FR-030) va debajo de la letra. En teléfono (360 px) los botones se
   acomodan en varias filas sin quitar ninguno ni forzar desplazamiento horizontal, y **Generar presentación** sigue
   visible sin recorrer toda la letra. **Volver a obtener la letra** MUST pedir confirmación breve y reemplaza la letra
@@ -296,10 +309,10 @@ primero), marcar las tres y generar sus presentaciones: llegan tres `.pptx`.
 **Fase 2 — Presentación**
 
 - **FR-012**: La página de una canción MUST ofrecer **Generar presentación**; al generar, Cloudy MUST enviar al
-  servicio de presentaciones la letra guardada, el título y el color de letra elegido, y MUST entregar el `.pptx`
-  resultante como descarga del navegador.
-- **FR-013**: La generación MUST permitir elegir el color de letra (por defecto negro, con la opción rápida de blanco
-  para fondos oscuros), validado como un color hexadecimal de seis dígitos antes de enviarse.
+  servicio de presentaciones la letra guardada, el título y el color de letra fijo (blanco), y MUST entregar el
+  `.pptx` resultante como descarga del navegador.
+- **FR-013**: La letra de las diapositivas MUST ir siempre en **blanco** (pensada para proyectar sobre un fondo
+  oscuro). Cloudy no ofrece selector de color: envía ese color fijo al servicio y lo indica junto al botón de generar.
 - **FR-014**: El archivo descargado MUST llamarse como el título de la canción, conservando tildes y eñes; la
   descarga MUST usar el nombre que informa el servicio de presentaciones, con un nombre de respaldo si no llega.
 - **FR-015**: Cloudy MUST mostrar el número de diapositivas que informa el servicio y, cuando el servicio indique que
@@ -343,8 +356,8 @@ primero), marcar las tres y generar sus presentaciones: llegan tres `.pptx`.
   guardada, Cloudy MUST registrarla en el historial compartido (una entrada por canción, con quién la consultó por
   última vez y cuándo), subiéndola al inicio si ya estaba.
 - **FR-028**: El historial MUST estar ordenado de la más reciente a la más antigua, paginarse al avanzar (sin
-  recargar la página) y permitir marcar varias canciones con casillas, ver cuántas hay marcadas, elegir color de letra y
-  generar sus presentaciones, además de limpiar la selección.
+  recargar la página) y permitir marcar varias canciones con casillas, ver cuántas hay marcadas y generar sus
+  presentaciones, además de limpiar la selección.
 - **FR-029**: Cada entrada del historial MUST ofrecer abrir su página, agregarla a una colección, generar su
   presentación de nuevo con la letra guardada y quitarla del historial (con confirmación).
 - **FR-030**: La página de una canción MUST mostrar, debajo de la letra, una fila con el historial reciente (sin
@@ -362,22 +375,25 @@ primero), marcar las tres y generar sus presentaciones: llegan tres `.pptx`.
   (≥ 44 px); nada puede ser descubrible solo con el cursor.
 - **FR-034**: Cloudy MUST guardar solo lo necesario: enlace normalizado, título, artista, letra mapeada y fechas de la
   canción; colecciones, elementos de colección e historial. No guarda las presentaciones generadas (se descargan al
-  dispositivo) ni la página completa rastreada.
+  dispositivo) ni la página completa rastreada. Una canción que lleva más de 30 días fuera del historial y sin
+  pertenecer a ninguna colección se elimina automáticamente (limpieza diaria); si alguien vuelve a pegar su enlace, se
+  rastrea de nuevo.
 - **FR-035**: Los límites del servicio de presentaciones (hasta 300 líneas de letra, hasta 500 000 caracteres) MUST
   respetarse y comunicarse a la persona con un mensaje claro cuando una canción los supera.
 
 ### Key Entities *(include if feature involves data)*
 
 - **Canción**: página de letra de Letras.com ya obtenida; enlace de origen normalizado (identificador natural, único),
-  título, artista (opcional), letra mapeada (estrofas y líneas), número de líneas, fecha de obtención y de última
-  actualización. Es la base común de colecciones e historial y evita rastrear de nuevo cada vez.
+  título (hasta 200 caracteres), artista (opcional), letra mapeada (estrofas y líneas), número de líneas, fecha de
+  obtención y de última actualización. Es la base común de colecciones e historial y evita rastrear de nuevo cada vez;
+  se conserva mientras esté en el historial o en una colección, y hasta 30 días después.
 - **Entrada del historial**: una canción consultada por el equipo; incluye quién la consultó por última vez y cuándo.
   Una entrada por canción, compartida por todo el equipo.
 - **Colección**: conjunto con nombre, autor (usuario del equipo), fecha de creación y de última modificación; global
   para el equipo.
-- **Elemento de colección**: pertenencia de una canción a una colección, con su posición y quién la agregó; una
-  canción no se repite dentro de una colección.
-- **Generación de presentación**: solicitud temporal (una canción, un color de letra) con estado y resultado (archivo,
+- **Elemento de colección**: pertenencia de una canción a una colección, con la fecha en que se agregó (orden de la
+  colección) y quién la agregó; una canción no se repite dentro de una colección.
+- **Generación de presentación**: solicitud temporal (una canción) con estado y resultado (archivo,
   número de diapositivas, tipo de reparto o error). Vive solo mientras la persona mira la página; Cloudy no la
   guarda.
 
@@ -423,8 +439,8 @@ primero), marcar las tres y generar sus presentaciones: llegan tres `.pptx`.
   gratuito en Render, que se duerme tras 15 minutos de inactividad). Su contrato (una canción por solicitud, hasta 300
   líneas y 500 000 caracteres, color de letra opcional, encabezados con diapositivas y tipo de reparto, errores
   «sin letra» y «letra demasiado larga») es el límite de lo que Cloudy puede ofrecer. **No rastrea ni busca letras:**
-  recibe la letra ya extraída. La presentación sale con texto sin relleno de fondo, pensada para proyectarse sobre un
-  fondo propio; PowerPoint la muestra sobre blanco.
+  recibe la letra ya extraída. La presentación sale con texto **blanco** sin relleno de fondo, pensada para proyectarse
+  sobre un fondo oscuro propio; abierta en PowerPoint sin fondo, el texto no se distingue hasta aplicar uno.
 - **Servicio de rastreo**: la obtención de la página de Letras.com la hace el actor `apify/rag-web-browser` de Apify,
   con el cliente ya instalado en el proyecto; Cloudy depende de su disponibilidad y de la cuota de la cuenta, y cuando
   no está disponible la feature se degrada con mensajes claros sin afectar al resto de la aplicación. Cada rastreo
@@ -447,5 +463,5 @@ primero), marcar las tres y generar sus presentaciones: llegan tres `.pptx`.
   su uso es decisión y responsabilidad de quien opera Cloudy, y la página puede incluir un aviso breve para el equipo
   de que las letras son de uso interno.
 - **Alcance excluido**: guardar la presentación generada en el drive de Cloudy, editar o corregir la letra a mano,
-  elegir plantillas o fondos, combinar varias canciones en una sola presentación, buscar canciones por nombre dentro de
+  elegir el color de la letra, plantillas o fondos, combinar varias canciones en una sola presentación, buscar canciones por nombre dentro de
   Cloudy, otros sitios de letras, programar generaciones y notificaciones por correo no forman parte de esta versión.

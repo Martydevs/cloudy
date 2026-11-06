@@ -126,7 +126,7 @@ rastreo tuvo éxito (FR-010). Las rutas estáticas (`history`, `collections`, `f
 
 ## D9 — Presentaciones: frontera ampliada en `cloudy-api.ts`
 
-**Decisión**: `createLyricsPptx({ html, title, fontColor })` en `cloudy-api.ts`, reutilizando `config()`, `request()` y `fail()`; devuelve `{ bytes, filename, slideCount, arrangedBy }` leyendo `Content-Disposition`,
+**Decisión**: `createLyricsPptx({ html, title })` en `cloudy-api.ts` (envía `font_color: SONG_FONT_COLOR`, blanco fijo, D12), reutilizando `config()`, `request()` y `fail()`; devuelve `{ bytes, contentDisposition, slideCount, arrangedBy }` leyendo `Content-Disposition`,
 `X-Slide-Count` y `X-Lyrics-Arranged-By`. Plazo `CLOUDY_API_TIMEOUTS.pptx = 90_000`. Mapeo en `fail()` para la nueva llamada `'pptx'`:
 
 | Respuesta del servicio | Resultado hacia el navegador |
@@ -165,12 +165,14 @@ reparto de respaldo y **Cancelar** (aborta el activo o saca de la cola al pendie
 
 **Razón**: reutilizar lo que ya es neutral; no refactorizar una feature entregada para ahorrar duplicación moderada (regla II). Si aparece un tercer consumidor del patrón catálogo/colección/historial, se extrae entonces.
 
-## D12 — Color de letra
+## D12 — Color de letra: blanco fijo
 
-**Decisión**: `songFontColor` en `shared/validation/songs.ts` acepta `#RRGGBB`/`RRGGBB` y lo normaliza a `RRGGBB` en mayúsculas; por defecto `000000`. `SongColorPicker` ofrece Negro, Blanco y un `<input type="color">`
-nativo, con etiqueta y valor accesibles; la última elección se recuerda por navegador con `useLocalStorage('songs-font-color')`.
+**Decisión** (clarificación 2026-11-05): no hay selector de color. `SONG_FONT_COLOR = 'FFFFFF'` en `shared/constants/songs.ts`; el servidor lo envía siempre como `font_color` y `POST /api/songs/[id]/pptx` no lleva cuerpo.
+Junto a **Generar presentación** se muestra el texto `present.whiteHint` («La letra va en blanco: proyecta sobre un fondo oscuro.»).
 
-**Razón**: el servicio valida el mismo formato (`422` si no); validar antes evita un viaje. Los valores `000000`/`FFFFFF` son dato de la presentación, no colores de la interfaz (VI no aplica a ellos).
+**Razón**: el equipo siempre proyecta sobre fondo oscuro; un selector era configuración no pedida (YAGNI, Constitución II). `FFFFFF` es dato de la presentación, no un color de la interfaz (VI no aplica).
+
+**Alternativas**: selector Negro/Blanco/`<input type="color">` recordado con `useLocalStorage` (descartado por la persona); negro por defecto del servicio (invisible sobre fondo oscuro).
 
 ## D13 — Limpieza diaria
 
@@ -191,11 +193,11 @@ nativo, con etiqueta y valor accesibles; la última elección se recuerda por na
 
 ## D15 — Duración de las funciones en Vercel
 
-**Decisión**: el rastreo espera hasta 55 s y la generación hasta 90 s, más que el plazo por defecto de varias configuraciones de Vercel. En la primera tarea se confirma el plazo vigente del proyecto (Fluid Compute y
-plan) y se fija explícitamente (`nitro.vercel.functions.maxDuration` o equivalente para el preset) con un valor ≥ 120 s para `/api/songs/fetch`, `/refresh` y `/pptx`; el resultado se anota en
-[quickstart § 6](./quickstart.md). Si no se pudiera superar 60 s, se baja `waitSecs` y el plazo de generación, y el arranque en frío del servicio se absorbe con el ping de apertura (D11).
+**Decisión**: el rastreo espera hasta 55 s y la generación hasta 90 s. **Confirmado por la persona (2026-11-05)**: el máximo de una función en el proyecto de Vercel es **5 minutos (300 s)**; pasado ese plazo la
+plataforma responde `504` con `FUNCTION_INVOCATION_TIMEOUT`. Se fija explícitamente `maxDuration = 120` s (`nitro.vercel.functions.maxDuration` o el equivalente del preset) para que `/api/songs/fetch`, `/refresh` y `/pptx`
+no dependan del valor por defecto; T005 lo aplica y lo anota en [quickstart § 6](./quickstart.md). El cliente trata un `504` como fallo transitorio (**Reintentar**), igual que `503 waking`.
 
-**Razón**: mismo riesgo abierto que 005 D8; mejor medirlo que suponerlo. No hay endpoint de sondeo: se evita estado en el servidor.
+**Razón**: 120 s cubre 55 s de rastreo y 90 s de generación con margen y queda muy por debajo del tope de 300 s; una función colgada no corre hasta el máximo. No hay endpoint de sondeo: se evita estado en el servidor.
 
 **Alternativas**: convertir el rastreo en trabajo asíncrono con sondeo (más piezas, más estados); cambiar de plataforma (fuera de alcance).
 

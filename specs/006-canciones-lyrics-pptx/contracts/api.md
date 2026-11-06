@@ -53,9 +53,9 @@ Sin cuerpo. Rastrea `source_url`, parsea y **solo si hay letra válida** actuali
 
 ## 4. `POST /api/songs/[id]/pptx`
 
-Cuerpo: `{ "fontColor"?: string }` → `songPresentationInput` (`#?RRGGBB`, normalizado a `RRGGBB`; por defecto `000000`).
+Sin cuerpo. El color de letra es fijo: blanco (`SONG_FONT_COLOR = 'FFFFFF'`, D12).
 
-Flujo: leer canción → `countLines > 300` → `422 lyrics_too_long` sin llamar al servicio → `lyricsToHtml(stanzas)` → `createLyricsPptx({ html, title, fontColor })` (frontera `cloudy-api.ts`, plazo 90 s) →
+Flujo: leer canción → `countLines > 300` → `422 lyrics_too_long` sin llamar al servicio → `lyricsToHtml(stanzas)` → `createLyricsPptx({ html, title })` (frontera `cloudy-api.ts`, plazo 90 s) →
 responder los bytes.
 
 Éxito `200`, cuerpo binario, cabeceras:
@@ -78,7 +78,7 @@ Errores (D9):
 | `502` | `misconfigured` / `invalid` | Servicio mal configurado / petición rechazada (error nuestro, se registra) |
 | `503` | `waking` / `not_configured` | Servicio despertando o caído; **Reintentar** / no configurado |
 
-El cliente **no reintenta** `422`; reintenta (manual) solo `503`/red.
+El cliente **no reintenta** `422`; reintenta (manual) solo `503`, `504` (`FUNCTION_INVOCATION_TIMEOUT` de Vercel, D15) y red.
 
 ## 5–6. Historial
 
@@ -114,10 +114,10 @@ export async function crawlLetras(url: string): Promise<CrawledPage>           /
 
 ```ts
 export interface LyricsPptx { bytes: Uint8Array; contentDisposition: string | null; slideCount: number | null; arrangedBy: 'llm' | 'fallback' | null }
-export async function createLyricsPptx(input: { html: string; title: string; fontColor: string }): Promise<LyricsPptx>
+export async function createLyricsPptx(input: { html: string; title: string }): Promise<LyricsPptx>
 ```
 
-- `POST {cloudyApiUrl}/v1/lyrics/pptx`, `X-API-Key`, cuerpo `{ html, title, font_color }`, plazo `CLOUDY_API_TIMEOUTS.pptx = 90_000`.
+- `POST {cloudyApiUrl}/v1/lyrics/pptx`, `X-API-Key`, cuerpo `{ html, title, font_color: SONG_FONT_COLOR }` (`'FFFFFF'`, D12), plazo `CLOUDY_API_TIMEOUTS.pptx = 90_000`.
 - Lee los bytes con `arrayBuffer()` y las cabeceras `content-disposition`, `x-slide-count`, `x-lyrics-arranged-by` (valores desconocidos → `null`).
 - Errores y mapeo: [research D9](../research.md). `fail()` gana el caso `'pptx'` sin cambiar los existentes.
 

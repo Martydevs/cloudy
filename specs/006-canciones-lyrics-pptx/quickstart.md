@@ -31,8 +31,8 @@ Guía de validación de extremo a extremo (no incluye código de implementación
 
 ## 3. Escenario US2 — generar la presentación (Fase 2)
 
-1. En la ficha elegir color (Negro por defecto, probar Blanco) → **Generar presentación** → progreso → descarga `<Título>.pptx` (con tildes bien) → aviso «N diapositivas generadas».
-2. Abrir el archivo en PowerPoint: letra repartida en diapositivas, texto del color elegido, sin relleno de fondo.
+1. En la ficha, junto a **Generar presentación**, se lee «La letra va en blanco: proyecta la presentación sobre un fondo oscuro.» → **Generar presentación** → progreso → descarga `<Título>.pptx` (con tildes bien) → aviso «N diapositivas generadas».
+2. Abrir el archivo en PowerPoint y aplicar un fondo oscuro: letra repartida en diapositivas, texto blanco, sin relleno de fondo.
 3. Doble clic rápido en **Generar**: una sola solicitud (red del navegador).
 4. Reparto de respaldo: apagar o romper la IA del servicio (o usar el escenario `fallback` del stub) → se descarga igual y aparece la nota.
 5. Servicio dormido: esperar 15 min o detener el servicio, recargar `/canciones` (banner «Despertando…»), generar → termina dentro de 90 s o muestra **Reintentar**.
@@ -40,9 +40,9 @@ Guía de validación de extremo a extremo (no incluye código de implementación
 
 ## 4. Escenarios US3 y US4
 
-- **Colecciones**: Crear colección desde la ficha → aviso; segunda canción a la misma colección; repetir agrega «ya estaba»; desde otra cuenta del equipo se ve con su autor; un editor ajeno no puede renombrar ni
+- **Colecciones**: con la fila vacía, **Nueva colección** crea una colección sin canciones → aviso; crear colección desde la ficha → aviso; segunda canción a la misma colección; repetir agrega «ya estaba»; desde otra cuenta del equipo se ve con su autor; un editor ajeno no puede renombrar ni
   eliminar (y sí agregar/quitar); administrador sí. Botón de generar de la tarjeta: hover y foco en escritorio, siempre visible en móvil; dice cuántos archivos llegan; una canción con fallo no detiene las demás.
-- **Historial**: obtener 3 canciones → aparecen la más reciente primero; marcar las 3 → barra con conteo, color y **Generar selección** → 3 `.pptx`, uno a la vez; quitar una entrada no la saca de su colección;
+- **Historial**: obtener 3 canciones → aparecen la más reciente primero; marcar las 3 → barra con conteo y **Generar selección** → 3 `.pptx`, uno a la vez; quitar una entrada no la saca de su colección;
   «Cargar más» con > 24.
 - **Vacíos y errores**: colecciones e historial vacíos; `NUXT_APIFY_API_KEY` vacía → «El rastreo de letras no está configurado» y las canciones guardadas siguen funcionando; consola sin errores; teclado y foco visibles.
 
@@ -67,8 +67,8 @@ Reglas verificadas por pruebas: `endpoint-guards.spec.ts` (13 endpoints con `req
 ## 6. Despliegue y operación
 
 - **Variables en Vercel**: `NUXT_APIFY_API_KEY`, `NUXT_CLOUDY_API_URL`, `NUXT_CLOUDY_API_KEY` (y `NUXT_APIFY_BASE_URL` vacía). Sin ellas la página responde «no configurado», no se rompe el resto.
-- **Duración de las funciones** (D15): confirmar en el proyecto de Vercel el plazo máximo vigente y fijar uno ≥ 120 s para `/api/songs/fetch`, `/refresh` y `/pptx`. Anotar aquí el valor confirmado y la fecha:
-  _pendiente de la primera tarea_.
+- **Duración de las funciones** (D15): máximo del proyecto confirmado por la persona el 2026-11-05: **300 s** (pasado, `504 FUNCTION_INVOCATION_TIMEOUT`). T005 fija `maxDuration = 120` s para
+  `/api/songs/fetch`, `/refresh` y `/pptx` y anota aquí cómo quedó configurado: _pendiente de T005_.
 - **Medición del rastreo real**: tiempo típico del actor para Letras (objetivo < 20 s, SC-002) y crédito consumido por canción; si excede, ajustar `requestTimeoutSecs`/`waitSecs` o evaluar D15 (trabajo asíncrono).
 - **Presupuesto**: `bun run analyze` y revisar que `/canciones` y `/canciones/[id]` no superen 250 KB gzip de JS inicial.
 - **Credenciales**: en el navegador (pestaña Red y bundle) no debe aparecer ninguna clave (SC-010).

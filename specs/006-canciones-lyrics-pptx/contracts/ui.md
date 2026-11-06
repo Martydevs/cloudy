@@ -30,8 +30,8 @@ La selección vive en `useState('songs-history-selected')` para sobrevivir a un 
 De arriba abajo (FR-010, clarificación 2026-11-05):
 
 1. **Metadatos** — `SongMeta`: título (`<h1>`), artista, enlace «Ver en Letras.com» (`target="_blank" rel="noopener noreferrer"`), «Obtenida {relativo}».
-2. **Acciones** — `SongActions`: `SongColorPicker`, **Generar presentación** (primario), **Crear colección** / **Agregar a colección**, **Volver a obtener la letra** (secundario, con `ConfirmDialog`).
-   A 360 px los botones ocupan el ancho y se acomodan en varias filas; el orden visual es el del DOM.
+2. **Acciones** — `SongActions`: **Generar presentación** (primario) con la nota `present.whiteHint` debajo, **Crear colección** / **Agregar a colección**, **Volver a obtener la letra** (secundario, con `ConfirmDialog`).
+   No hay selector de color (la letra va en blanco, D12). A 360 px los botones ocupan el ancho y se acomodan en varias filas; el orden visual es el del DOM.
 3. **Letra** — `SongLyrics`: estrofas como `<p>`/líneas en solo lectura, `whitespace-pre-line`, ancho de lectura cómodo; contador «N líneas»; aviso si pasa de 300 (genera deshabilitado con motivo).
 4. **Historial reciente** — `SongHistoryList` con `recent` (12, sin la canción actual), debajo de la letra.
 
@@ -43,14 +43,13 @@ Registra la vista al cargar (`GET /api/songs/[id]`). Estados de la ficha: cargan
 |------------|------------|-----------------|-----------------|
 | `SongUrlInput` | `YoutubeUrlInput` | Campo grande; valida con `songUrlSchema`; espera visible durante el rastreo («Buscando la letra…») | `busy` · `submit(url)` |
 | `SongMeta` | `YoutubeVideoMeta` | Título, artista, origen, fecha | `song` |
-| `SongActions` | acciones de `YoutubeVideoMeta` | Botones de la ficha; deshabilita **Generar** mientras corre y por letra demasiado larga | `song`, `generating` · `generate(color)`, `collection`, `refresh` |
+| `SongActions` | acciones de `YoutubeVideoMeta` | Botones de la ficha; deshabilita **Generar** mientras corre y por letra demasiado larga; muestra `present.whiteHint` | `song`, `generating` · `generate`, `collection`, `refresh` |
 | `SongLyrics` | `YoutubePlayer` (zona superior) | Lectura de la letra por estrofas | `stanzas` |
-| `SongColorPicker` | `YoutubeFormatPicker` | Negro / Blanco / `<input type="color">`; `v-model` en `RRGGBB`; recuerda la última elección | `v-model` |
-| `SongCollectionRow` | `YoutubePlaylistRow` | Fila **Colecciones** con sus cuatro estados | `collections`, `pending`, `error` · `retry`, `open`, `generate` |
+| `SongCollectionRow` | `YoutubePlaylistRow` | Fila **Colecciones** con sus cuatro estados y el botón **Nueva colección** en la cabecera de la fila y en el estado vacío (FR-020) | `collections`, `pending`, `error` · `retry`, `open`, `generate`, `create` |
 | `SongCollectionCard` | `YoutubePlaylistCard` | Tarjeta (ícono, nombre, conteo, autor); botón de generar visible siempre en móvil y con hover **y** foco desde `lg:` | `collection` · `open`, `generate` |
-| `SongCollectionDialog` | `YoutubePlaylistDialog` | Crear / elegir colección desde una canción; ver una colección, renombrar, quitar canciones, generar una | `collectionId?`, `songId?`, `songTitle?` · `close` |
+| `SongCollectionDialog` | `YoutubePlaylistDialog` | Crear una colección (vacía desde la fila, o con la canción actual) / elegir colección desde una canción; ver una colección, renombrar, quitar canciones, generar una | `collectionId?`, `songId?`, `songTitle?` · `close` (sin `songId` ni `collectionId` = modo **crear vacía**) |
 | `SongHistoryList` | `YoutubeHistoryList` | Rejilla con casillas, centinela de siguiente página, acciones por entrada (abrir, agregar a colección, generar, quitar) | `v-model:selected`, `recent?`, `exclude?` · `collection`, `generate` |
-| `SongSelectionBar` | `YoutubeSelectionBar` | Barra fija abajo: conteo, «N archivos», `SongColorPicker`, **Generar selección**, **Limpiar** | `count` · `generate(color)`, `clear` |
+| `SongSelectionBar` | `YoutubeSelectionBar` | Barra fija abajo: conteo, «N archivos», **Generar selección**, **Limpiar** | `count` · `generate`, `clear` |
 | `SongPresentationTray` | `YoutubeDownloadTray` | Bandeja con la cola; avance por canción, nota de reparto de respaldo, **Cancelar**, **Reintentar**, **Descargar de nuevo**, **Descartar** | — (lee `useSongPresentations`) |
 
 Se **reutilizan sin cambios**: `YoutubeServiceBanner`, `SkeletonList`, `EmptyState`, `ErrorState`, `ConfirmDialog`, `ActionMenu`.
@@ -64,8 +63,8 @@ Se **reutilizan sin cambios**: `YoutubeServiceBanner`, `SkeletonList`, `EmptySta
 |------------|-----------------|
 | `useSongs()` | `open(url)`: `POST /api/songs/fetch` + `navigateTo('/canciones/<id>')`; `useSong(id)` (ficha, `useApiFetch`); `refreshLyrics(id)` con confirmación y aviso |
 | `useSongHistory({ exclude?, recent? })` | Clon de `useYoutubeHistory` sobre `/api/songs/history`: primera página con SSR, `loadMore`, `remove` con confirmación |
-| `useSongCollections()` / `useSongCollectionList()` | Clon de `useYoutubePlaylists`: crear, renombrar, eliminar, agregar/quitar canción, `canManage` con `can(role, 'songs.moderate')`; clave `song-collections` |
-| `useSongPresentations()` | Cola secuencial en `useState` (D10): `enqueue(songs, color)`, `cancel`, `retry`, `dismiss`, `redownload`, `filesFor(n)`; usa `download-blob.ts` |
+| `useSongCollections()` / `useSongCollectionList()` | Clon de `useYoutubePlaylists`: crear (vacía o con canción), renombrar, eliminar, agregar/quitar canción, `canManage` con `can(role, 'songs.moderate')`, `generate(collectionId)` (confirma con `filesFor(n)` y encola); clave `song-collections` |
+| `useSongPresentations()` | Cola secuencial en `useState` (D10): `enqueue(songs)`, `cancel`, `retry`, `dismiss`, `redownload`, `filesFor(n)`; usa `download-blob.ts`; `504` cuenta como transitorio |
 
 `app/utils/download-blob.ts`: `downloadBlob(blob, headers)` toma el nombre de `Content-Disposition` (`filename*` primero, luego `filename`, luego `canciones.pptx`) y dispara la descarga; revoca el `objectURL` al descartar.
 
@@ -73,7 +72,7 @@ Se **reutilizan sin cambios**: `YoutubeServiceBanner`, `SkeletonList`, `EmptySta
 
 | Vista | Cargando | Vacío | Error | Contenido |
 |-------|----------|-------|-------|-----------|
-| Colecciones | `SkeletonList variant="grid"` | `EmptyState` «Aún no hay colecciones» · «Abre una canción y pulsa Crear colección.» | `ErrorState` + reintento | Tarjetas |
+| Colecciones | `SkeletonList variant="grid"` | `EmptyState` «Aún no hay colecciones» · «Crea la primera aquí o desde una canción.» con el botón **Nueva colección** | `ErrorState` + reintento | Tarjetas |
 | Historial | `SkeletonList` | «Todavía no hay canciones» · «Pega el primer enlace arriba.» | `ErrorState` + reintento; «Cargar más» con su propio error | Rejilla con casillas |
 | Ficha | `SkeletonList` | — | `ErrorState` / «Esa canción ya no existe» | Metadatos, acciones, letra |
 | Bandeja | — | no se monta | fila `failed` con motivo y acción | filas por canción |
@@ -96,18 +95,19 @@ Rastreo (campo): espera con spinner y `aria-busy`; errores junto al campo con `r
 | `present.lyrics_too_long` | Eso no parece una canción: la letra pasa de 300 líneas. |
 | `present.no_lyrics` | La letra guardada no tiene contenido. Vuelve a obtenerla. |
 | `present.fallback` | Las diapositivas se agruparon automáticamente (el reparto con IA no estuvo disponible). |
+| `present.whiteHint` | La letra va en blanco: proyecta la presentación sobre un fondo oscuro. |
 | `present.done(n)` | {n} diapositivas generadas |
 | `present.filesCount(n)` | Recibirás {n} archivos, uno por canción. |
 | `present.blocked` | Tu navegador pudo bloquear las descargas seguidas. Usa «Descargar de nuevo» en las que falten. |
 | `refresh.confirm` | ¿Volver a obtener la letra? Reemplaza la guardada si el nuevo rastreo tiene éxito. |
-| `collection.*` | Las mismas frases que `youtube.playlists`, con «colección» (creada, renombrada, eliminada, ya estaba, etc.) |
+| `collection.*` | Las mismas frases que `youtube.playlists`, con «colección» (creada, renombrada, eliminada, ya estaba, etc.); `collection.new` = «Nueva colección» |
 | `inactiveUser` | Usuario inactivo (se reutiliza `messages.youtube.inactiveUser`) |
 
 Los mensajes de error del servidor llegan por `serverMessage(error, fallback, byStatus)`; el `503` se nombra explícitamente (`waking`/`busy`/`quota`).
 
 ## Accesibilidad y movimiento
 
-Foco visible en todos los controles; la letra es texto real (lectores de pantalla); el selector de color tiene `<label>` y muestra el valor `#RRGGBB` como texto; el cambio de estado del rastreo y de la bandeja usa
+Foco visible en todos los controles; la letra es texto real (lectores de pantalla); el cambio de estado del rastreo y de la bandeja usa
 `role="status"`; `motion-reduce` en animaciones (spinner). Contraste AA en `cloudy` y `cloudy-light`; sin `text-warning` sobre `base-100` claro.
 
 ## Pruebas de UI
