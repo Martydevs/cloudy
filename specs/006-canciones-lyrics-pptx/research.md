@@ -23,16 +23,34 @@ Decisiones de la Fase 0. Formato: **Decisión · Razón · Alternativas**. Los c
 
 ## D2 — Llamada al actor con el SDK
 
-**Decisión**: `new ApifyClient({ token, baseUrl?, maxRetries: 2, timeoutSecs: 30 })` por llamada (sin estado entre peticiones) y
+**Decisión**: `new ApifyClient({ token, baseUrl?, maxRetries: 2, timeoutSecs: 60 })` por llamada (sin estado entre peticiones) y
 
 ```ts
 const run = await client.actor('apify/rag-web-browser').call(
   { query: url, maxResults: 1, outputFormats: ['html'], scrapingTool: 'browser-playwright',
     requestTimeoutSecs: 40, removeCookieWarnings: true, htmlTransformer: 'none' },
-  { waitSecs: 55 },
+  { waitSecs: 55, log: null },
 )
 const { items } = await client.dataset(run.defaultDatasetId).listItems({ limit: 1 })
 ```
+
+**Verificado en T003 (2026-11-05, código de `apify-client@2.25.0` y tres rastreos reales; el MCP `apify-webcrawler` no conectó)**:
+
+- `timeoutSecs` es el plazo de **cada petición HTTP** (axios). `call()` espera con `GET /v2/actor-runs/:id?waitForFinish=N` (espera del lado de la API, máx. 60 s), así que con `timeoutSecs: 30` la
+  primera espera se cortaría a los 30 s y se reintentaría. Se fija **`timeoutSecs: 60`** (≥ `waitSecs`).
+- `call()` sin `log` abre el registro del run por defecto (`getStreamedLog`: lee el run, el actor y transmite su log a la consola). Se pasa **`log: null`**: sin peticiones de más ni líneas del actor en nuestros
+  registros.
+- Rutas HTTP que usa el SDK (necesarias para el stub de e2e): `POST /v2/actors/apify~rag-web-browser/runs` · `GET /v2/actor-runs/:id?waitForFinish=N` · `POST /v2/actor-runs/:id/abort` ·
+  `GET /v2/datasets/:id/items?limit=1` (lee las cabeceras `x-apify-pagination-*`). Las respuestas de run van envueltas en `{ data: … }`; los items, como arreglo.
+- Item del dataset: claves `crawl`, `metadata`, `query`, `html`. `crawl.httpStatusCode` llega como **número** (`200`); `metadata.title`, `metadata.url`, `metadata.redirectedUrl` y `metadata.canonicalUrl` son
+  texto; `html` es la página completa (~190 KB).
+- **Hallazgo — enlace inexistente redirige a otra canción**: `https://www.letras.com/musiko/cancion-que-no-existe-xyz/` respondió `200` con la letra de **otra** canción del mismo artista
+  (`metadata.url`/`redirectedUrl`/`canonicalUrl` = `…/musiko/mas-part-gabrielrodriguezemc/`). Por eso `crawlLetras` también devuelve `finalUrl` (`redirectedUrl ?? url`) y el endpoint compara
+  `parseLetrasUrl(finalUrl).url` con el enlace pedido ya normalizado: si difieren → `404 no_lyrics` sin escribir nada (los cambios solo de `www.` o barra final siguen valiendo).
+- `ApifyApiError` expone `statusCode` y `type`. El `type` exacto de crédito agotado **queda pendiente** (no se puede provocar sin agotar la cuenta): se clasifica solo por estado (402 → `quota`).
+- Tiempo real medido: ~20–22 s por rastreo (`SUCCEEDED`, ~0,0018 USD cada uno). Queda al borde del objetivo de 20 s de SC-002; ver quickstart § 6.
+- El servidor rastrea el enlace **normalizado** (`https://letras.com/<a>/<s>`, sin `www.` ni barra final): Letras.com lo redirige a
+  `https://www.letras.com/<a>/<s>/` con `200` y la misma letra, que al normalizarse coincide con el pedido (verificado con un rastreo real).
 
 - `query` con **una URL** hace que el actor la raspe directamente (ignora `maxResults`; lo dejamos en 1 por claridad).
 - `outputFormats: ['html']` trae el HTML de la página; `markdown` y `text` pierden la estructura de estrofas.
@@ -40,7 +58,7 @@ const { items } = await client.dataset(run.defaultDatasetId).listItems({ limit: 
 - `htmlTransformer: 'none'` solo quita los elementos de `removeElementsCssSelector` (navegación, cabecera, pie, modales, scripts); no se usa «Readable text» porque podría descartar la letra como contenido
   secundario.
 - `waitSecs: 55` acota la espera; si el run sigue `RUNNING` al vencer, `crawlLetras` lo cancela (`client.run(run.id).abort()`, mejor esfuerzo) para no pagar un run huérfano.
-- Los campos del item usados son `crawl.httpStatusCode`, `metadata.title` y `html` (esquema del actor). **(verificar con el MCP)**: nombres exactos de los campos y si `crawl.httpStatusCode` llega como número.
+- Los campos del item usados son `crawl.httpStatusCode`, `metadata.redirectedUrl`/`metadata.url` y `html` (confirmados en T003, arriba).
 
 **Clasificación de fallos** (a errores en español, nunca el mensaje del actor ni la clave):
 
@@ -48,7 +66,7 @@ const { items } = await client.dataset(run.defaultDatasetId).listItems({ limit: 
 |-----------|-----------|
 | Sin `apifyApiKey` | `503` `notConfigured` (sin llamar a nada) |
 | `ApifyApiError` 401/403 | `502` `misconfigured` («avisa a un administrador») |
-| `ApifyApiError` 402, o `type` que indique falta de uso/límite **(verificar)** | `503` `quota` («se agotó el crédito del servicio de rastreo») |
+| `ApifyApiError` 402 (el `type` de crédito agotado queda pendiente: se clasifica por estado) | `503` `quota` («se agotó el crédito del servicio de rastreo») |
 | `ApifyApiError` 429 | `503` `busy` |
 | run `FAILED` / `TIMED-OUT` / `ABORTED`, sin items, o `RUNNING` tras `waitSecs` | `502` `crawlFailed` (reintentar) |
 | `crawl.httpStatusCode` 404, o HTML sin letra | `404` `no_lyrics` (se decide en el endpoint con el parser; el crawler solo entrega `{ html, status }`) |
@@ -80,6 +98,15 @@ relevantes en comentarios breves del módulo solo si no se infieren del código.
 **Tarea 0 (bloqueante del parser)**: capturar con el actor un fixture real de una canción y otro de una página sin letra (`test/unit/fixtures/`), y ajustar la cascada del artista y la lectura de estrofas a lo que
 se vea. Hasta tenerlos, la estructura anterior es una hipótesis basada en el contrato del servicio, no en HTML observado.
 
+**Confirmado con los fixtures (T004, 2026-11-05)**: `test/unit/fixtures/letras-song.html` (`/musiko/de-buenas-part-josh-gamez/`) y `letras-no-lyrics.html` (página de artista `/musiko/`).
+
+- Un solo `<div class="lyric-original">` con estrofas en `<p>` y líneas separadas por `<br>`; la página de artista no lo tiene.
+- Un solo `<h1>` (título, con mayúsculas y minúsculas originales).
+- Artista: `<a class="title-secondary …"><h2>Musiko</h2></a>`, justo después del `<h1>`. **No** sirve «el primer `<h2>`»: la cabecera del sitio tiene antes otros (`LETRAS.COM - Letras de canciones`, `Menu`,
+  `Options`). Cascada final: `<h2>` dentro del elemento con clase `title-secondary` → segundo segmento del `<title>` (`TÍTULO - Artista - LETRAS.COM`) → `null`.
+- El HTML devuelto por el actor **no trae metadatos Open Graph** (el `<head>` solo tiene `<title>`); el título de respaldo es el primer segmento del `<title>`, que viene en mayúsculas.
+- El recorrido sin dependencias basta: no se agrega paquete de parseo.
+
 **Razón**: es la parte de «mapeo» de la Fase 1; al ser pura, se prueba con fixtures y casos límite sin red. Detectar la estructura por profundidad evita que un `</div>` interior corte el contenedor.
 
 **Alternativas**: `node-html-parser`/`linkedom` (dependencia nueva; se adopta solo si el fixture real demuestra que el recorrido no basta, y se registra en Complexity Tracking); mandar al servicio la página entera
@@ -100,7 +127,7 @@ dos segmentos** `[a-z0-9-]` (`/artista/cancion/`). Devuelve la URL normalizada `
 `UNIQUE` sobre ese valor y el `id` (`uuid`) es el de la ruta `/canciones/<id>`.
 
 Motivos de rechazo: `not_url`, `not_https`, `not_letras` (incluye `letras.com.otro.test` y `letras.com@otro.test`), `credentials`, `not_song` (ruta sin dos segmentos). `not_song` evita gastar un rastreo en páginas de
-artista/álbum; el mensaje coincide con «No encontramos una letra en ese enlace» del spec para los enlaces de Letras sin canción.
+artista/álbum; su mensaje es `url.not_song` («Ese enlace no es de una canción. Abre la canción en Letras.com y copia su enlace.», contracts/ui.md), distinto de «No encontramos una letra en ese enlace», que queda para enlaces con forma de canción cuya página no existe o no trae la letra (spec US1 escenario 5, ajustado tras `/speckit-analyze`).
 
 **Razón**: la validación en el servidor es el SSRF-guard real (el cliente es solo comodidad); la normalización cumple FR-006 y evita duplicados.
 

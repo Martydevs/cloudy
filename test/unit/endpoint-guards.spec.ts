@@ -97,6 +97,29 @@ describe('guards de los endpoints', () => {
     expect(files.filter(f => (isPublic(f) || isCron(f)) && f.includes('youtube'))).toEqual([])
   })
 
+  it('los endpoints de Canciones exigen rol de equipo y ninguno es público ni exento (feature 006)', () => {
+    const songs = files.filter(f => f.startsWith('songs/'))
+    expect(songs).toEqual(expect.arrayContaining([
+      'songs/[id]/index.get.ts',
+      'songs/[id]/pptx.post.ts',
+      'songs/[id]/refresh.post.ts',
+      'songs/collections/[id]/index.delete.ts',
+      'songs/collections/[id]/index.get.ts',
+      'songs/collections/[id]/index.patch.ts',
+      'songs/collections/[id]/items/[songId].delete.ts',
+      'songs/collections/[id]/items/index.post.ts',
+      'songs/collections/index.get.ts',
+      'songs/collections/index.post.ts',
+      'songs/fetch.post.ts',
+      'songs/history/[id].delete.ts',
+      'songs/history/index.get.ts',
+    ]))
+    // Los 13 de contracts/api.md, ni uno más sin revisarlo aquí.
+    expect(songs).toHaveLength(13)
+    for (const file of songs) expect(source(file), file).toMatch(/\brequireRole\(event, 'editor'\)/)
+    expect(files.filter(f => (isPublic(f) || isCron(f)) && f.includes('songs'))).toEqual([])
+  })
+
   it('los endpoints del equipo para solicitudes de acceso exigen rol (feature 003)', () => {
     const team = files.filter(f => f.startsWith('access-requests/'))
     expect(team).toEqual(['access-requests/[id]/approve.post.ts', 'access-requests/[id]/reject.post.ts', 'access-requests/index.get.ts'])

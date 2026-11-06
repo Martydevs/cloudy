@@ -13,6 +13,8 @@ import { fileName, folderName } from '#shared/validation/files'
 import { imageTextEditInput } from '#shared/validation/image-text'
 import { note, senderName } from '#shared/validation/submissions'
 import { parseYoutubeUrl, playlistName, YOUTUBE_URL_MESSAGES } from '#shared/validation/youtube'
+import { SONG_URL_MESSAGES } from '#shared/constants/songs'
+import { parseLetrasUrl, songCollectionName } from '#shared/validation/songs'
 import { useFormSchema } from '~/utils/form-schema'
 import {
   accessRequestSchema,
@@ -29,6 +31,8 @@ import {
   profileNameSchema,
   registerSchema,
   resetSchema,
+  songCollectionSchema,
+  songUrlSchema,
   youtubePlaylistSchema,
   youtubeUrlSchema,
 } from '~/utils/form-schemas'
@@ -165,6 +169,12 @@ const cases: Case[] = [
     samples: [{ name: 'Domingo' }, { name: '' }, { name: '   ' }, { name: pad(L(80)) }, { name: L(81) }],
   },
   {
+    name: 'nombre de colección de canciones',
+    validator: object({ name: songCollectionName() }),
+    schema: songCollectionSchema,
+    samples: [{ name: 'Domingo' }, { name: '' }, { name: '   ' }, { name: pad(L(80)) }, { name: L(81) }],
+  },
+  {
     name: 'nota del envío (opcional)',
     validator: object({ note: note() }),
     schema: z.object({ note: noteSchema }),
@@ -221,6 +231,41 @@ describe('enlace de YouTube (youtubeUrlSchema ↔ parseYoutubeUrl)', () => {
     expect(await schemaErrors({ url: 'hola' }, youtubeUrlSchema)).toEqual({ url: 'Pega un enlace completo, por ejemplo https://youtu.be/…' })
     expect(await schemaErrors({ url: 'https://www.youtube.com/playlist?list=PL1' }, youtubeUrlSchema)).toEqual({ url: 'Ese enlace es de una lista de YouTube. Pega el de un video.' })
     expect(await schemaErrors({ url: 'https://vimeo.com/1' }, youtubeUrlSchema)).toEqual({ url: 'Solo aceptamos enlaces de YouTube' })
+  })
+})
+
+describe('enlace de Letras.com (songUrlSchema ↔ parseLetrasUrl)', () => {
+  const samples = [
+    'https://www.letras.com/musiko/de-buenas-part-josh-gamez/',
+    'https://letras.com/musiko/de-buenas-part-josh-gamez?utm_source=x',
+    '  https://www.letras.com/musiko/de-buenas-part-josh-gamez/#letra  ',
+    '',
+    '   ',
+    'hola',
+    'http://www.letras.com/a/b/',
+    'www.letras.com/a/b/',
+    'https://example.com/a/b',
+    'https://letras.com.otro.test/a/b/',
+    'https://letras.com@otro.test/a/b/',
+    'https://user:pass@letras.com/a/b/',
+    'https://letras.com:8443/a/b/',
+    'https://www.letras.com/musiko/',
+    'https://www.letras.com/a/b/c/',
+  ]
+
+  it('acepta y rechaza lo mismo que la regla compartida, con el mensaje de cada motivo', async () => {
+    for (const url of samples) {
+      const res = parseLetrasUrl(url)
+      const expected = url.trim() === ''
+        ? { url: 'Este campo es obligatorio' }
+        : res.ok ? {} : { url: SONG_URL_MESSAGES[res.reason] }
+      expect(await schemaErrors({ url }, songUrlSchema), url).toEqual(expected)
+    }
+  })
+
+  it('los mensajes dicen qué hacer', async () => {
+    expect(await schemaErrors({ url: 'https://www.letras.com/musiko/' }, songUrlSchema)).toEqual({ url: 'Ese enlace no es de una canción. Abre la canción en Letras.com y copia su enlace.' })
+    expect(await schemaErrors({ url: 'https://example.com/a/b' }, songUrlSchema)).toEqual({ url: 'Solo aceptamos enlaces de Letras.com (letras.com o www.letras.com).' })
   })
 })
 

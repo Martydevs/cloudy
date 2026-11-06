@@ -322,6 +322,55 @@ export const youtubeDownloads = pgTable('youtube_downloads', {
   check('youtube_downloads_format', sql`${t.format} IN ('mp4_720', 'mp4_1080', 'mp3')`),
 ])
 
+// ---------------------------------------------------------------- Canciones (feature 006, data-model.md)
+
+/** Canción conocida + historial compartido en la misma fila (`last_viewed_at` `NULL` = fuera del historial). */
+export const songs = pgTable('songs', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  /** `https://letras.com/<artista>/<cancion>` normalizada (research D6). */
+  sourceUrl: text('source_url').notNull(),
+  /** 1–200 car. (se recorta al guardar) */
+  title: text('title').notNull(),
+  /** ≤ 200 car.; `NULL` si la página no lo indica */
+  artist: text('artist'),
+  /** Estrofas → líneas, sin vacías. Nunca HTML (research D5). */
+  lyrics: jsonb('lyrics').$type<string[][]>().notNull(),
+  lastViewedAt: timestamp('last_viewed_at', { withTimezone: true }),
+  lastViewedBy: text('last_viewed_by').references(() => profiles.userId),
+  ...timestamps,
+}, t => [
+  uniqueIndex('songs_source_url_key').on(t.sourceUrl),
+  index('songs_history_idx').on(t.lastViewedAt.desc(), t.id.desc()).where(sql`${t.lastViewedAt} IS NOT NULL`),
+  check('songs_source_url_format', sql`${t.sourceUrl} ~ '^https://letras\\.com/[a-z0-9-]+/[a-z0-9-]+$'`),
+  check('songs_title_length', sql`char_length(${t.title}) BETWEEN 1 AND 200`),
+  check('songs_artist_length', sql`${t.artist} IS NULL OR char_length(${t.artist}) <= 200`),
+  check('songs_lyrics_array', sql`jsonb_typeof(${t.lyrics}) = 'array' AND jsonb_array_length(${t.lyrics}) >= 1`),
+  check('songs_last_viewed_pair', sql`(${t.lastViewedAt} IS NULL) = (${t.lastViewedBy} IS NULL)`),
+])
+
+/** Colección global del equipo; los nombres pueden repetirse. */
+export const songCollections = pgTable('song_collections', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  /** 1–80 car., sin espacios al borde */
+  name: text('name').notNull(),
+  createdBy: text('created_by').notNull().references(() => profiles.userId),
+  ...timestamps,
+}, t => [
+  index('song_collections_updated_idx').on(t.updatedAt.desc(), t.id),
+  check('song_collections_name_length', sql`char_length(${t.name}) BETWEEN 1 AND 80 AND ${t.name} = btrim(${t.name})`),
+])
+
+/** Una canción una sola vez por colección (FR-023). Sin cascada a la canción: no se borra mientras una colección la use. */
+export const songCollectionItems = pgTable('song_collection_items', {
+  collectionId: uuid('collection_id').notNull().references(() => songCollections.id, { onDelete: 'cascade' }),
+  songId: uuid('song_id').notNull().references(() => songs.id),
+  addedBy: text('added_by').notNull().references(() => profiles.userId),
+  addedAt: timestamp('added_at', { withTimezone: true }).notNull().defaultNow(),
+}, t => [
+  primaryKey({ columns: [t.collectionId, t.songId] }),
+  index('song_collection_items_song_idx').on(t.songId),
+])
+
 // ---------------------------------------------------------------- relations
 
 export const profilesRelations = relations(profiles, ({ many }) => ({

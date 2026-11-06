@@ -25,6 +25,8 @@ export default defineNuxtConfig({
     cloudyApiUrl: '',
     cloudyApiKey: '',
     apifyApiKey: '',
+    // Vacío = API de Apify; solo los e2e lo apuntan a su stub local (feature 006, research D14).
+    apifyBaseUrl: '',
 
     openrouterApikey: '',
     // Vacío = API de OpenRouter; solo los e2e lo apuntan a un stub local.
@@ -86,6 +88,9 @@ export default defineNuxtConfig({
   nitro: {
     // Necesario para `useEvent()` en el adaptador de Neon Auth (research R1).
     experimental: { asyncContext: true },
+    // Feature 006 (research D15): el rastreo espera hasta 55 s y la presentación hasta 90 s. El tope del proyecto en
+    // Vercel es 300 s; se fija 120 s para no depender del valor por defecto de la plataforma.
+    vercel: { functions: { maxDuration: 120 } },
   },
   compatibilityDate: '2025-07-15',
   devtools: { enabled: true },

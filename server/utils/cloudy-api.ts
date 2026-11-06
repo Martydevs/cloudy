@@ -12,13 +12,15 @@ import type {
   YoutubeVideoDetail,
 } from '#shared/types/api'
 import { isBlockReason, itemErrorMessage, YOUTUBE_SERVICE_MESSAGES as MSG } from '#shared/constants/youtube'
+import { SONG_FONT_COLOR, SONG_SERVICE_MESSAGES } from '#shared/constants/songs'
+import { songError } from './songs'
 
 /** Plazo por llamada (research D8): `createJob` sondea cada video antes de encolar. */
-export const CLOUDY_API_TIMEOUTS = { ping: 5_000, job: 10_000, probe: 20_000, create: 45_000 } as const
+export const CLOUDY_API_TIMEOUTS = { ping: 5_000, job: 10_000, probe: 20_000, create: 45_000, pptx: 90_000 } as const
 /** Segundos que se sugieren al cliente cuando la cola del servicio está llena. */
 export const QUEUE_RETRY_AFTER = 30
 
-type Call = 'ping' | 'video' | 'job' | 'cancel' | 'create'
+type Call = 'ping' | 'video' | 'job' | 'cancel' | 'create' | 'pptx'
 
 interface ServiceDetail {
   code?: unknown
@@ -79,6 +81,17 @@ async function fail(res: Response, call: Call, event?: H3Event): Promise<never> 
   const code = typeof detail?.code === 'string' ? detail.code : null
   console.warn(`[cloudy-api] ${call} → ${status}${code ? ` (${code})` : ''}`)
 
+  // Presentaciones de Canciones (feature 006, research D9): errores con `data.code` y textos del servicio de presentaciones.
+  if (call === 'pptx') {
+    if (status === 422 && (code === 'no_lyrics' || code === 'lyrics_too_long')) {
+      throw songError(code, code === 'no_lyrics' ? SONG_SERVICE_MESSAGES.noLyrics : SONG_SERVICE_MESSAGES.tooLong, 422)
+    }
+    // Un 422 sin código es la lista de validación de FastAPI: la petición la armamos nosotros.
+    if (status === 422) throw songError('invalid', SONG_SERVICE_MESSAGES.invalid)
+    if (status === 401 || status === 403) throw songError('misconfigured', SONG_SERVICE_MESSAGES.misconfigured)
+    throw songError('waking', SONG_SERVICE_MESSAGES.waking)
+  }
+
   if (status === 401 || status === 403) {
     throw createError({ statusCode: 502, statusMessage: 'Bad Gateway', message: MSG.misconfigured })
   }
@@ -107,15 +120,17 @@ async function fail(res: Response, call: Call, event?: H3Event): Promise<never> 
 
 interface RequestOptions {
   method?: 'GET' | 'POST' | 'DELETE'
+  /** Tipo de respuesta que se acepta (`application/json` por defecto). */
+  accept?: string
   body?: unknown
   timeoutMs: number
   /** El ping (`/healthz`) no usa la clave. */
   auth?: boolean
 }
 
-async function request(path: string, call: Call, { method = 'GET', body, timeoutMs, auth = true }: RequestOptions): Promise<Response> {
+async function request(path: string, call: Call, { method = 'GET', body, timeoutMs, auth = true, accept = 'application/json' }: RequestOptions): Promise<Response> {
   const { base, key } = config()
-  const headers: Record<string, string> = { accept: 'application/json' }
+  const headers: Record<string, string> = { accept }
   if (auth) headers['X-API-Key'] = key
   if (body !== undefined) headers['content-type'] = 'application/json'
   try {
@@ -253,4 +268,55 @@ export async function pingService(): Promise<YoutubeServiceHealth> {
     if (body?.status === 'degraded') return { state: 'down' }
   }
   return { state: 'waking' }
+}
+
+// ---------------------------------------------------------------- presentaciones de Canciones (feature 006)
+
+export interface LyricsPptx {
+  bytes: Uint8Array
+  contentDisposition: string | null
+  slideCount: number | null
+  arrangedBy: 'llm' | 'fallback' | null
+}
+
+const PPTX_TYPE = 'application/vnd.openxmlformats-officedocument.presentationml.presentation'
+
+/**
+ * Genera el `.pptx` de una letra (`POST /v1/lyrics/pptx`, research D9). La letra va siempre en blanco (`SONG_FONT_COLOR`,
+ * D12). Los fallos salen como errores de Canciones con `data.code`: sin configurar, despertando, mal configurado, letra vacía
+ * o demasiado larga y petición rechazada.
+ */
+export async function createLyricsPptx({ html, title }: { html: string, title: string }): Promise<LyricsPptx> {
+  let res: Response
+  try {
+    res = await request('/v1/lyrics/pptx', 'pptx', {
+      method: 'POST',
+      body: { html, title, font_color: SONG_FONT_COLOR },
+      timeoutMs: CLOUDY_API_TIMEOUTS.pptx,
+      accept: `${PPTX_TYPE}, application/json`,
+    })
+  }
+  catch (error) {
+    const state = (error as { data?: { state?: string } }).data?.state
+    if (state === 'notConfigured') throw songError('not_configured', SONG_SERVICE_MESSAGES.notConfigured)
+    throw songError('waking', SONG_SERVICE_MESSAGES.waking)
+  }
+  if (!res.ok) return fail(res, 'pptx')
+
+  const slides = Number(res.headers.get('x-slide-count'))
+  const arranged = res.headers.get('x-lyrics-arranged-by')
+  let bytes: Uint8Array
+  try {
+    bytes = new Uint8Array(await res.arrayBuffer())
+  }
+  catch (error) {
+    console.warn(`[cloudy-api] pptx → body (${codeOf(error)})`)
+    throw songError('waking', SONG_SERVICE_MESSAGES.waking)
+  }
+  return {
+    bytes,
+    contentDisposition: res.headers.get('content-disposition') || null,
+    slideCount: res.headers.has('x-slide-count') && Number.isInteger(slides) && slides >= 0 ? slides : null,
+    arrangedBy: arranged === 'llm' || arranged === 'fallback' ? arranged : null,
+  }
 }

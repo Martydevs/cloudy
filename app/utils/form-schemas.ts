@@ -19,6 +19,8 @@ import { FILE_NAME_MAX, FOLDER_NAME_MAX, FORBIDDEN_MESSAGE, NAME_PATTERN } from 
 import { NOTE_MAX, SENDER_NAME_MAX } from '#shared/validation/submissions'
 import { YOUTUBE_PLAYLIST_NAME_MAX } from '#shared/constants/youtube'
 import { parseYoutubeUrl, YOUTUBE_URL_MESSAGES } from '#shared/validation/youtube'
+import { SONG_COLLECTION_NAME_MAX, SONG_URL_MESSAGES } from '#shared/constants/songs'
+import { parseLetrasUrl } from '#shared/validation/songs'
 
 /**
  * Obligatorio: un texto de solo espacios cuenta como vacío. Va siempre primero en cada campo, que es el error que se
@@ -122,6 +124,25 @@ export const youtubeUrlSchema = z.object({ url: z.string().check(filled, youtube
 
 /** Nombre de una lista de YouTube: 1–80 caracteres tras recortar, como `playlistName()` del servidor. */
 export const youtubePlaylistSchema = z.object({ name: z.string().check(filled, maxChars(YOUTUBE_PLAYLIST_NAME_MAX)) })
+
+/**
+ * Enlace de Letras.com pegado en `/canciones` (feature 006, research D6). La regla es `parseLetrasUrl` de `shared/`; su
+ * motivo de rechazo elige el mensaje. Vacío → obligatorio (y el `refine` no repite el error).
+ */
+const letrasUrl = z.refine<string>(
+  value => value.trim() === '' || parseLetrasUrl(value).ok,
+  {
+    error: (issue) => {
+      const res = parseLetrasUrl(issue.input)
+      return res.ok ? SONG_URL_MESSAGES.not_url : SONG_URL_MESSAGES[res.reason]
+    },
+  },
+)
+
+export const songUrlSchema = z.object({ url: z.string().check(filled, letrasUrl) })
+
+/** Nombre de una colección de canciones: 1–80 caracteres tras recortar, como `songCollectionName()` del servidor. */
+export const songCollectionSchema = z.object({ name: z.string().check(filled, maxChars(SONG_COLLECTION_NAME_MAX)) })
 
 export type RegisterForm = z.infer<typeof registerSchema>
 export type LoginForm = z.infer<typeof loginSchema>

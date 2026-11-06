@@ -101,9 +101,11 @@ esperar un nuevo rastreo.
 4. **Given** un texto que no es un enlace válido de Letras.com (texto libre, `http://`, otro sitio, un dominio que
    solo se parece como `letras.com.otro.test`, un enlace con usuario y contraseña), **When** la persona lo confirma,
    **Then** Cloudy lo rechaza **antes de pedir nada a ningún servicio** y explica en español qué enlaces se aceptan.
-5. **Given** un enlace de Letras.com que no contiene una letra (página de artista, canción retirada, página
-   inexistente), **When** la persona lo confirma, **Then** ve «No encontramos una letra en ese enlace», no se guarda
-   nada y puede corregir el enlace sin recargar.
+5. **Given** un enlace de Letras.com con la forma de una canción (`/artista/cancion/`) pero sin letra (canción
+   retirada, página inexistente o sin la zona de la letra), **When** la persona lo confirma, **Then** ve «No
+   encontramos una letra en ese enlace», no se guarda nada y puede corregir el enlace sin recargar. Un enlace de
+   Letras.com que no tiene esa forma (inicio del sitio, página de artista, álbum o listas) se rechaza **antes de
+   pedir nada a ningún servicio**, con un mensaje que explica que debe ser el enlace de una canción.
 6. **Given** que el servicio de rastreo no responde, está sin cuota o no está configurado, **When** la persona
    confirma un enlace, **Then** ve un mensaje que dice qué hacer (reintentar más tarde o avisar a quien administra) con
    acción de reintento, y no queda ninguna canción a medias.
@@ -228,8 +230,10 @@ primero), marcar las tres y generar sus presentaciones: llegan tres `.pptx`.
 
 - Enlace pegado con parámetros extra, fragmentos o barra final (`?utm_source=…`, `#letra`, `/`): se normaliza y se
   trata como la misma canción; no se crean duplicados.
-- Enlace de Letras.com que no es de una canción (inicio del sitio, página de artista, de álbum o de listas): no hay
-  letra que extraer; se informa «No encontramos una letra en ese enlace».
+- Enlace de Letras.com que no es de una canción (inicio del sitio, página de artista, de álbum o de listas): se
+  reconoce por la forma del enlace y se rechaza antes de cualquier solicitud externa («Ese enlace no es de una
+  canción…»). «No encontramos una letra en ese enlace» queda para enlaces con forma de canción cuya página no existe
+  o no trae la letra.
 - Enlace con otro esquema o host parecido (`http://`, `letras.com.otro.test`, `letras.com@otro.test`, puerto o
   credenciales en el enlace): se rechaza antes de cualquier solicitud externa.
 - Dos personas pegan el mismo enlace a la vez: se guarda una sola canción; ninguna ve un error.

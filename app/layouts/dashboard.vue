@@ -19,6 +19,14 @@ const upload = useUploadDialog()
 // Bandeja de descargas de YouTube (feature 005): se monta, diferida, solo cuando hay trabajos.
 const youtubeDownloads = useYoutubeDownloads()
 const youtubeDrive = useYoutubeDriveImport()
+const presentations = useSongPresentations()
+// Relleno inferior del alto real de las bandejas abiertas para que no tapen el último contenido (la de Canciones se apoya
+// encima de la de YouTube: su relleno suma las dos).
+const trayPadding = computed(() => {
+  if (presentations.hasItems.value) return 'pb-[calc(var(--youtube-tray-h,0px)+var(--song-tray-h,12rem)+1.5rem)] lg:pb-[calc(var(--youtube-tray-h,0px)+var(--song-tray-h,12rem)+1.5rem)]'
+  if (youtubeDownloads.active.value || youtubeDrive.hasImports.value) return 'pb-[calc(var(--youtube-tray-h,18rem)+1.5rem)] lg:pb-[calc(var(--youtube-tray-h,18rem)+1.5rem)]'
+  return ''
+})
 
 // El panel móvil se cierra al navegar, con Esc y al pasar a escritorio (edge case).
 // `afterEach` y no `useRoute()`: la ruta se actualiza recién cuando la página nueva terminó de
@@ -88,7 +96,7 @@ watch(phoneOpen, async (open) => {
         id="contenido"
         tabindex="-1"
         class="mx-auto w-full max-w-7xl flex-1 p-4 outline-none lg:p-6"
-        :class="{ 'pb-[calc(var(--youtube-tray-h,18rem)+1.5rem)] lg:pb-[calc(var(--youtube-tray-h,18rem)+1.5rem)]': youtubeDownloads.active.value || youtubeDrive.hasImports.value }"
+        :class="trayPadding"
       >
         <slot />
       </main>
@@ -105,5 +113,6 @@ watch(phoneOpen, async (open) => {
     </div>
     <LazyUploadDialog v-if="upload.isOpen.value" :folder-id="upload.folderId.value" @close="upload.close()" @uploaded="upload.notifyUploaded()" />
     <LazyYoutubeDownloadTray v-if="youtubeDownloads.active.value || youtubeDrive.hasImports.value" />
+    <LazySongPresentationTray v-if="presentations.hasItems.value" />
   </div>
 </template>

@@ -9,6 +9,8 @@ const PRIVATE_ROUTES = [
   '/', '/archivos', '/archivos/ver/00000000-0000-0000-0000-000000000000', '/perfil', '/usuarios', '/actividad', '/solicitudes', '/papelera',
   // Página YouTube (feature 005).
   '/youtube', '/youtube/okShortVid1', '/youtube/okShortVid1/ventana',
+  // Página Canciones (feature 006).
+  '/canciones', '/canciones/00000000-0000-0000-0000-000000000000',
 ]
 
 describe('US6 · protección de rutas', () => {
@@ -157,6 +159,20 @@ describe('US6 · protección de rutas', () => {
       ['DELETE', `/api/youtube/playlists/${id}`],
       ['POST', `/api/youtube/playlists/${id}/items`],
       ['DELETE', `/api/youtube/playlists/${id}/items/okShortVid1`],
+      // Página Canciones (feature 006): los 13 endpoints.
+      ['POST', '/api/songs/fetch'],
+      ['GET', `/api/songs/${id}`],
+      ['POST', `/api/songs/${id}/refresh`],
+      ['POST', `/api/songs/${id}/pptx`],
+      ['GET', '/api/songs/history'],
+      ['DELETE', `/api/songs/history/${id}`],
+      ['GET', '/api/songs/collections'],
+      ['POST', '/api/songs/collections'],
+      ['GET', `/api/songs/collections/${id}`],
+      ['PATCH', `/api/songs/collections/${id}`],
+      ['DELETE', `/api/songs/collections/${id}`],
+      ['POST', `/api/songs/collections/${id}/items`],
+      ['DELETE', `/api/songs/collections/${id}/items/${id}`],
     ] as const
     for (const [method, path] of commentRoutes) {
       const init: { method: string, headers: Record<string, string>, body?: string } = method === 'GET' || method === 'DELETE'

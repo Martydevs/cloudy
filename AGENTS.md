@@ -81,7 +81,7 @@ fetching uses Nuxt `useFetch`, not VueUse.
 **I. Performance** — Mobile 4G budgets: LCP ≤ 2.5 s, INP ≤ 200 ms, CLS ≤ 0.1, initial JS ≤ 250 KB
 gzip per route. Index every filtered/sorted column; no N+1 queries; cursor pagination. **Never stream
 file binaries through server functions** (Vercel body limit ~4.5 MB): browsers upload/download
-directly with presigned URLs. Lazy-load thumbnails and non-critical components at the component level (`Lazy*` behind `v-if` for UI that only appears after an action or a later state, e.g. `LazyItemDialogs`, `LazyGuestUploadForm`).
+directly with presigned URLs. The one bounded exception is the lyrics `.pptx` of feature 006 (see Known gotchas). Lazy-load thumbnails and non-critical components at the component level (`Lazy*` behind `v-if` for UI that only appears after an action or a later state, e.g. `LazyItemDialogs`, `LazyGuestUploadForm`).
 Guest access (feature 003): the guest's browser holds two `httpOnly` cookies, `cloudy-guest-access` (random token;
 only its SHA-256 is stored) and `cloudy-guest-device` (per-browser rate-limit key). Limits: 3 new requests per
 30 min per browser, 30 per network (`hashSender(ip)`), and `ACCESS_SUBMIT_LIMIT` creations per approved request
@@ -98,8 +98,9 @@ hover. Check every screen at 360 px and ≥ 1280 px.
 **IV. Code quality** — `<script setup lang="ts">`, Composition API, small single-purpose components,
 logic in composables. No `any` without a justifying comment. Shared rules live once in `shared/`.
 Every endpoint validates input and calls the session/role guard server-side — hiding UI is not
-authorization. Neon Auth, storage, AI, the YouTube download service and background work are accessed **only** through `server/utils/auth.ts`,
-`server/utils/storage.ts`, `server/ai/` (via `server/utils/image-text.ts`), `server/utils/cloudy-api.ts` and `server/utils/background.ts`. No demo code, dead code or secrets. Typecheck and build must pass.
+authorization. Neon Auth, storage, AI, the `cloudy-api` service (YouTube downloads and lyrics presentations), Apify (lyrics crawling) and background work are
+accessed **only** through `server/utils/auth.ts`, `server/utils/storage.ts`, `server/ai/` (via `server/utils/image-text.ts`), `server/utils/cloudy-api.ts`,
+`server/utils/lyrics-crawler.ts` (the only importer of `apify-client`) and `server/utils/background.ts`. No demo code, dead code or secrets. Typecheck and build must pass.
 Forms validate with a zod schema from `app/utils/form-schemas.ts` through `useFormSchema` — never `useRegle`/`useRegleSchema`
 directly (`test/unit/architecture.spec.ts` enforces it). Schemas mirror `shared/validation` (messages and limits come from there);
 the server stays the authority and `test/nuxt/form-schemas.spec.ts` checks both agree.
@@ -155,8 +156,9 @@ files: set the same names per environment in the project settings.
 `NUXT_NEON_AUTH_COOKIE_SECRET`, `NUXT_AWS_ENDPOINT_URL_S3`, `NUXT_AWS_ACCESS_KEY_ID`,
 `NUXT_AWS_SECRET_ACCESS_KEY`, `NUXT_AWS_REGION`, `NUXT_S3_BUCKET`, `NUXT_PUBLIC_SITE_URL`,
 `NUXT_OPENROUTER_APIKEY` (empty = no image-text reads), `NUXT_OPENROUTER_BASE_URL` (empty = OpenRouter; e2e only),
-`NUXT_CLOUDY_API_URL` + `NUXT_CLOUDY_API_KEY` (YouTube download service; empty = the page answers "not configured"; e2e point the URL
-at `test/e2e/setup/cloudy-api-stub.ts`), `CRON_SECRET`, `NUXT_RATE_LIMIT_SALT`. `NUXT_NEON_JWKS_URL` is present but intentionally unused in v1. There is no Neon Realtime
+`NUXT_CLOUDY_API_URL` + `NUXT_CLOUDY_API_KEY` (YouTube download and lyrics presentation service; empty = the pages answer "not configured"; e2e point the URL
+at `test/e2e/setup/cloudy-api-stub.ts`), `NUXT_APIFY_API_KEY` (lyrics crawling; empty = "not configured") + `NUXT_APIFY_BASE_URL` (empty = Apify;
+e2e → `test/e2e/setup/apify-stub.ts`), `CRON_SECRET`, `NUXT_RATE_LIMIT_SALT`. `NUXT_NEON_JWKS_URL` is present but intentionally unused in v1. There is no Neon Realtime
 config: "realtime" is client polling (`/api/realtime/pulse`, `/api/public/access/current`).
 Never print or commit their values.
 
@@ -170,7 +172,10 @@ Never print or commit their values.
 - Neon Auth (Better Auth 1.7) rate-limits `sign-in`/`sign-up` to **3 per 10 s per IP and path**, and the
   window restarts from the last *accepted* request. All e2e logins share one IP: always go through
   `signedInAs`/`ensureAccount`/`login` in `test/e2e/setup/fixtures.ts` (they pace per path and retry one
-  429); never call the auth API directly from a spec.
+  429); never call the auth API directly from a spec. Many sign-ins in a row also trip a longer lockout (429 with
+  `retry-after` ≈ 250 s, too long to wait in a test), so `signedInAs` signs each account in through the UI **once per
+  spec file** and reuses its cookies afterwards (checked with `/api/me`; it signs in again if the session was closed).
+  Back-to-back e2e runs share that lockout: leave ~5 min between runs that log in a lot.
 - The Neon auth client *throws* its own normalized codes (`bad_jwt`, `invalid_credentials`, …), not Better
   Auth's; `useAuthClient` maps what pages need (e.g. a used reset link → `INVALID_TOKEN`).
 - AI: OpenRouter is the only provider; there is no fallback. Each image is one call (30 s, 1 retry, 45 s cap). The
@@ -216,6 +221,20 @@ Never print or commit their values.
 - `useFetch`/`useApiFetch` errors are `NuxtError`s (`statusCode`, and the server's JSON body in `data`), not ofetch `FetchError`s:
   read `error.value.statusCode` / `error.value.data.data.code`. And `serverMessage(error, fallback, byStatus)` only uses
   `byStatus` for 4xx: name a 503 explicitly (e.g. `messages.youtube.service.waking`).
+- Canciones (feature 006): a pasted Letras.com link is validated by `parseLetrasUrl` (`shared/validation/songs.ts`, the server-side SSRF guard) and
+  normalized to `https://letras.com/<artist>/<song>` (`songs.source_url` is UNIQUE). Only a **new** link or **Volver a obtener la letra** runs the Apify
+  actor `apify/rag-web-browser` (it costs credit, ~20 s): `lyrics-crawler.ts` calls it with `timeoutSecs: 60` (the SDK timeout is per HTTP request and
+  `waitForFinish` long-polls up to 55 s) and `log: null` (no extra calls, no actor log lines in ours). Letras.com redirects a nonexistent song link to a
+  **different** song with `200`: the endpoint compares the crawled `finalUrl` with the requested link and answers `no_lyrics` if they differ. Lyrics are
+  stored as `string[][]` (stanzas → lines), **never HTML**; `lyricsToHtml` rebuilds escaped HTML for the service on every generation and the UI shows
+  plain text (no `v-html`). The `.pptx` (tens of KB) goes through `POST /api/songs/[id]/pptx` because the service key cannot leave the server: it is
+  the **only** bounded exception to "never stream binaries through server functions"; presentations are not stored. Font colour is fixed white
+  (`SONG_FONT_COLOR`). The browser generates presentations **one at a time** (`useSongPresentations`, queue in `useState('songs-presentations')`
+  driven by `pump`; `AbortController`s and `objectURL`s in module maps; `$api` has no `.raw`, so headers are read in `onResponse`, and a `Blob`
+  error body is parsed back into `response._data`). Functions run up to 120 s (`nitro.vercel.functions.maxDuration`); a `504` counts as transient.
+  The daily cleanup deletes songs out of the history, in no collection and unchanged for 30 days. E2E run against the Apify stub (scenario slugs
+  `sin-letra`, `muy-larga`, `fallo-del-run`, `sin-credito`, `redirige`, `con-tildes`; `letrasUrl(slug)`) and the `cloudy-api` stub's
+  `POST /v1/lyrics/pptx` (titles containing `vacia`, `demasiado larga`, `respaldo`).
 - `guest_access_requests.submission_id` is written **after** the submission row is inserted, in the same
   `db.batch` (the FK is not deferrable). Access-request expiry uses Postgres `now()`, but `created_at` is stamped
   with the server clock, like the pulse cursor: with Postgres' clock a skew of seconds would drop the live toast.

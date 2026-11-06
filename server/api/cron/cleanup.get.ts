@@ -1,7 +1,7 @@
 // Limpieza diaria (Vercel Cron, FR-020, FR-036, R8): papelera vencida, envíos caducados, subidas huérfanas y ventanas de rate limit.
 import { and, eq, inArray, lt, sql } from 'drizzle-orm'
 import { SUBMISSION_TTL_DAYS, TRASH_RETENTION_DAYS, UPLOAD_ORPHAN_HOURS } from '#shared/constants/files'
-import { files, guestSubmissionFiles, guestSubmissions, rateLimits, youtubeVideos } from '../../db/schema'
+import { files, guestSubmissionFiles, guestSubmissions, rateLimits, songs, youtubeVideos } from '../../db/schema'
 import { deleteMany } from '../../utils/storage'
 
 const BATCH = 500
@@ -14,13 +14,15 @@ export interface CleanupReport {
   accessRequests: number
   /** Videos de YouTube sin historial ni listas (feature 005). */
   orphanVideos: number
+  /** Canciones sin historial ni colecciones y sin cambios en 30 días (feature 006). */
+  orphanSongs: number
 }
 
 export default defineEventHandler(async (event): Promise<CleanupReport> => {
   requireCron(event)
   const db = useDb()
   const now = Date.now()
-  const report: CleanupReport = { purgedTrash: 0, expiredSubmissions: 0, orphanUploads: 0, rateLimitRows: 0, accessRequests: 0, orphanVideos: 0 }
+  const report: CleanupReport = { purgedTrash: 0, expiredSubmissions: 0, orphanUploads: 0, rateLimitRows: 0, accessRequests: 0, orphanVideos: 0, orphanSongs: 0 }
 
   // 0. Raíces con más de 30 días en la papelera: filas y objetos, en lotes de 500.
   report.purgedTrash = await purgeAll(new Date(now - TRASH_RETENTION_DAYS * 86_400_000))
@@ -101,6 +103,22 @@ export default defineEventHandler(async (event): Promise<CleanupReport> => {
       )`)
       .returning({ videoId: youtubeVideos.videoId })
     report.orphanVideos += orphans.length
+    if (orphans.length < BATCH) break
+  }
+
+  // 7. Canciones huérfanas (feature 006, FR-034, research D13): fuera del historial, en ninguna colección y sin cambios en 30
+  // días. La letra guardada ahorra rastreos de pago: se conserva más que los videos.
+  for (;;) {
+    const orphans = await db.delete(songs)
+      .where(sql`${songs.id} IN (
+        SELECT s.id FROM songs s
+        WHERE s.last_viewed_at IS NULL
+          AND s.updated_at < now() - interval '30 days'
+          AND NOT EXISTS (SELECT 1 FROM song_collection_items i WHERE i.song_id = s.id)
+        LIMIT ${BATCH}
+      )`)
+      .returning({ id: songs.id })
+    report.orphanSongs += orphans.length
     if (orphans.length < BATCH) break
   }
 

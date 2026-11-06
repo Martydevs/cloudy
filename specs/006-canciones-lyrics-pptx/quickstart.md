@@ -68,8 +68,8 @@ Reglas verificadas por pruebas: `endpoint-guards.spec.ts` (13 endpoints con `req
 
 - **Variables en Vercel**: `NUXT_APIFY_API_KEY`, `NUXT_CLOUDY_API_URL`, `NUXT_CLOUDY_API_KEY` (y `NUXT_APIFY_BASE_URL` vacía). Sin ellas la página responde «no configurado», no se rompe el resto.
 - **Duración de las funciones** (D15): máximo del proyecto confirmado por la persona el 2026-11-05: **300 s** (pasado, `504 FUNCTION_INVOCATION_TIMEOUT`). T005 fija `maxDuration = 120` s para
-  `/api/songs/fetch`, `/refresh` y `/pptx` y anota aquí cómo quedó configurado: _pendiente de T005_.
-- **Medición del rastreo real**: tiempo típico del actor para Letras (objetivo < 20 s, SC-002) y crédito consumido por canción; si excede, ajustar `requestTimeoutSecs`/`waitSecs` o evaluar D15 (trabajo asíncrono).
+  `/api/songs/fetch`, `/refresh` y `/pptx` y anota aquí cómo quedó configurado: **`nitro.vercel.functions.maxDuration = 120`** en `nuxt.config.ts` (el preset `vercel` de Nitro copia `vercel.functions` a la configuración de la función del servidor, que atiende todas las rutas).
+- **Medición del rastreo real** (T003, 2026-11-05: tres rastreos de ~20–22 s y ~0,0018 USD cada uno; queda al borde de SC-002 y el endpoint suma poco a eso): tiempo típico del actor para Letras (objetivo < 20 s, SC-002) y crédito consumido por canción; si excede, ajustar `requestTimeoutSecs`/`waitSecs` o evaluar D15 (trabajo asíncrono).
 - **Presupuesto**: `bun run analyze` y revisar que `/canciones` y `/canciones/[id]` no superen 250 KB gzip de JS inicial.
 - **Credenciales**: en el navegador (pestaña Red y bundle) no debe aparecer ninguna clave (SC-010).
 

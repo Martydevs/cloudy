@@ -243,13 +243,35 @@ export async function ensureAccount({ name = 'Persona de prueba', email, passwor
   return cookie
 }
 
-/** Prepara una cuenta activa con el rol indicado e inicia sesión con ella en `page` por la UI. */
+/**
+ * Sesiones ya abiertas por `signedInAs` en este proceso (archivo de pruebas), por correo. Además de la ventana de
+ * 3 por 10 s, Neon Auth corta `sign-in` por varios minutos cuando hay muchos seguidos (observado: 429 con
+ * `retry-after` ≈ 250 s, que el reintento de `login` no puede esperar). Por eso cada cuenta se prepara e inicia
+ * sesión por la UI una sola vez por archivo y las pruebas siguientes reutilizan sus cookies. El rol y el estado se
+ * leen de `profiles` en cada petición, así que `setProfile` sigue valiendo con la sesión reutilizada.
+ */
+const sessions = new Map<string, Awaited<ReturnType<BrowserContext['cookies']>>>()
+
+/** Prepara una cuenta activa con el rol indicado y deja `page` con su sesión, en la portada como tras el login. */
 export async function signedInAs(page: Page, role: 'admin' | 'editor', label: string = role): Promise<Credentials> {
   const creds = { name: `E2E ${label}`, email: email(label) }
-  await ensureAccount(creds)
+  const saved = sessions.get(creds.email)
+  if (!saved) await ensureAccount(creds)
   await setProfile(creds.email, { status: 'active', role })
-  await page.context().clearCookies()
+  const context = page.context()
+  await context.clearCookies()
+  if (saved) {
+    await context.addCookies(saved)
+    // Si otra prueba cerró esa sesión, se inicia una nueva por la UI.
+    if ((await page.request.get(`${E2E_URL}/api/me`)).ok()) {
+      await page.goto(`${E2E_URL}/`)
+      await waitForHydration(page)
+      return creds
+    }
+    await context.clearCookies()
+  }
   await login(page, creds)
+  sessions.set(creds.email, await context.cookies())
   return creds
 }
 
@@ -285,6 +307,8 @@ export interface CloudyStubCalls {
   jobsCreated: number
   unauthorized: number
   formats: string[]
+  /** Presentaciones pedidas (feature 006): título y color de letra recibidos. */
+  pptx: { title: string, fontColor: string | null, html: string }[]
 }
 
 /** `asleep`: el stub responde 502 a todo, como Render mientras levanta la instancia. */
@@ -362,3 +386,21 @@ export async function textColumns(fileId: string): Promise<{ text_status: string
   const [row] = await testSql()`SELECT text_status, text_attempts, text_content FROM files WHERE id = ${fileId}`
   return row as { text_status: string | null, text_attempts: number, text_content: string | null }
 }
+
+// ---------------------------------------------------------------- Canciones (feature 006)
+
+async function apifyStubRequest<T>(path: string, body?: unknown): Promise<T> {
+  const res = await fetch(`${inject('apifyStubUrl')}${path}`, body === undefined
+    ? {}
+    : { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
+  return res.json() as Promise<T>
+}
+
+export interface ApifyStubCalls {
+  /** Enlace (`query`) de cada run creado, en orden. */
+  runs: string[]
+  aborts: number
+}
+
+export const apifyStubCalls = () => apifyStubRequest<ApifyStubCalls>('/__stub/calls')
+export const resetApifyStub = () => apifyStubRequest('/__stub/reset', {})

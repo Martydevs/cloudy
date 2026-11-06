@@ -10,11 +10,13 @@ import { ENV_FILES, readEnvFile, requireVar } from '../../../scripts/env'
 import { E2E_PORT, E2E_URL } from './constants'
 import { startAiStub } from './openrouter-stub'
 import { STUB_API_KEY, startCloudyApiStub } from './cloudy-api-stub'
+import { APIFY_STUB_TOKEN, startApifyStub } from './apify-stub'
 
 const TABLES = [
   'profiles', 'folders', 'files', 'guest_submissions', 'guest_submission_files',
   'comments', 'activity_log', 'rate_limits', 'guest_access_requests',
   'youtube_videos', 'youtube_playlists', 'youtube_playlist_items', 'youtube_downloads',
+  'songs', 'song_collections', 'song_collection_items',
 ]
 
 declare module 'vitest' {
@@ -24,6 +26,8 @@ declare module 'vitest' {
     aiStubUrl: string
     /** Stub del servicio de descargas de YouTube (feature 005, `/__stub/*`). */
     cloudyStubUrl: string
+    /** Stub de la API de Apify (feature 006, `/__stub/*`). */
+    apifyStubUrl: string
   }
 }
 
@@ -82,6 +86,9 @@ export default async function setup(project: TestProject) {
   // Stub del servicio de descargas: los e2e nunca llaman a YouTube ni a Render (feature 005, research D17).
   const cloudyStub = await startCloudyApiStub()
   project.provide('cloudyStubUrl', cloudyStub.url)
+  // Stub de Apify: los e2e nunca rastrean Letras.com ni gastan crédito (feature 006, research D14).
+  const apifyStub = await startApifyStub()
+  project.provide('apifyStubUrl', apifyStub.url)
 
   const server: ChildProcess = spawn('node', ['.output/server/index.mjs'], {
     env: {
@@ -90,6 +97,9 @@ export default async function setup(project: TestProject) {
       NUXT_OPENROUTER_APIKEY: 'sk-or-e2e-stub',
       NUXT_CLOUDY_API_URL: cloudyStub.url,
       NUXT_CLOUDY_API_KEY: STUB_API_KEY,
+      // Después de `testEnv`: la clave real de .env.test nunca llega al servidor de e2e.
+      NUXT_APIFY_API_KEY: APIFY_STUB_TOKEN,
+      NUXT_APIFY_BASE_URL: apifyStub.url,
       PORT: String(E2E_PORT),
       NUXT_STORAGE_KEY_PREFIX: prefix,
       NUXT_PUBLIC_SITE_URL: E2E_URL,
@@ -102,6 +112,7 @@ export default async function setup(project: TestProject) {
     server.kill()
     await stub.close()
     await cloudyStub.close()
+    await apifyStub.close()
     // El teardown borra los objetos de esta corrida del bucket de pruebas.
     const { S3Client, ListObjectsV2Command, DeleteObjectsCommand } = await import('@aws-sdk/client-s3')
     const s3 = new S3Client({

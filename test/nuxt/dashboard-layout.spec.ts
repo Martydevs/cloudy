@@ -1,6 +1,6 @@
 // Interacciones del layout del dashboard (US5/US9): contraer la barra lateral se recuerda; en teléfono el
 // panel se cierra al tocar el fondo, al navegar y al pasar a escritorio, y bloquea el scroll mientras está abierto.
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { mountSuspended } from '@nuxt/test-utils/runtime'
 import { nextTick } from 'vue'
 import type { Me } from '#shared/types/api'
@@ -97,5 +97,19 @@ describe('layout dashboard', () => {
     expect(document.activeElement).toBe(opener.element)
     expect(content().attributes('inert')).toBeUndefined()
     wrapper.unmount()
+  })
+
+  it('la bandeja de presentaciones solo se monta con elementos en la cola y el contenido deja su alto libre (feature 006)', async () => {
+    useState('songs-presentations').value = []
+    const wrapper = await mount()
+    await flush()
+    expect(wrapper.find('[aria-label="Presentaciones de canciones"]').exists()).toBe(false)
+    expect(wrapper.get('main').classes().join(' ')).not.toContain('--song-tray-h')
+
+    useState('songs-presentations').value = [{ songId: 's1', title: 'Canción', status: 'done', slides: 3 }]
+    // La bandeja es diferida (`Lazy*`): se espera a que llegue su chunk.
+    await vi.waitUntil(() => wrapper.find('[aria-label="Presentaciones de canciones"]').exists(), { timeout: 5000 })
+    expect(wrapper.get('main').classes().join(' ')).toContain('--song-tray-h')
+    useState('songs-presentations').value = []
   })
 })

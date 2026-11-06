@@ -12,6 +12,8 @@ export type Action =
   | 'comments.moderate'
   /** Renombrar o eliminar una lista de YouTube ajena (feature 005, research D12). */
   | 'youtube.moderate'
+  /** Renombrar o eliminar una colección de canciones ajena (feature 006, research D17). */
+  | 'songs.moderate'
 
 const ADMIN_ONLY: ReadonlySet<Action> = new Set<Action>([
   'trash.empty',
@@ -19,6 +21,7 @@ const ADMIN_ONLY: ReadonlySet<Action> = new Set<Action>([
   'activity.read',
   'comments.moderate',
   'youtube.moderate',
+  'songs.moderate',
 ])
 
 export function can(role: Role | null | undefined, action: Action): boolean {

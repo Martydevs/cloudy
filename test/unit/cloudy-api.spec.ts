@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createEvent } from 'h3'
 import { IncomingMessage, ServerResponse } from 'node:http'
 import { Socket } from 'node:net'
-import { cancelJob, CLOUDY_API_TIMEOUTS, createJob, getJob, pingService, probeVideo, queuedJob } from '../../server/utils/cloudy-api'
+import { cancelJob, CLOUDY_API_TIMEOUTS, createJob, createLyricsPptx, getJob, pingService, probeVideo, queuedJob } from '../../server/utils/cloudy-api'
 import { ITEM_ERROR_MESSAGES } from '../../shared/constants/youtube'
 import { expectStatus } from './helpers/nitro'
 
@@ -295,6 +295,108 @@ describe('plazos', () => {
     await probeVideo('okShortVid1')
     await createJob(['okShortVid1'], 'mp3')
     expect(timeout.mock.calls.map(c => c[0])).toEqual([5_000, 10_000, 10_000, 20_000, 45_000])
-    expect(CLOUDY_API_TIMEOUTS).toEqual({ ping: 5_000, job: 10_000, probe: 20_000, create: 45_000 })
+    expect(CLOUDY_API_TIMEOUTS).toEqual({ ping: 5_000, job: 10_000, probe: 20_000, create: 45_000, pptx: 90_000 })
+  })
+})
+
+// T040 — Presentaciones de Canciones (feature 006, research D9): cuerpo con la letra en blanco, cabeceras y tabla de errores.
+describe('createLyricsPptx', () => {
+  const PPTX = new Uint8Array([0x50, 0x4B, 0x03, 0x04, 1, 2, 3])
+  const ok = (headers: Record<string, string> = {}) => new Response(PPTX, {
+    status: 200,
+    headers: {
+      'content-type': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+      'content-disposition': 'attachment; filename="Cancion.pptx"; filename*=UTF-8\'\'Canci%C3%B3n.pptx',
+      'x-slide-count': '7',
+      'x-lyrics-arranged-by': 'llm',
+      ...headers,
+    },
+  })
+  const input = { html: '<div class="lyric-original"><p>a</p></div>', title: 'Canción' }
+
+  it('POST /v1/lyrics/pptx con X-API-Key, letra en blanco y plazo de 90 s; lee bytes y cabeceras', async () => {
+    const timeout = vi.spyOn(AbortSignal, 'timeout')
+    fetchMock.mockResolvedValue(ok())
+    const result = await createLyricsPptx(input)
+    const [url, init] = lastCall()
+    expect(url).toBe(`${URL_BASE}/v1/lyrics/pptx`)
+    expect(init?.method).toBe('POST')
+    expect(headersOf(init)['X-API-Key']).toBe(KEY)
+    expect(headersOf(init)['content-type']).toBe('application/json')
+    expect(JSON.parse(String(init?.body))).toEqual({ html: input.html, title: 'Canción', font_color: 'FFFFFF' })
+    expect(timeout).toHaveBeenCalledWith(90_000)
+    expect(result).toEqual({
+      bytes: PPTX,
+      contentDisposition: 'attachment; filename="Cancion.pptx"; filename*=UTF-8\'\'Canci%C3%B3n.pptx',
+      slideCount: 7,
+      arrangedBy: 'llm',
+    })
+  })
+
+  it('cabeceras ausentes o desconocidas → null', async () => {
+    fetchMock.mockResolvedValue(new Response(PPTX, { status: 200 }))
+    expect(await createLyricsPptx(input)).toMatchObject({ contentDisposition: null, slideCount: null, arrangedBy: null })
+    fetchMock.mockResolvedValue(ok({ 'x-slide-count': 'muchas', 'x-lyrics-arranged-by': 'magia' }))
+    expect(await createLyricsPptx(input)).toMatchObject({ slideCount: null, arrangedBy: null })
+    fetchMock.mockResolvedValue(ok({ 'x-lyrics-arranged-by': 'fallback' }))
+    expect(await createLyricsPptx(input)).toMatchObject({ arrangedBy: 'fallback' })
+  })
+
+  it.each([
+    ['no_lyrics', 422, 'La letra guardada no tiene contenido. Vuelve a obtenerla.'],
+    ['lyrics_too_long', 422, 'Eso no parece una canción: la letra pasa de 300 líneas.'],
+  ] as const)('422 %s → 422 con el código', async (code, status, message) => {
+    fetchMock.mockResolvedValue(json(422, { detail: { code, message: 'english text' } }))
+    const error = await expectStatus(createLyricsPptx(input), status)
+    expect(error.data).toEqual({ code })
+    expect(error.message).toBe(message)
+  })
+
+  it('422 con la lista de validación de FastAPI → 502 invalid, registrado sin el cuerpo', async () => {
+    fetchMock.mockResolvedValue(json(422, { detail: [{ loc: ['body', 'font_color'], msg: 'secreto del cuerpo' }] }))
+    const error = await expectStatus(createLyricsPptx(input), 502)
+    expect(error.data).toEqual({ code: 'invalid' })
+    expect(warn.mock.calls.flat().join(' ')).toBe('[cloudy-api] pptx → 422')
+  })
+
+  it.each([401, 403])('%i → 502 misconfigured', async (status) => {
+    fetchMock.mockResolvedValue(json(status, { detail: { code: 'unauthorized', message: 'Invalid or missing API key' } }))
+    const error = await expectStatus(createLyricsPptx(input), 502)
+    expect(error.data).toEqual({ code: 'misconfigured' })
+    expect(error.message).toMatch(/presentaciones/)
+    expectNoKeyLeak(error)
+  })
+
+  it.each([
+    ['500', () => Promise.resolve(json(500, {}))],
+    ['502', () => Promise.resolve(new Response('Bad Gateway', { status: 502 }))],
+    ['429', () => Promise.resolve(json(429, {}))],
+    ['red', () => Promise.reject(new TypeError('fetch failed'))],
+    ['plazo (AbortError)', () => Promise.reject(Object.assign(new Error('aborted'), { name: 'AbortError' }))],
+  ])('%s → 503 waking', async (_, response) => {
+    fetchMock.mockImplementation(response as () => Promise<Response>)
+    const error = await expectStatus(createLyricsPptx(input), 503)
+    expect(error.data).toEqual({ code: 'waking' })
+    expect(error.message).toMatch(/presentaciones/)
+    expectNoKeyLeak(error)
+  })
+
+  it('un cuerpo que se corta al leerlo → 503 waking', async () => {
+    const res = ok()
+    vi.spyOn(res, 'arrayBuffer').mockRejectedValue(Object.assign(new Error('terminated'), { name: 'TypeError' }))
+    fetchMock.mockResolvedValue(res)
+    const error = await expectStatus(createLyricsPptx(input), 503)
+    expect(error.data).toEqual({ code: 'waking' })
+  })
+
+  it.each([
+    { cloudyApiUrl: '', cloudyApiKey: KEY },
+    { cloudyApiUrl: URL_BASE, cloudyApiKey: '' },
+  ])('sin URL o sin clave → 503 not_configured sin llamar a fetch', async (cfg) => {
+    config = cfg
+    const error = await expectStatus(createLyricsPptx(input), 503)
+    expect(error.data).toEqual({ code: 'not_configured' })
+    expect(error.message).toBe('El servicio de presentaciones no está configurado. Avisa a un administrador.')
+    expect(fetchMock).not.toHaveBeenCalled()
   })
 })

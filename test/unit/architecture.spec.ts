@@ -134,6 +134,41 @@ describe('arquitectura de la feature 002', () => {
     expect(callers).toEqual([BOUNDARY])
   })
 
+  // Feature 006 (research D1): una sola puerta a Apify; el parser de la letra es puro.
+  const CRAWLER = 'server/utils/lyrics-crawler.ts'
+  const PARSER = 'server/utils/lyrics-parser.ts'
+
+  it('solo server/utils/lyrics-crawler.ts importa apify-client y lee apifyApiKey/apifyBaseUrl', () => {
+    const importers = files.filter(f => imports(f.code).some(spec => spec === 'apify-client' || spec.startsWith('apify-client/'))).map(f => f.path)
+    expect(importers).toEqual([CRAWLER])
+    const readers = files.filter(f => /\bapify(ApiKey|BaseUrl)\b/.test(f.code)).map(f => f.path)
+    expect(readers).toEqual([CRAWLER])
+  })
+
+  it('nada de app/ ni shared/ importa el rastreador', () => {
+    const offenders = files
+      .filter(f => f.path.startsWith('app/') || f.path.startsWith('shared/'))
+      .flatMap(f => imports(f.code).filter(spec => /server\/utils\/lyrics-crawler/.test(target(f.path, spec))).map(spec => `${f.path} → ${spec}`))
+    expect(offenders).toEqual([])
+  })
+
+  it('el parser de la letra no toca la red, el SDK ni la configuración', () => {
+    const parser = files.find(f => f.path === PARSER)!
+    expect(parser).toBeDefined()
+    expect(imports(parser.code).filter(spec => spec === 'apify-client' || spec === '#imports' || spec === 'h3')).toEqual([])
+    expect(parser.code).not.toMatch(/\buseRuntimeConfig\b|\b\$?fetch\s*\(/)
+  })
+
+  it('los endpoints de Canciones no llaman al SDK ni a fetch: usan crawlLetras y createLyricsPptx', () => {
+    const songs = files.filter(f => f.path.startsWith('server/api/songs/'))
+    expect(songs.length).toBeGreaterThan(0)
+    const offenders = songs.filter(f => /\b(\$?fetch|ofetch)\s*\(|ApifyClient/.test(f.code)).map(f => f.path)
+    expect(offenders).toEqual([])
+    // En server/, solo la frontera de cloudy-api habla con el servicio de presentaciones.
+    const callers = files.filter(f => f.path.startsWith('server/') && /['"`]\/v1\/lyrics/.test(f.code)).map(f => f.path)
+    expect(callers).toEqual([BOUNDARY])
+  })
+
   it('heic-to solo se carga con import() dinámico desde app/utils/heic-copy.ts', () => {
     const users = files.filter(f => imports(f.code).includes('heic-to')).map(f => f.path)
     expect(users).toEqual(['app/utils/heic-copy.ts'])

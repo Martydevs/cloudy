@@ -215,6 +215,8 @@ const PRIVATE_ROUTES = [
   '/', '/archivos', '/archivos/:folderId', '/archivos/ver/:fileId', '/solicitudes', '/papelera', '/usuarios', '/actividad', '/perfil',
   // Página YouTube (feature 005): `:id` es un video del stub del servicio.
   '/youtube', '/youtube/:id', '/youtube/:id/ventana',
+  // Página Canciones (feature 006): `:id` es una canción sembrada en esta corrida.
+  '/canciones', '/canciones/:id',
 ]
 const PUBLIC_ROUTES = ['/login', '/registro', '/recuperar', '/restablecer', '/enviar', '/upload', '/acceso-denegado']
 const PENDING_ROUTES = ['/pendiente']
@@ -391,7 +393,7 @@ describe('US9 · recorrido de rutas (T151)', () => {
 
   describe('privadas, como administradora', () => {
     const pool = pagePool(viewport => pageAs('admin', ADMIN, viewport))
-    let seed: { folderId: string, fileId: string } | null = null
+    let seed: { folderId: string, fileId: string, songId: string } | null = null
 
     afterAll(() => pool.closeAll())
 
@@ -401,7 +403,10 @@ describe('US9 · recorrido de rutas (T151)', () => {
         // Un .pptx no tiene vista previa en línea: el visor no pide bytes al bucket.
         const owner = await userId(ADMIN)
         const folderId = await seedFolder(`Recorrido ${runId()}`, owner)
-        seed = { folderId, fileId: await seedFile(`Recorrido ${runId()}.pptx`, owner, folderId) }
+        const [song] = await sql`INSERT INTO songs (source_url, title, artist, lyrics)
+          VALUES (${`https://letras.com/e2e/recorrido-${runId()}`}, ${`Recorrido ${runId()}`}, 'Cloudy', ${JSON.stringify([['Primera línea', 'Segunda línea']])}::jsonb)
+          RETURNING id` as { id: string }[]
+        seed = { folderId, fileId: await seedFile(`Recorrido ${runId()}.pptx`, owner, folderId), songId: song!.id }
       }
       return seed
     }
@@ -409,8 +414,8 @@ describe('US9 · recorrido de rutas (T151)', () => {
     it.each(PRIVATE_ROUTES)('%s', async (pattern) => {
       for (const viewport of VIEWPORTS) {
         const { page, errors } = await pool.get(viewport)
-        const { folderId, fileId } = await seeded()
-        const path = pattern.replace(':folderId', folderId).replace(':fileId', fileId).replace(':id', 'okShortVid1')
+        const { folderId, fileId, songId } = await seeded()
+        const path = pattern.replace(':folderId', folderId).replace(':fileId', fileId).replace(':id', pattern.startsWith('/canciones/') ? songId : 'okShortVid1')
         for (const theme of THEMES) await audit(page, errors, path, theme, viewport)
       }
     })
@@ -459,13 +464,13 @@ describe('US9 · recorrido de rutas (T151)', () => {
 
       for (const theme of THEMES) {
         await page.context().addCookies([{ name: 'cloudy-theme', value: theme, url: E2E_URL }])
-        // El último enlace del menú de la administradora es YouTube.
-        for (const [path, current] of [['/', null], ['/youtube', 'page']] as const) {
+        // El último enlace del menú de la administradora es Canciones.
+        for (const [path, current] of [['/', null], ['/canciones', 'page']] as const) {
           await page.goto(`${E2E_URL}${path}`)
           await waitForHydration(page)
           const ring = await ringOnLastLink()
           expectRing(ring, `${path} · ${theme}`)
-          expect(ring!.label).toBe('YouTube')
+          expect(ring!.label).toBe('Canciones')
           expect(ring!.current).toBe(current)
         }
       }

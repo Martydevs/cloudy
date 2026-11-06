@@ -102,11 +102,12 @@ Agregar o quitar canciones lo puede hacer cualquier editor o admin (FR-021).
 ## Frontera 1 — Apify (`server/utils/lyrics-crawler.ts`)
 
 ```ts
-export interface CrawledPage { html: string | null; status: number | null }   // status = crawl.httpStatusCode del item
+export interface CrawledPage { html: string | null; status: number | null; finalUrl: string | null }   // status = crawl.httpStatusCode; finalUrl = metadata.redirectedUrl ?? metadata.url
 export async function crawlLetras(url: string): Promise<CrawledPage>           // lanza createError ya traducido (D2)
 ```
 
 - Lee `apifyApiKey` y `apifyBaseUrl` de `useRuntimeConfig()`; sin clave: `503 not_configured` sin llamar.
+- Letras.com redirige un enlace de canción inexistente a **otra** canción con `200` (research D2, hallazgo de T003): el endpoint compara `parseLetrasUrl(finalUrl).url` con el enlace pedido y, si difieren, responde `404 no_lyrics` sin escribir nada.
 - Llamada, opciones y tabla de fallos: [research D2](../research.md). Nunca se devuelven ni se registran el mensaje del actor, la URL del run ni el token; el registro lleva solo estado/tipo (`[lyrics-crawler] call → 402`).
 - El SDK se instancia por llamada (funciones sin estado) y solo aquí se importa `apify-client`.
 

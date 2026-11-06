@@ -192,6 +192,18 @@ const sign = (jobId: string, exp: number) => createHmac('sha256', SIGNING).updat
 
 // ---------------------------------------------------------------- servidor
 
+/** Paquete OOXML mínimo (tipos de contenido, relaciones y `presentation.xml`): basta para que el navegador lo descargue. */
+function minimalPptx(title: string): Buffer {
+  const xml = (text: string) => Buffer.from(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>${text}`)
+  const safe = title.replace(/[<&>"]/g, '')
+  return buildZip([
+    { name: '[Content_Types].xml', data: xml('<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/ppt/presentation.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml"/><Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/></Types>') },
+    { name: '_rels/.rels', data: xml('<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="ppt/presentation.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/></Relationships>') },
+    { name: 'docProps/core.xml', data: xml(`<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:title>${safe}</dc:title></cp:coreProperties>`) },
+    { name: 'ppt/presentation.xml', data: xml('<p:presentation xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"><p:sldSz cx="12192000" cy="6858000"/><p:notesSz cx="6858000" cy="9144000"/></p:presentation>') },
+  ])
+}
+
 export type StubState = 'up' | 'asleep' | 'degraded'
 
 export interface CloudyStubCalls {
@@ -201,12 +213,14 @@ export interface CloudyStubCalls {
   unauthorized: number
   /** Formatos de cada trabajo creado, en orden. */
   formats: string[]
+  /** Presentaciones pedidas (`POST /v1/lyrics/pptx`, feature 006): título y color de letra recibidos. */
+  pptx: { title: string, fontColor: string | null, html: string }[]
 }
 
 export async function startCloudyApiStub(): Promise<{ url: string, close: () => Promise<void> }> {
   const jobs = new Map<string, Job>()
   let state: StubState = 'up'
-  let calls: CloudyStubCalls = { jobsCreated: 0, unauthorized: 0, formats: [] }
+  let calls: CloudyStubCalls = { jobsCreated: 0, unauthorized: 0, formats: [], pptx: [] }
   let base = ''
 
   const server = createServer(async (req: IncomingMessage, res: ServerResponse) => {
@@ -229,7 +243,7 @@ export async function startCloudyApiStub(): Promise<{ url: string, close: () => 
     }
     if (req.method === 'POST' && path === '/__stub/reset') {
       state = 'up'
-      calls = { jobsCreated: 0, unauthorized: 0, formats: [] }
+      calls = { jobsCreated: 0, unauthorized: 0, formats: [], pptx: [] }
       jobs.clear()
       return json(200, calls)
     }
@@ -281,6 +295,28 @@ export async function startCloudyApiStub(): Promise<{ url: string, close: () => 
     if (req.headers['x-api-key'] !== STUB_API_KEY) {
       calls.unauthorized++
       return detail(401, 'unauthorized', 'Invalid or missing API key')
+    }
+
+    // Presentación de una letra (feature 006, research D9). Escenarios por el título: «vacia» → 422 no_lyrics,
+    // «demasiado larga» → 422 lyrics_too_long, «respaldo» → reparto de respaldo; un cuerpo sin `html` → 422 de validación.
+    if (req.method === 'POST' && path === '/v1/lyrics/pptx') {
+      const body = (raw ? JSON.parse(raw) : {}) as { html?: unknown, title?: unknown, font_color?: unknown }
+      if (typeof body.html !== 'string' || body.html === '') return json(422, { detail: [{ loc: ['body', 'html'], msg: 'Field required' }] })
+      const title = typeof body.title === 'string' && body.title !== '' ? body.title : 'lyrics'
+      calls.pptx.push({ title, fontColor: typeof body.font_color === 'string' ? body.font_color : null, html: body.html })
+      const key = title.toLowerCase()
+      if (key.includes('vacia')) return detail(422, 'no_lyrics', 'No lyrics found in the HTML')
+      if (key.includes('demasiado larga')) return detail(422, 'lyrics_too_long', 'Too many lines')
+      const slides = Math.max(1, (body.html.match(/<p>/g) ?? []).length)
+      const data = minimalPptx(title)
+      res.writeHead(200, {
+        'content-type': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+        'content-disposition': `attachment; filename="${title.normalize('NFD').replace(/[^\x20-\x7E]/g, '').replace(/"/g, '')}.pptx"; filename*=UTF-8''${encodeURIComponent(`${title}.pptx`)}`,
+        'x-slide-count': String(slides),
+        'x-lyrics-arranged-by': key.includes('respaldo') ? 'fallback' : 'llm',
+        'content-length': data.length,
+      })
+      return res.end(data)
     }
 
     const video = /^\/v1\/videos\/([^/]+)$/.exec(path)

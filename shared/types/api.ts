@@ -289,3 +289,48 @@ export interface YoutubeJob {
   expiresAt: string | null
 }
 export interface YoutubeServiceHealth { state: 'up' | 'waking' | 'down' }
+
+// ---------------------------------------------------------------- Canciones (feature 006, data-model § DTOs)
+
+export type { SongErrorCode } from '../constants/songs'
+
+export interface SongPerson { userId: string, name: string, active: boolean }
+
+/** Lo que muestran tarjetas e historial (sin letra). */
+export interface Song {
+  id: string
+  title: string
+  artist: string | null
+  sourceUrl: string
+}
+
+export interface SongHistoryItem extends Song {
+  /** ISO */
+  viewedAt: string
+  viewedBy: SongPerson | null
+}
+export interface SongHistoryPage { items: SongHistoryItem[], nextCursor: string | null }
+
+/** Ficha: la canción más la letra y fechas. */
+export interface SongDetail extends Song {
+  /** Estrofas → líneas. */
+  lyrics: string[][]
+  lineCount: number
+  createdAt: string
+  updatedAt: string
+}
+export interface SongFetchResult { song: SongDetail, crawled: boolean }
+
+export interface SongCollection {
+  id: string
+  name: string
+  author: SongPerson
+  /** Conteo por subconsulta en el mismo select (sin N+1). */
+  itemCount: number
+  createdAt: string
+  updatedAt: string
+}
+export interface SongCollectionItem extends Song { addedAt: string, addedBy: SongPerson }
+export interface SongCollectionDetail extends SongCollection { items: SongCollectionItem[] }
+
+export interface SongPresentationMeta { slideCount: number | null, arrangedBy: 'llm' | 'fallback' | null, filename: string }

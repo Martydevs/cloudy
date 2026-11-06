@@ -2,6 +2,7 @@
 // agrupados por área y siempre en español. Los títulos estáticos y los EmptyState viven en sus páginas.
 import { RATE_LIMITED_MESSAGE } from '#shared/constants/messages'
 import { YOUTUBE_URL_MESSAGES } from '#shared/validation/youtube'
+import { SONG_ERROR_MESSAGES, SONG_SERVICE_MESSAGES, SONG_URL_MESSAGES } from '#shared/constants/songs'
 
 /** «1 elemento» / «4 elementos». */
 export function pluralize(n: number, singular: string, plural: string): string {
@@ -248,5 +249,87 @@ export const messages = {
       removeFailed: `No pudimos quitarlo del historial. ${RETRY}`,
     },
     inactiveUser: 'Usuario que ya no está activo',
+  },
+  /**
+   * Página Canciones (feature 006, contracts/ui.md "Textos"). Los textos por código del servidor viven en
+   * `shared/constants/songs.ts`; el usuario inactivo reutiliza `youtube.inactiveUser`.
+   */
+  songs: {
+    /** Error del campo de enlace por motivo de `parseLetrasUrl`. */
+    url: SONG_URL_MESSAGES,
+    fetch: {
+      searching: 'Buscando la letra… puede tardar unos segundos',
+      fetched: 'Letra obtenida',
+      failed: `No pudimos obtener la letra. ${RETRY}`,
+      noLyrics: SONG_ERROR_MESSAGES.no_lyrics,
+      crawlFailed: SONG_ERROR_MESSAGES.crawl_failed,
+      quota: SONG_ERROR_MESSAGES.quota,
+      busy: SONG_ERROR_MESSAGES.busy,
+      notConfigured: SONG_ERROR_MESSAGES.not_configured,
+      tooLong: SONG_ERROR_MESSAGES.lyrics_too_long,
+      timeout: `La búsqueda tardó demasiado. ${RETRY}`,
+    },
+    refresh: {
+      action: 'Volver a obtener la letra',
+      confirm: '¿Volver a obtener la letra? Reemplaza la guardada si el nuevo rastreo tiene éxito.',
+      confirmLabel: 'Volver a obtener',
+      done: 'Letra actualizada',
+      failed: `No pudimos volver a obtener la letra. La guardada no cambió. ${RETRY}`,
+    },
+    present: {
+      action: 'Generar presentación',
+      whiteHint: 'La letra va en blanco: proyecta la presentación sobre un fondo oscuro.',
+      tooLongReason: 'No se puede generar: la letra pasa de 300 líneas.',
+      lyricsTooLong: SONG_ERROR_MESSAGES.lyrics_too_long,
+      noLyrics: SONG_SERVICE_MESSAGES.noLyrics,
+      fallback: 'Las diapositivas se agruparon automáticamente (el reparto con IA no estuvo disponible).',
+      done: (n: number | null) => (n === null ? 'Presentación lista' : n === 1 ? '1 diapositiva generada' : `${n} diapositivas generadas`),
+      filesCount: (n: number) => (n === 1 ? 'Recibirás 1 archivo.' : `Recibirás ${n} archivos, uno por canción.`),
+      confirmMany: (n: number) => (n === 1 ? 'Generar 1 presentación' : `Generar ${n} presentaciones`),
+      blocked: 'Tu navegador pudo bloquear las descargas seguidas. Usa «Descargar de nuevo» en las que falten.',
+      failed: `No pudimos generar la presentación. ${RETRY}`,
+      timeout: `La presentación tardó demasiado. ${RETRY}`,
+      waking: SONG_SERVICE_MESSAGES.waking,
+      trayTitle: 'Presentaciones',
+      queued: 'En cola',
+      running: 'Generando…',
+      cancel: 'Cancelar',
+      cancelled: 'Generación cancelada',
+      retry: 'Reintentar',
+      redownload: 'Descargar de nuevo',
+      dismiss: 'Descartar',
+    },
+    collection: {
+      new: 'Nueva colección',
+      create: 'Crear colección',
+      addTo: 'Agregar a colección',
+      created: (name: string) => `Colección «${name}» creada`,
+      renamed: (name: string) => `Ahora se llama «${name}»`,
+      deleted: (name: string) => `Se eliminó la colección «${name}»`,
+      added: (name: string) => `Agregada a «${name}»`,
+      already: (name: string) => `Ya estaba en «${name}»`,
+      removed: (title: string) => `Se quitó «${title}» de la colección`,
+      createFailed: `No pudimos crear la colección. ${RETRY}`,
+      renameFailed: `No pudimos renombrar la colección. ${RETRY}`,
+      deleteFailed: `No pudimos eliminar la colección. ${RETRY}`,
+      addFailed: `No pudimos agregar la canción. ${RETRY}`,
+      removeFailed: `No pudimos quitar la canción. ${RETRY}`,
+      deleteConfirm: (name: string) => `¿Eliminar la colección «${name}»? Las canciones siguen en el historial.`,
+      removeConfirm: (title: string) => `¿Quitar «${title}» de la colección?`,
+      empty: 'Esta colección no tiene canciones todavía.',
+    },
+    history: {
+      removed: (title: string) => `Se quitó «${title}» del historial`,
+      removeFailed: `No pudimos quitarla del historial. ${RETRY}`,
+      removeConfirm: (title: string) => `¿Quitar «${title}» del historial? Seguirá en sus colecciones.`,
+    },
+    load: {
+      song: `No pudimos cargar la canción. ${CONNECTION}`,
+      collections: `No pudimos cargar las colecciones. ${CONNECTION}`,
+      collection: `No pudimos cargar la colección. ${CONNECTION}`,
+      history: `No pudimos cargar el historial. ${CONNECTION}`,
+      moreHistory: 'No pudimos cargar más canciones.',
+    },
+    notFound: SONG_SERVICE_MESSAGES.songNotFound,
   },
 } as const

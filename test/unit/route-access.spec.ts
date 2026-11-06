@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import { resolveAccess } from '../../app/utils/route-access'
 
@@ -55,5 +57,21 @@ describe('resolveAccess', () => {
   it('sin access se trata como private', () => {
     expect(resolveAccess({}, none, '/')).toEqual({ redirect: '/login?redirect=%2F' })
     expect(resolveAccess({}, editor, '/')).toEqual(allow)
+  })
+})
+
+describe('rutas de Canciones (feature 006)', () => {
+  const meta = (path: string) => readFileSync(fileURLToPath(new URL(`../../app/pages/${path}`, import.meta.url)), 'utf8')
+
+  it.each(['canciones/index.vue', 'canciones/[id].vue'])('%s es privada para editor y admin', (path) => {
+    expect(meta(path)).toMatch(/definePageMeta\(\{[^}]*layout: 'dashboard'[^}]*access: 'private'[^}]*roles: \['editor', 'admin'\]/)
+  })
+
+  it('las reglas de acceso aplican a esas rutas como a las demás privadas', () => {
+    const rule = { access: 'private' as const, roles: ['editor', 'admin'] as ('editor' | 'admin')[] }
+    expect(resolveAccess(rule, none, '/canciones')).toEqual({ redirect: '/login?redirect=%2Fcanciones' })
+    expect(resolveAccess(rule, pending, '/canciones/x')).toEqual({ redirect: '/pendiente' })
+    expect(resolveAccess(rule, editor, '/canciones/x')).toEqual(allow)
+    expect(resolveAccess(rule, admin, '/canciones')).toEqual(allow)
   })
 })
