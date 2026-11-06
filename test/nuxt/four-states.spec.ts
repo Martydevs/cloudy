@@ -9,6 +9,7 @@ import type { Component } from 'vue'
 import type { DashboardSummary, Me } from '#shared/types/api'
 import AccessRequestList from '~/components/guests/AccessRequestList.vue'
 import ActividadPage from '~/pages/actividad.vue'
+import CancionesPage from '~/pages/canciones/index.vue'
 import FilesIndexPage from '~/pages/archivos/index.vue'
 import HomePage from '~/pages/index.vue'
 import PapeleraPage from '~/pages/papelera.vue'
@@ -105,6 +106,23 @@ const rows: Row[] = [
     errorCopy: 'No pudimos cargar la actividad',
     emptyCopy: 'Sin actividad todavía',
   },
+  // /canciones (feature 006) tiene dos vistas con datos, cada una con su endpoint; la otra se simula con contenido (ver beforeEach).
+  {
+    name: 'Canciones · Colecciones',
+    page: CancionesPage,
+    endpoint: '/api/songs/collections',
+    emptyPayload: { items: [] },
+    errorCopy: 'No pudimos cargar las colecciones',
+    emptyCopy: 'Aún no hay colecciones',
+  },
+  {
+    name: 'Canciones · Historial',
+    page: CancionesPage,
+    endpoint: '/api/songs/history',
+    emptyPayload: { items: [], nextCursor: null },
+    errorCopy: 'No pudimos cargar el historial',
+    emptyCopy: 'Todavía no hay canciones',
+  },
 ]
 
 beforeEach(() => {
@@ -119,6 +137,15 @@ beforeEach(() => {
   mockApi('GET', '/api/users', { items: [], total: 0 })
   // La sección de solicitudes de acceso de /solicitudes (feature 003): tampoco es el endpoint bajo prueba.
   mockApi('GET', '/api/access-requests', [])
+  // /canciones: la vista que no se prueba responde con contenido, para que su skeleton o aviso no se confunda con el de la otra.
+  mockApi('GET', '/api/youtube/health', { state: 'up' })
+  mockApi('GET', '/api/songs/collections', {
+    items: [{ id: 'c1', name: 'Domingo', author: { userId: 'u1', name: 'Ana', active: true }, itemCount: 1, createdAt: '2026-11-05T10:00:00.000Z', updatedAt: '2026-11-05T10:00:00.000Z' }],
+  })
+  mockApi('GET', '/api/songs/history', {
+    items: [{ id: 's1', title: 'Canción 1', artist: 'Artista', sourceUrl: 'https://letras.com/artista/cancion-1', viewedAt: '2026-11-05T10:00:00.000Z', viewedBy: { userId: 'u1', name: 'Ana', active: true } }],
+    nextCursor: null,
+  })
 })
 
 describe.each(rows)('$name · los cuatro estados', ({ page, route, endpoint, emptyPayload, errorCopy, emptyCopy }) => {
