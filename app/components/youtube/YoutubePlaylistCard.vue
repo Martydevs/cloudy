@@ -55,7 +55,7 @@ const count = computed(() => pluralize(props.playlist.itemCount, 'video', 'video
       </span>
     </button>
     <!-- Opciones (descargar / guardar en el drive): siempre visibles en móvil; en escritorio con hover y con foco (teclado). -->
-    <div class="absolute right-1 top-1 rounded-box bg-base-100/80 lg:opacity-0 lg:transition-opacity lg:group-hover:opacity-100 lg:group-focus-within:opacity-100 motion-reduce:transition-none">
+    <div class="absolute right-1 top-1 rounded-box bg-base-100/80 lg:can-hover:opacity-0 lg:transition-opacity lg:group-hover:opacity-100 lg:group-focus-within:opacity-100 motion-reduce:transition-none">
       <ActionMenu
         :label="`Opciones de ${playlist.name}`"
         :items="menu"

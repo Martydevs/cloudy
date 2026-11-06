@@ -28,6 +28,7 @@ function onSelect(key: string) {
   else emit('open', props.collection)
 }
 
+const authorId = useId()
 const author = computed(() => (props.collection.author.active ? props.collection.author.name : messages.youtube.inactiveUser))
 const count = computed(() => pluralize(props.collection.itemCount, 'canción', 'canciones'))
 </script>
@@ -38,6 +39,7 @@ const count = computed(() => pluralize(props.collection.itemCount, 'canción', '
       type="button"
       class="flex flex-col rounded-box text-left outline-offset-2 focus-visible:outline-2 focus-visible:outline-primary"
       :aria-label="`Abrir la colección ${collection.name}, ${count}`"
+      :aria-describedby="authorId"
       @click="emit('open', collection)"
     >
       <span class="flex h-20 items-center justify-center rounded-t-box bg-base-200">
@@ -46,11 +48,12 @@ const count = computed(() => pluralize(props.collection.itemCount, 'canción', '
       <span class="card-body gap-1 p-3 pb-14">
         <span class="line-clamp-2 min-h-12 break-words font-semibold leading-6">{{ collection.name }}</span>
         <span class="text-sm text-base-content/70">{{ count }}</span>
-        <span class="truncate text-sm text-base-content/70">Creada por {{ author }}</span>
+        <span :id="authorId" class="truncate text-sm text-base-content/70">Creada por {{ author }}</span>
       </span>
     </button>
-    <!-- Generar y opciones: siempre visibles en móvil; en escritorio con hover y con foco (teclado). -->
-    <div class="absolute inset-x-3 bottom-3 flex items-center gap-2 lg:opacity-0 lg:transition-opacity lg:group-hover:opacity-100 lg:group-focus-within:opacity-100 motion-reduce:transition-none">
+    <!-- Generar y opciones: siempre visibles en móvil y en cualquier pantalla táctil sin hover (una tableta en horizontal también
+         pasa de `lg`); solo donde hay hover (`can-hover`) se ocultan en escritorio hasta el cursor o el foco (teclado). -->
+    <div class="absolute inset-x-3 bottom-3 flex items-center gap-2 lg:can-hover:opacity-0 lg:transition-opacity lg:group-hover:opacity-100 lg:group-focus-within:opacity-100 motion-reduce:transition-none">
       <button
         type="button"
         class="btn btn-primary btn-soft flex-1 lg:btn-sm"

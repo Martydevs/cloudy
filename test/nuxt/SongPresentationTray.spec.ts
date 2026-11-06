@@ -46,6 +46,18 @@ describe('SongPresentationTray', () => {
     expect(wrapper.find('[role="status"]').exists()).toBe(true)
   })
 
+  it('Cancelar, Reintentar y Descargar de nuevo incluyen el título de la canción en su nombre accesible', async () => {
+    set([
+      { songId: 'a', title: 'Generándose', status: 'running' },
+      { songId: 'd', title: 'Dormido', status: 'failed', error: 'Reintenta en un momento.', retryable: true },
+    ])
+    const wrapper = await mountSuspended(SongPresentationTray)
+    await flush()
+    const rows = wrapper.findAll('li')
+    expect(rows[0]!.get('button').attributes('aria-label')).toBe('Cancelar Generándose')
+    expect(buttonsWithText(rows[1]!, 'Reintentar')[0]!.attributes('aria-label')).toBe('Reintentar Dormido')
+  })
+
   it('Descartar quita la fila y Reintentar vuelve a pedir la presentación', async () => {
     set([
       { songId: 'a', title: 'A', status: 'failed', retryable: true, error: 'x' },

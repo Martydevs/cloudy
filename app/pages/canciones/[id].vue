@@ -53,6 +53,9 @@ async function refreshLyrics() {
 
     <YoutubeServiceBanner v-if="bannerState" :state="bannerState" @retry="service.retry()" />
 
+    <!-- Sin canción cargada (cargando, no encontrada o con error) la página igual tiene su `h1`; con ella, lo pone `SongMeta`. -->
+    <h1 v-if="!song" class="sr-only">Canción</h1>
+
     <SkeletonList v-if="!song && pending" :rows="4" />
 
     <div v-else-if="notFound" role="alert" class="alert alert-error alert-soft flex flex-col items-start gap-3 sm:flex-row sm:items-center">

@@ -113,6 +113,8 @@ describe('YoutubePlaylistCard', () => {
     expect(options.element.tagName).toBe('BUTTON')
     // Visible siempre en móvil; en escritorio también con el foco dentro (no solo con hover).
     expect(options.element.closest('div.absolute')!.className).toContain('lg:group-focus-within:opacity-100')
+    // Y en una pantalla táctil ancha (tableta en horizontal), sin hover, tampoco queda oculto.
+    expect(options.element.closest('div.absolute')!.className).toContain('lg:can-hover:opacity-0')
     await wrapper.get('[aria-label^="Abrir la lista Domingo"]').trigger('click')
     expect(wrapper.emitted('open')).toHaveLength(1)
   })

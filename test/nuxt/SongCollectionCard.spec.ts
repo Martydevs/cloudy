@@ -25,13 +25,23 @@ describe('SongCollectionCard', () => {
     expect(wrapper.emitted('generate')).toHaveLength(1)
   })
 
-  it('los botones son visibles en móvil y aparecen con hover y foco desde lg', async () => {
+  it('los botones son visibles en móvil y en pantallas táctiles sin hover; con hover y foco aparecen desde lg', async () => {
     const wrapper = await mountSuspended(SongCollectionCard, { props: { collection: collection() } })
     const actions = wrapper.get('button[aria-label^="Generar"]').element.parentElement!
-    expect(actions.className).toContain('lg:opacity-0')
+    // Se ocultan solo donde hay hover (`can-hover`): una tableta en horizontal supera `lg` y no puede pasar el cursor.
+    expect(actions.className).toContain('lg:can-hover:opacity-0')
+    expect(actions.className).not.toContain('lg:opacity-0')
     expect(actions.className).toContain('lg:group-hover:opacity-100')
     expect(actions.className).toContain('lg:group-focus-within:opacity-100')
     expect(actions.className).not.toMatch(/(^|\s)opacity-0/)
+  })
+
+  it('el autor ("Creada por …") es la descripción accesible del botón que abre la colección', async () => {
+    const wrapper = await mountSuspended(SongCollectionCard, { props: { collection: collection() } })
+    const open = wrapper.get('button[aria-label^="Abrir la colección"]')
+    const describedBy = open.attributes('aria-describedby')!
+    expect(describedBy).toBeTruthy()
+    expect(wrapper.get(`[id="${describedBy}"]`).text()).toBe('Creada por Ana')
   })
 
   it('una colección vacía no se puede generar; un autor inactivo se muestra como tal', async () => {

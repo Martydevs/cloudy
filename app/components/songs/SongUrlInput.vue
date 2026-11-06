@@ -59,7 +59,10 @@ async function submit() {
         Ver letra
       </button>
     </div>
-    <p v-if="busy" role="status" class="text-sm text-base-content/70">{{ messages.songs.fetch.searching }}</p>
-    <p v-else-if="message" :id="errorId" role="alert" class="text-sm text-error">{{ message }}</p>
+    <!-- La región de estado existe siempre (vacía se oculta): una región que aparece ya con su texto no se anuncia de forma fiable. -->
+    <div role="status" class="empty:hidden">
+      <p v-if="busy" class="text-sm text-base-content/70">{{ messages.songs.fetch.searching }}</p>
+    </div>
+    <p v-if="!busy && message" :id="errorId" role="alert" class="text-sm text-error">{{ message }}</p>
   </form>
 </template>

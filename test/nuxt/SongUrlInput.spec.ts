@@ -67,6 +67,16 @@ describe('SongUrlInput', () => {
     wrapper.unmount()
   })
 
+  it('la región de estado existe siempre (vacía y oculta) para que la espera se anuncie al aparecer', async () => {
+    const wrapper = await mount()
+    const status = wrapper.get('[role="status"]')
+    expect(status.text()).toBe('')
+    expect(status.classes()).toContain('empty:hidden')
+    await wrapper.setProps({ busy: true })
+    expect(wrapper.get('[role="status"]').text()).toContain('Buscando la letra')
+    wrapper.unmount()
+  })
+
   it('mientras busca muestra la espera, marca aria-busy y deshabilita el envío', async () => {
     const wrapper = await mount({ busy: true })
     await wrapper.get('input').setValue('https://letras.com/a/b')

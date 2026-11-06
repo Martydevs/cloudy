@@ -79,15 +79,15 @@ watch(() => presentations.items.value.map(item => ({ songId: item.songId, title:
         <p v-if="item.status === 'failed' && item.error" class="text-sm text-error">{{ item.error }}</p>
 
         <div class="flex flex-wrap gap-2">
-          <button v-if="item.status === 'queued' || item.status === 'running'" type="button" class="btn lg:btn-sm" @click="presentations.cancel(item.songId)">
+          <button v-if="item.status === 'queued' || item.status === 'running'" type="button" class="btn lg:btn-sm" :aria-label="`${m.cancel} ${item.title}`" @click="presentations.cancel(item.songId)">
             <Icon name="lucide:x" class="size-4" aria-hidden="true" />
             {{ m.cancel }}
           </button>
-          <button v-if="item.status === 'failed' && item.retryable" type="button" class="btn btn-primary lg:btn-sm" @click="presentations.retry(item.songId)">
+          <button v-if="item.status === 'failed' && item.retryable" type="button" class="btn btn-primary lg:btn-sm" :aria-label="`${m.retry} ${item.title}`" @click="presentations.retry(item.songId)">
             <Icon name="lucide:refresh-cw" class="size-4" aria-hidden="true" />
             {{ m.retry }}
           </button>
-          <button v-if="item.status === 'done' && presentations.canRedownload(item.songId)" type="button" class="btn lg:btn-sm" @click="presentations.redownload(item.songId)">
+          <button v-if="item.status === 'done' && presentations.canRedownload(item.songId)" type="button" class="btn lg:btn-sm" :aria-label="`${m.redownload} ${item.title}`" @click="presentations.redownload(item.songId)">
             <Icon name="lucide:download" class="size-4" aria-hidden="true" />
             {{ m.redownload }}
           </button>

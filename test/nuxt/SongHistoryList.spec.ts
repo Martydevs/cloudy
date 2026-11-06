@@ -102,6 +102,25 @@ describe('SongHistoryList', () => {
     expect(buttonsWithText(wrapper, 'Cargar más')).toHaveLength(0)
   })
 
+  it('mientras carga más, el indicador se anuncia como estado con su nombre (WCAG 4.1.3)', async () => {
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => { release = resolve })
+    mockApi('GET', '/api/songs/history', async (event: { path: string }) => {
+      if (!event.path.includes('cursor=c1')) return { items: [item(1), item(2)], nextCursor: 'c1' }
+      await gate
+      return { items: [item(3)], nextCursor: null }
+    })
+    const wrapper = await mountSuspended(SongHistoryList)
+    await flush()
+    await buttonsWithText(wrapper, 'Cargar más')[0]!.trigger('click')
+    const spinner = wrapper.find('[aria-label="Cargando más canciones"]')
+    expect(spinner.exists()).toBe(true)
+    expect(spinner.attributes('role')).toBe('status')
+    release()
+    await flush()
+    expect(wrapper.find('[aria-label="Cargando más canciones"]').exists()).toBe(false)
+  })
+
   it('al llegar al final (centinela visible) pide sola la página siguiente', async () => {
     mockApi('GET', '/api/songs/history', (event: { path: string }) => (event.path.includes('cursor=c1')
       ? { items: [item(3)], nextCursor: null }

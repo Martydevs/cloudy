@@ -122,6 +122,21 @@ describe('/canciones/<id>', () => {
     expect(alert.get('a').text()).toBe('Volver a Canciones')
   })
 
+  it('sin canción cargada (cargando o no encontrada) la página conserva su h1; con la canción solo hay el de la ficha', async () => {
+    mockApi('GET', `/api/songs/${ID}`, failWith(404))
+    const missing = await mountSong()
+    await flush()
+    expect(missing.findAll('h1')).toHaveLength(1)
+    expect(missing.get('h1').classes()).toContain('sr-only')
+    missing.unmount()
+
+    mockApi('GET', `/api/songs/${ID}`, songDetail())
+    const loaded = await mountSong()
+    await flush()
+    expect(loaded.findAll('h1')).toHaveLength(1)
+    expect(loaded.get('h1').classes()).not.toContain('sr-only')
+  })
+
   it('error con reintento y luego el contenido', async () => {
     mockApi('GET', `/api/songs/${ID}`, failWith(500))
     const wrapper = await mountSong()

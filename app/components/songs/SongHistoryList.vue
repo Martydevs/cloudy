@@ -99,7 +99,7 @@ defineExpose({ refresh, songsOf })
         </li>
       </ul>
       <div ref="sentinel" class="flex min-h-11 justify-center py-2">
-        <span v-if="loadingMore" class="loading loading-spinner motion-reduce:animate-none" aria-label="Cargando más canciones" />
+        <span v-if="loadingMore" role="status" class="loading loading-spinner motion-reduce:animate-none" aria-label="Cargando más canciones" />
         <ErrorState v-else-if="moreFailed" :message="messages.songs.load.moreHistory" @retry="loadMore()" />
         <button v-else-if="nextCursor" type="button" class="btn" @click="loadMore()">Cargar más</button>
       </div>
