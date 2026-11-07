@@ -3,7 +3,7 @@
 import { createFetchError } from 'ofetch'
 import type { FetchContext, FetchResponse } from 'ofetch'
 import { describe, expect, it } from 'vitest'
-import { serverMessage } from '../../app/utils/api-error'
+import { readBlobError, serverMessage } from '../../app/utils/api-error'
 import { messages } from '../../app/utils/messages'
 
 const FALLBACK = 'No pudimos guardar los cambios. Inténtalo de nuevo.'
@@ -74,5 +74,31 @@ describe('serverMessage', () => {
   it('lo que no es un error de fetch devuelve el respaldo', () => {
     expect(serverMessage(new Error('boom'), FALLBACK)).toBe(FALLBACK)
     expect(serverMessage(undefined, FALLBACK)).toBe(FALLBACK)
+  })
+})
+
+// Con `responseType: 'blob'` (presentaciones) el cuerpo JSON de un error también llega como `Blob`.
+describe('readBlobError', () => {
+  it('un Blob con JSON se vuelve el cuerpo que `serverMessage` sabe leer', async () => {
+    const body = { statusCode: 422, statusMessage: 'Unprocessable Entity', message: 'La letra guardada no tiene contenido. Vuelve a obtenerla.', data: { code: 'no_lyrics' } }
+    const response = { status: 422, statusText: 'Unprocessable Entity', _data: new Blob([JSON.stringify(body)], { type: 'application/json' }) } as FetchResponse<unknown>
+    const error = createFetchError({ request: '/api/x', options: {} as FetchContext['options'], response })
+    expect(await readBlobError(error)).toBe(error)
+    expect(error.data).toEqual(body)
+    expect(serverMessage(error, FALLBACK)).toBe('La letra guardada no tiene contenido. Vuelve a obtenerla.')
+  })
+
+  it('un Blob que no es JSON deja el cuerpo vacío; lo que no es un Blob ni un error de fetch no cambia', async () => {
+    const response = { status: 504, statusText: 'Gateway Timeout', _data: new Blob(['FUNCTION_INVOCATION_TIMEOUT']) } as FetchResponse<unknown>
+    const error = createFetchError({ request: '/api/x', options: {} as FetchContext['options'], response })
+    await readBlobError(error)
+    expect(error.data).toBeUndefined()
+    expect(serverMessage(error, FALLBACK)).toBe(FALLBACK)
+
+    const plain = responseError(409, { statusCode: 409, statusMessage: 'Conflict', message: 'Ya existe' })
+    await readBlobError(plain)
+    expect(serverMessage(plain, FALLBACK)).toBe('Ya existe')
+    const other = new Error('boom')
+    expect(await readBlobError(other)).toBe(other)
   })
 })

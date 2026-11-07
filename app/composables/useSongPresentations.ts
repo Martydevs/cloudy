@@ -3,7 +3,6 @@
 // propio estado (`pump`, como `useYoutubeDriveImport`): no se queda colgada ni se filtra entre pruebas. Los `AbortController`
 // y los `objectURL` no son serializables: van en mapas del módulo. Al terminar, el archivo se conserva para **Descargar de
 // nuevo** (el navegador puede bloquear descargas seguidas) y se libera al **Descartar**.
-import { FetchError } from 'ofetch'
 import type { SongPresentationMeta } from '#shared/types/api'
 import { SONG_PRESENTATION_TIMEOUT_MS } from '#shared/constants/songs'
 
@@ -29,21 +28,6 @@ class TimedOut extends Error {}
 
 const controllers = new Map<string, AbortController>()
 const files = new Map<string, { url: string, filename: string }>()
-
-/** Con `responseType: 'blob'` el cuerpo JSON de un error también llega como `Blob`: se lee para que `serverMessage` lo vea. */
-async function readBlobError(error: unknown): Promise<unknown> {
-  // `FetchError.data` es un getter de `response._data`: se reemplaza ahí.
-  const response = error instanceof FetchError ? error.response as (Response & { _data?: unknown }) | undefined : undefined
-  if (response && typeof Blob !== 'undefined' && response._data instanceof Blob) {
-    try {
-      response._data = JSON.parse(await response._data.text())
-    }
-    catch {
-      response._data = undefined
-    }
-  }
-  return error
-}
 
 export function useSongPresentations() {
   const api = useApi()

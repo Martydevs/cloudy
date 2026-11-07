@@ -2,6 +2,7 @@
 import type { FileCategory } from '../constants/files'
 import type { Role } from '../permissions'
 import type { YoutubeBlockReason, YoutubeFormat } from '../constants/youtube'
+import type { SongPresentationItemError } from '../constants/songs'
 
 export type UserStatus = 'pending' | 'active' | 'disabled' | 'removed'
 export type FileOrigin = 'team' | 'guest'
@@ -305,3 +306,16 @@ export interface SongCollectionItem extends Song { addedAt: string, addedBy: Son
 export interface SongCollectionDetail extends SongCollection { items: SongCollectionItem[] }
 
 export interface SongPresentationMeta { slideCount: number | null, arrangedBy: 'llm' | 'fallback' | null, filename: string }
+
+/**
+ * Una canción de `POST /api/songs/presentations`, en el orden pedido. `done` → `filename` es su entrada en el `.zip`;
+ * `failed` → `errorCode` dice por qué (los textos están en `SONG_PRESENTATION_ITEM_MESSAGES`).
+ */
+export interface SongPresentationBatchItem {
+  songId: string
+  status: 'done' | 'failed'
+  filename: string | null
+  slideCount: number | null
+  arrangedBy: 'llm' | 'fallback' | null
+  errorCode: SongPresentationItemError | null
+}

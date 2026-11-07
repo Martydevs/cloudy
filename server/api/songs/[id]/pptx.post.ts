@@ -2,7 +2,7 @@
 // (research D12). El `.pptx` (decenas de KB) pasa por aquí porque la clave del servicio no puede salir del servidor: es la
 // única excepción acotada a «no retransmitir binarios» (plan, Complexity Tracking). No se guarda en el bucket ni en la base.
 import { setResponseHeader } from 'h3'
-import { LYRICS_MAX_LINES, SONG_SERVICE_MESSAGES, SONG_TITLE_MAX } from '#shared/constants/songs'
+import { SONG_SERVICE_MESSAGES, SONG_TITLE_MAX } from '#shared/constants/songs'
 
 const PPTX_TYPE = 'application/vnd.openxmlformats-officedocument.presentationml.presentation'
 
@@ -13,8 +13,8 @@ export default defineEventHandler(async (event): Promise<Buffer> => {
   if (!song) throw songNotFound()
 
   const stanzas = Array.isArray(song.lyrics) ? song.lyrics : []
-  // Sin llamar al servicio: más de 300 líneas no es una canción (FR-035).
-  if (countLines(stanzas) > LYRICS_MAX_LINES) throw songError('lyrics_too_long')
+  // Sin llamar al servicio: más de 300 líneas o de 500 000 caracteres no es una canción (FR-035), igual que en el lote.
+  assertLyricsWithinLimits(stanzas)
   if (countLines(stanzas) === 0) throw songError('no_lyrics', SONG_SERVICE_MESSAGES.noLyrics, 422)
 
   const pptx = await createLyricsPptx({ html: lyricsToHtml(stanzas), title: song.title.slice(0, SONG_TITLE_MAX) })

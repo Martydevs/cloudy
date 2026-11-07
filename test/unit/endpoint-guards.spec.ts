@@ -107,9 +107,10 @@ describe('guards de los endpoints', () => {
       'songs/fetch.post.ts',
       'songs/history/[id].delete.ts',
       'songs/history/index.get.ts',
+      'songs/presentations.post.ts',
     ]))
-    // Los 13 de contracts/api.md, ni uno más sin revisarlo aquí.
-    expect(songs).toHaveLength(13)
+    // Los 14 de contracts/api.md, ni uno más sin revisarlo aquí.
+    expect(songs).toHaveLength(14)
     for (const file of songs) expect(source(file), file).toMatch(/\brequireRole\(event, 'editor'\)/)
     expect(files.filter(f => (isPublic(f) || isCron(f)) && f.includes('songs'))).toEqual([])
   })

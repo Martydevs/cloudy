@@ -28,3 +28,20 @@ export function serverMessage(error: unknown, fallback: string, byStatus: Partia
   }
   return fallback
 }
+
+/**
+ * Con `responseType: 'blob'` el cuerpo JSON de un error también llega como `Blob`: se lee para que `serverMessage` lo vea.
+ * `FetchError.data` es un getter de `response._data`, así que se reemplaza ahí; lo que no es JSON queda `undefined`.
+ */
+export async function readBlobError(error: unknown): Promise<unknown> {
+  const response = error instanceof FetchError ? error.response as (Response & { _data?: unknown }) | undefined : undefined
+  if (response && typeof Blob !== 'undefined' && response._data instanceof Blob) {
+    try {
+      response._data = JSON.parse(await response._data.text())
+    }
+    catch {
+      response._data = undefined
+    }
+  }
+  return error
+}
