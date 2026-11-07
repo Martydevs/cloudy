@@ -342,7 +342,7 @@ describe('páginas de Canciones · aviso del servicio, colección desde la ficha
     await wrapper.get('input[type="checkbox"]').setValue(true)
     await flush()
     expect(wrapper.find('div[role="region"][aria-label="Selección"]').exists()).toBe(true)
-    expect(wrapper.classes()).toContain('pb-40')
+    expect(wrapper.classes()).toContain('pb-56')
     await buttonsWithText(wrapper, 'Limpiar')[0]!.trigger('click')
     await flush()
     expect(useState('songs-history-selected').value).toEqual([])

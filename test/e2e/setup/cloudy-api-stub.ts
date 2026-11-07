@@ -215,12 +215,14 @@ export interface CloudyStubCalls {
   formats: string[]
   /** Presentaciones pedidas (`POST /v1/lyrics/pptx`, feature 006): título y color de letra recibidos. */
   pptx: { title: string, fontColor: string | null, html: string }[]
+  /** Lotes pedidos (`POST /v1/lyrics/pptx/batch`): las canciones de cada uno, en orden. */
+  pptxBatch: { title: string, fontColor: string | null, html: string }[][]
 }
 
 export async function startCloudyApiStub(): Promise<{ url: string, close: () => Promise<void> }> {
   const jobs = new Map<string, Job>()
   let state: StubState = 'up'
-  let calls: CloudyStubCalls = { jobsCreated: 0, unauthorized: 0, formats: [], pptx: [] }
+  let calls: CloudyStubCalls = { jobsCreated: 0, unauthorized: 0, formats: [], pptx: [], pptxBatch: [] }
   let base = ''
 
   const server = createServer(async (req: IncomingMessage, res: ServerResponse) => {
@@ -243,7 +245,7 @@ export async function startCloudyApiStub(): Promise<{ url: string, close: () => 
     }
     if (req.method === 'POST' && path === '/__stub/reset') {
       state = 'up'
-      calls = { jobsCreated: 0, unauthorized: 0, formats: [], pptx: [] }
+      calls = { jobsCreated: 0, unauthorized: 0, formats: [], pptx: [], pptxBatch: [] }
       jobs.clear()
       return json(200, calls)
     }
@@ -314,6 +316,51 @@ export async function startCloudyApiStub(): Promise<{ url: string, close: () => 
         'content-disposition': `attachment; filename="${title.normalize('NFD').replace(/[^\x20-\x7E]/g, '').replace(/"/g, '')}.pptx"; filename*=UTF-8''${encodeURIComponent(`${title}.pptx`)}`,
         'x-slide-count': String(slides),
         'x-lyrics-arranged-by': key.includes('respaldo') ? 'fallback' : 'llm',
+        'content-length': data.length,
+      })
+      return res.end(data)
+    }
+
+    // Lote de presentaciones (hasta 3): mismos escenarios por título que la suelta. Responde un `.zip` con un `.pptx` por
+    // canción lograda y `manifest.json` con el resultado de cada una (índices 0..n-1); si ninguna sale, 422 `all_items_failed`.
+    if (req.method === 'POST' && path === '/v1/lyrics/pptx/batch') {
+      const body = (raw ? JSON.parse(raw) : {}) as { items?: unknown }
+      const items = Array.isArray(body.items) ? body.items as { html?: unknown, title?: unknown, font_color?: unknown }[] : null
+      if (!items || items.length === 0 || items.some(item => typeof item?.html !== 'string' || item.html === '')) {
+        return json(422, { detail: [{ loc: ['body', 'items'], msg: 'Field required' }] })
+      }
+      if (items.length > 3) return detail(422, 'batch_too_large', 'At most 3 items per batch')
+      const sent = items.map(item => ({
+        title: typeof item.title === 'string' && item.title !== '' ? item.title : 'lyrics',
+        fontColor: typeof item.font_color === 'string' ? item.font_color : null,
+        html: item.html as string,
+      }))
+      calls.pptxBatch.push(sent)
+      const used = new Set<string>()
+      const files: { name: string, data: Buffer }[] = []
+      const manifest = sent.map(({ title, html }, index) => {
+        const key = title.toLowerCase()
+        const failure = key.includes('vacia') ? 'no_lyrics' : key.includes('demasiado larga') ? 'lyrics_too_long' : null
+        if (failure) return { index, status: 'failed', filename: null, slide_count: null, arranged_by: null, error: { code: failure, message: 'Stub failure' } }
+        const base = title.normalize('NFD').replace(/[^\x20-\x7E]/g, '').replace(/[\\/:*?"<>|]/g, '').trim() || 'lyrics'
+        let filename = `${base}.pptx`
+        for (let n = 2; used.has(filename); n++) filename = `${base} (${n}).pptx`
+        used.add(filename)
+        files.push({ name: filename, data: minimalPptx(title) })
+        return {
+          index,
+          status: 'done',
+          filename,
+          slide_count: Math.max(1, (html.match(/<p>/g) ?? []).length),
+          arranged_by: key.includes('respaldo') ? 'fallback' : 'llm',
+          error: null,
+        }
+      })
+      if (files.length === 0) return detail(422, 'all_items_failed', 'No item could be generated', { items: manifest })
+      const data = buildZip([...files, { name: 'manifest.json', data: Buffer.from(JSON.stringify({ items: manifest })) }])
+      res.writeHead(200, {
+        'content-type': 'application/zip',
+        'content-disposition': 'attachment; filename="lyrics.zip"',
         'content-length': data.length,
       })
       return res.end(data)

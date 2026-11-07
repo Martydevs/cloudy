@@ -1,4 +1,4 @@
-// Canciones (feature 006, contracts/ui.md § Composables): abrir un enlace (rastrea solo si es nueva), la ficha de una canción
+// Canciones (feature 006, contracts/ui.md § Composables): obtener o abrir un enlace (rastrea solo si es nueva), la ficha de una canción
 // y **Volver a obtener la letra** con confirmación. Los errores llegan al usuario solo por `serverMessage()`; los 5xx con código
 // (`not_configured`, `quota`, `busy`, `crawl_failed`, `waking`…) usan el texto de ese código como respaldo.
 import { FetchError } from 'ofetch'
@@ -39,17 +39,27 @@ export function useSongs() {
   const toast = useToast()
   const { confirm } = useConfirm()
 
-  /** Abre la canción del enlace (ya normalizado); devuelve el texto del error para mostrarlo junto al campo, o `null`. */
-  async function open(url: string): Promise<string | null> {
+  /**
+   * Obtiene la canción del enlace (ya normalizado) sin navegar: rastrea solo si es nueva y entonces avisa «Letra obtenida».
+   * Devuelve la canción, o el texto del error para mostrarlo junto al campo.
+   */
+  async function fetchSong(url: string): Promise<{ song: SongDetail, error: null } | { song: null, error: string }> {
     try {
       const { song, crawled } = await api<SongFetchResult>('/api/songs/fetch', { method: 'POST', body: { url } })
       if (crawled) toast.success(messages.songs.fetch.fetched)
-      await navigateTo(`/canciones/${song.id}`)
-      return null
+      return { song, error: null }
     }
     catch (error) {
-      return songErrorMessage(error, messages.songs.fetch.failed, messages.songs.fetch.timeout)
+      return { song: null, error: songErrorMessage(error, messages.songs.fetch.failed, messages.songs.fetch.timeout) }
     }
+  }
+
+  /** Abre la canción del enlace (ya normalizado); devuelve el texto del error para mostrarlo junto al campo, o `null`. */
+  async function open(url: string): Promise<string | null> {
+    const { song, error } = await fetchSong(url)
+    if (!song) return error
+    await navigateTo(`/canciones/${song.id}`)
+    return null
   }
 
   /** Confirma y vuelve a rastrear; la letra guardada solo cambia si el rastreo trae una letra válida (FR-010). */
@@ -72,7 +82,7 @@ export function useSongs() {
     }
   }
 
-  return { open, refreshLyrics }
+  return { fetchSong, open, refreshLyrics }
 }
 
 /** Ficha de una canción; abrirla registra la vista en el historial (FR-027). */

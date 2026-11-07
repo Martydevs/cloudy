@@ -1,10 +1,15 @@
 <script setup lang="ts">
 // Barra de la selección múltiple del historial de Canciones (feature 006, FR-030; forma de `YoutubeSelectionBar`): fija abajo,
 // al alcance del pulgar, con el área segura inferior y apoyada encima de las bandejas (`--youtube-tray-h` + `--song-tray-h`).
-const props = defineProps<{ count: number }>()
-const emit = defineEmits<{ generate: [], clear: [] }>()
+// Con 2 o 3 canciones ofrece también «Descargar en un .zip» (`zip`); `busy` es el lote del .zip en curso.
+import { SONG_PRESENTATION_BATCH_MAX } from '#shared/constants/songs'
+
+const props = withDefaults(defineProps<{ count: number, busy?: boolean }>(), { busy: false })
+const emit = defineEmits<{ generate: [], clear: [], zip: [] }>()
+const m = messages.songs.present
 
 const files = computed(() => props.count)
+const canZip = computed(() => props.count >= 2 && props.count <= SONG_PRESENTATION_BATCH_MAX)
 </script>
 
 <template>
@@ -22,10 +27,15 @@ const files = computed(() => props.count)
       <div class="flex flex-col gap-2 @md:flex-row">
         <button type="button" class="btn btn-primary btn-block @md:w-auto" @click="emit('generate')">
           <Icon name="lucide:presentation" class="size-5" aria-hidden="true" />
-          Generar selección
+          {{ m.selectionGenerate }}
+        </button>
+        <button v-if="canZip" type="button" class="btn btn-block @md:w-auto" :disabled="busy" @click="emit('zip')">
+          <span v-if="busy" class="loading loading-spinner motion-reduce:animate-none" aria-hidden="true" />
+          <Icon v-else name="lucide:file-archive" class="size-5" aria-hidden="true" />
+          {{ m.zipSelection }}
         </button>
         <!-- Si la barra es angosta «Limpiar» sube a la fila del conteo para que ocupe menos pantalla. -->
-        <button type="button" class="btn btn-ghost @max-2xl:absolute @max-2xl:right-2 @max-2xl:top-0 @md:w-auto" @click="emit('clear')">Limpiar</button>
+        <button type="button" class="btn btn-ghost @max-2xl:absolute @max-2xl:right-2 @max-2xl:top-0 @md:w-auto" @click="emit('clear')">{{ m.selectionClear }}</button>
       </div>
     </div>
   </div>

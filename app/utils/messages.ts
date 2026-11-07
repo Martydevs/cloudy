@@ -2,7 +2,13 @@
 // agrupados por área y siempre en español. Los títulos estáticos y los EmptyState viven en sus páginas.
 import { RATE_LIMITED_MESSAGE } from '#shared/constants/messages'
 import { YOUTUBE_URL_MESSAGES } from '#shared/validation/youtube'
-import { SONG_ERROR_MESSAGES, SONG_SERVICE_MESSAGES, SONG_URL_MESSAGES } from '#shared/constants/songs'
+import {
+  SONG_ERROR_MESSAGES,
+  SONG_PRESENTATION_BATCH_MAX,
+  SONG_PRESENTATION_ZIP_NAME,
+  SONG_SERVICE_MESSAGES,
+  SONG_URL_MESSAGES,
+} from '#shared/constants/songs'
 
 /** «1 elemento» / «4 elementos». */
 export function pluralize(n: number, singular: string, plural: string): string {
@@ -230,6 +236,7 @@ export const messages = {
     /** Error del campo de enlace por motivo de `parseLetrasUrl`. */
     url: SONG_URL_MESSAGES,
     fetch: {
+      action: 'Ver letra',
       searching: 'Buscando la letra… puede tardar unos segundos',
       fetched: 'Letra obtenida',
       failed: `No pudimos obtener la letra. ${RETRY}`,
@@ -270,6 +277,28 @@ export const messages = {
       retry: 'Reintentar',
       redownload: 'Descargar de nuevo',
       dismiss: 'Descartar',
+      // Cola del .zip (hasta SONG_PRESENTATION_BATCH_MAX canciones en un solo archivo).
+      batchMode: 'Agregar a la cola',
+      batchModeHint: `Modo cola: cada enlace que pegues se agrega a la cola (hasta ${SONG_PRESENTATION_BATCH_MAX} canciones) para descargarlas en un solo .zip.`,
+      queueAdd: 'Agregar',
+      queueTitle: 'Cola de presentaciones',
+      queueList: 'Canciones en la cola',
+      queueCount: (n: number) => `${n} de ${SONG_PRESENTATION_BATCH_MAX}`,
+      queueAdded: (title: string) => `«${title}» agregada a la cola`,
+      queueAlready: (title: string) => `«${title}» ya está en la cola`,
+      queueFull: `La cola está llena: admite hasta ${SONG_PRESENTATION_BATCH_MAX} canciones. Genera el .zip o quita una.`,
+      queueRemove: 'Quitar',
+      queueClear: 'Vaciar',
+      zipGenerate: (n: number) => (n === 1 ? 'Generar 1 presentación (.zip)' : `Generar ${n} presentaciones (.zip)`),
+      zipSelection: 'Descargar en un .zip',
+      zipRunning: 'Generando el .zip… puede tardar más de un minuto',
+      zipRunningLabel: 'Generando el .zip',
+      zipDone: (n: number) => `${SONG_PRESENTATION_ZIP_NAME} descargado: ${n === 1 ? '1 presentación' : `${n} presentaciones`}`,
+      zipPartial: (n: number) => (n === 1
+        ? '1 canción no se pudo generar; mira el detalle en la cola.'
+        : `${n} canciones no se pudieron generar; mira el detalle en la cola.`),
+      selectionGenerate: 'Generar selección',
+      selectionClear: 'Limpiar',
     },
     collection: {
       new: 'Nueva colección',
