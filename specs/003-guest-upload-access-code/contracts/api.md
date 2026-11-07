@@ -1,5 +1,11 @@
 # Contrato de API: Subida de invitados con aprobación de acceso
 
+> **Enmienda (2026-11-07)**: se retiraron `POST /api/public/access`, `GET /api/public/access/current`,
+> `POST /api/public/access/submissions`, `GET /api/access-requests` y `POST /api/access-requests/:id/{approve,reject}`.
+> El invitado usa `POST /api/public/submissions` (5 por hora y red) y `POST /api/public/submissions/:id/complete`
+> (60 por hora y red), que ya no consume ningún acceso. `Submission` pierde `origin` y `accessGrantedBy`; `Pulse` pierde
+> `openAccessRequests`/`newAccessRequests` y `DashboardSummary` pierde `openAccessRequests`. Ver [spec.md](../spec.md).
+
 **Feature**: [spec.md](../spec.md) · **Modelo**: [data-model.md](../data-model.md)
 
 Convenciones existentes: validación con `readValid`/`queryValid`/`paramId` (`server/utils/validation.ts`), errores

@@ -1,5 +1,15 @@
 # Feature Specification: Subida de invitados con aprobación de acceso
 
+> **Enmienda (2026-11-07) — se retira la aprobación de acceso.** El invitado ya no pide acceso ni espera a que el
+> equipo lo apruebe. En `/upload` llena en un solo formulario su nombre, una nota opcional y sus archivos, y el envío
+> llega directo a la cola de Solicitudes; la única aprobación que queda es la del equipo sobre los archivos (aprobar
+> hacia una carpeta o rechazar). `/enviar` redirige con 301 a `/upload`. Se eliminan la solicitud de acceso (tabla
+> `guest_access_requests`, endpoints `/api/public/access/**` y `/api/access-requests/**`, cookies `cloudy-guest-access`
+> y `cloudy-guest-device`), el origen del envío ("Por enlace" / "Por permiso") y "Acceso aprobado por". Límites: 5 envíos
+> por hora y red (`guest:<hashSender(ip)>`) y 60 cierres por hora y red. La cámara (US2) sigue igual. Las historias,
+> requisitos y criterios de abajo sobre pedir, esperar, aprobar o rechazar el acceso quedan **sin efecto**; se conservan
+> como registro histórico.
+
 **Feature Branch**: `003-public-photos-upload` (carpeta de documentos: `specs/003-guest-upload-access-code/`)
 
 **Created**: 2026-10-29

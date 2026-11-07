@@ -1,5 +1,11 @@
 # Implementation Plan: Subida de invitados con aprobación de acceso
 
+> **Enmienda (2026-11-07)**: el paso de aprobación de acceso se retiró (ver la enmienda en [spec.md](./spec.md)).
+> `/upload` usa `GuestUploadForm` con `POST /api/public/submissions` en un solo paso y `/enviar` redirige a `/upload`.
+> Ya no existen `server/utils/access-requests.ts`, `useGuestAccess`, `AccessRequestList`/`AccessRequestCard`,
+> `shared/constants/access.ts` ni `shared/validation/access.ts`; el pulso y el Inicio solo cuentan envíos por revisar.
+> La migración `drizzle/0008_*` borra la tabla, las columnas y los enums que agregó `0004`.
+
 **Branch**: `003-public-photos-upload` | **Date**: 2026-10-29 | **Spec**: [spec.md](./spec.md)
 
 **Input**: Feature specification from `specs/003-guest-upload-access-code/spec.md`

@@ -1,5 +1,11 @@
 # Data Model: Subida de invitados con aprobación de acceso
 
+> **Enmienda (2026-11-07)**: la migración `drizzle/0008_*` borra `guest_access_requests` (con sus índices y CHECKs),
+> `guest_submissions.origin`, `guest_submissions.access_granted_by` (y su FK) y los enums `access_request_status` y
+> `submission_origin`. Los valores `access.approve` / `access.reject` se quedan en `activity_action`: Postgres no borra
+> valores de un enum y el registro de actividad antiguo los usa. Los envíos que llegaron "Por permiso" pierden esa
+> etiqueta. Ver [spec.md](./spec.md).
+
 **Feature**: [spec.md](./spec.md) · **Research**: [research.md](./research.md)
 
 Una migración Drizzle nueva (`drizzle/0004_*.sql`, generada con `bun run db:generate` desde `server/db/schema.ts`).

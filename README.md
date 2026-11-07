@@ -2,8 +2,9 @@
 
 Disco de medios interno del equipo de producción multimedia y audio de una iglesia. Las personas del
 equipo (administradoras y editoras) suben, organizan, previsualizan, comentan y recuperan archivos;
-los invitados envían material desde una página pública a una cola de aprobación que el equipo revisa
-en vivo.
+los invitados envían material desde la página pública `/upload` (nombre, nota opcional y archivos, en un solo
+paso, sin cuenta) a una cola de aprobación que el equipo revisa en vivo. El enlace antiguo `/enviar` redirige
+a `/upload`.
 
 - **Stack**: Nuxt 4 (Vue 3.5) · TypeScript estricto · Bun · Neon PostgreSQL con Drizzle ORM · Neon Auth ·
   Neon Object Storage (S3) · Tailwind CSS 4 + daisyUI 5 · Vitest + Playwright · Vercel.
@@ -54,7 +55,10 @@ NUXT_RATE_LIMIT_SALT
 1. **Variables**: las de la lista anterior, por entorno, en los ajustes del proyecto de Vercel. Sin las de
    `cloudy-api` o Apify el resto de la app funciona y Canciones/YouTube responden «no configurado».
 2. **Migraciones**: antes de promover el despliegue, la persona aplica `bun run db:migrate:prod` (la de
-   Canciones es `drizzle/0007_exotic_oracle.sql`). Las migraciones solo agregan tablas, no alteran las existentes.
+   Canciones es `drizzle/0007_exotic_oracle.sql`). `drizzle/0008_swift_prima.sql` **borra** la solicitud de acceso
+   de invitados (tabla `guest_access_requests`, columnas `guest_submissions.origin` y `access_granted_by` y sus
+   enums): pruébala antes en `db:migrate:test` y despliega el código nuevo junto con ella. Los envíos que llegaron
+   "Por permiso" pierden esa etiqueta.
 3. **`cloudy-api`**: su `ALLOWED_ORIGINS` debe incluir el origen de producción (`NUXT_PUBLIC_SITE_URL`)
    para «Guardar en el drive» de YouTube, que mueve el archivo desde el navegador.
 4. **Funciones**: `nitro.vercel.functions.maxDuration = 120` (el rastreo de letras espera hasta ~55 s y la
