@@ -57,6 +57,13 @@
       "when": 1793927795273,
       "tag": "0007_exotic_oracle",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1794082229733,
+      "tag": "0008_swift_prima",
+      "breakpoints": true
     }
   ]
 }
