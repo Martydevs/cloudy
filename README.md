@@ -39,9 +39,29 @@ NUXT_AWS_SECRET_ACCESS_KEY
 NUXT_AWS_REGION
 NUXT_S3_BUCKET
 NUXT_PUBLIC_SITE_URL
+NUXT_OPENROUTER_APIKEY       # vacía = sin lectura de texto en imágenes
+NUXT_OPENROUTER_BASE_URL     # vacía = OpenRouter (solo e2e la cambia)
+NUXT_CLOUDY_API_URL          # servicio cloudy-api: descargas de YouTube y presentaciones de letras
+NUXT_CLOUDY_API_KEY          # vacías = esas páginas responden «no configurado»
+NUXT_APIFY_API_KEY           # rastreo de letras (Apify); vacía = «no configurado»
+NUXT_APIFY_BASE_URL          # vacía = Apify real (solo e2e la cambia)
 CRON_SECRET
 NUXT_RATE_LIMIT_SALT
 ```
+
+## Despliegue (Vercel)
+
+1. **Variables**: las de la lista anterior, por entorno, en los ajustes del proyecto de Vercel. Sin las de
+   `cloudy-api` o Apify el resto de la app funciona y Canciones/YouTube responden «no configurado».
+2. **Migraciones**: antes de promover el despliegue, la persona aplica `bun run db:migrate:prod` (la de
+   Canciones es `drizzle/0007_exotic_oracle.sql`). Las migraciones solo agregan tablas, no alteran las existentes.
+3. **`cloudy-api`**: su `ALLOWED_ORIGINS` debe incluir el origen de producción (`NUXT_PUBLIC_SITE_URL`)
+   para «Guardar en el drive» de YouTube, que mueve el archivo desde el navegador.
+4. **Funciones**: `nitro.vercel.functions.maxDuration = 120` (el rastreo de letras espera hasta ~55 s y la
+   presentación hasta ~90 s); el tope del proyecto es 300 s.
+5. **Cron**: `vercel.json` programa `/api/cron/cleanup` a diario; requiere `CRON_SECRET`.
+6. **Después del despliegue**: abrir `/canciones` con una cuenta de editor y comprobar que no dice «no
+   configurado» (rastreo y presentación reales, ~0,002 USD por canción nueva en Apify).
 
 ## Comandos
 
