@@ -14,7 +14,7 @@ import { APIFY_STUB_TOKEN, startApifyStub } from './apify-stub'
 
 const TABLES = [
   'profiles', 'folders', 'files', 'guest_submissions', 'guest_submission_files',
-  'comments', 'activity_log', 'rate_limits', 'guest_access_requests',
+  'comments', 'activity_log', 'rate_limits',
   'youtube_videos', 'youtube_playlists', 'youtube_playlist_items', 'youtube_downloads',
   'songs', 'song_collections', 'song_collection_items',
 ]

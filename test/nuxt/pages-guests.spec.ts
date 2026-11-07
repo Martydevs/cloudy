@@ -1,4 +1,4 @@
-// US3 — página pública /enviar, tarjeta de envío, cola /solicitudes (antes /pendientes, feature 003) y aviso con enlace.
+// US3 — página pública /upload (envío de un solo paso), tarjeta de envío, cola /solicitudes (antes /pendientes) y aviso con enlace.
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { mockNuxtImport, mountSuspended } from '@nuxt/test-utils/runtime'
 import { setResponseStatus } from 'h3'
@@ -8,7 +8,7 @@ import { MAX_GUEST_FILES } from '#shared/constants/files'
 import AppToast from '~/components/app/AppToast.vue'
 import DropZone from '~/components/upload/DropZone.vue'
 import SubmissionCard from '~/components/guests/SubmissionCard.vue'
-import EnviarPage from '~/pages/enviar.vue'
+import UploadPage from '~/pages/upload.vue'
 import SolicitudesPage from '~/pages/solicitudes.vue'
 import type { Queryable } from './helpers/api'
 import { buttonsWithText, calls, failWith, flush, mockApi, resetCalls } from './helpers/api'
@@ -37,8 +37,6 @@ const submission = (changes: Partial<Submission> = {}): Submission => ({
     { id: 'f1', name: 'foto.jpg', category: 'image', size: 2048, previewUrl: '/api/submissions/s1/files/f1/content', text: imageText() },
     { id: 'f2', name: 'audio.mp3', category: 'audio', size: 4096, previewUrl: '/api/submissions/s1/files/f2/content', text: null },
   ],
-  origin: 'link',
-  accessGrantedBy: null,
   ...changes,
 })
 
@@ -53,7 +51,21 @@ beforeEach(() => {
   mockApi('GET', '/api/me', me)
 })
 
-describe('/enviar', () => {
+describe('/upload', () => {
+  it('es un solo paso: nombre, nota y archivos en un formulario, sin pedir acceso', async () => {
+    const wrapper = await mountSuspended(UploadPage)
+    expect(wrapper.get('h1').text()).toBe('Envía tus archivos')
+    expect(wrapper.find('input[type="text"]').exists()).toBe(true)
+    expect(wrapper.find('textarea').exists()).toBe(true)
+    expect(wrapper.findComponent(DropZone).exists()).toBe(true)
+    expect(wrapper.text()).not.toContain('Pedir acceso')
+    expect(wrapper.text()).not.toContain('Pide permiso')
+    expect(wrapper.get('a[href="/login"]').text()).toContain('Volver a iniciar sesión')
+    // No consulta ningún estado de acceso al cargar.
+    await flush()
+    expect(calls.some(c => c.url.startsWith('/api/public/access'))).toBe(false)
+  })
+
   function mockTicket() {
     mockApi('POST', '/api/public/submissions', (event) => {
       setResponseStatus(event, 201)
@@ -63,7 +75,7 @@ describe('/enviar', () => {
   }
 
   it('exige nombre y al menos un archivo válido', async () => {
-    const wrapper = await mountSuspended(EnviarPage)
+    const wrapper = await mountSuspended(UploadPage)
     await wrapper.get('form').trigger('submit')
     await flush()
     expect(wrapper.get('[role="alert"]').text()).toBe('Este campo es obligatorio')
@@ -82,7 +94,7 @@ describe('/enviar', () => {
   })
 
   it('limita el envío a MAX_GUEST_FILES archivos y permite quitar uno de la cola', async () => {
-    const wrapper = await mountSuspended(EnviarPage)
+    const wrapper = await mountSuspended(UploadPage)
     const many = Array.from({ length: MAX_GUEST_FILES + 1 }, (_, i) => file(`foto${i}.jpg`))
     wrapper.findComponent(DropZone).vm.$emit('files', many)
     await flush()
@@ -97,7 +109,7 @@ describe('/enviar', () => {
 
   it('envía el lote (presign → PUT → complete) y muestra el agradecimiento', async () => {
     mockTicket()
-    const wrapper = await mountSuspended(EnviarPage)
+    const wrapper = await mountSuspended(UploadPage)
     await wrapper.get('input[type="text"]').setValue('  Eva ')
     await wrapper.get('textarea').setValue('Fotos')
     wrapper.findComponent(DropZone).vm.$emit('files', [file('foto.jpg'), file('imagen.png', 'image/png')])
@@ -119,7 +131,7 @@ describe('/enviar', () => {
   it('avisa de los archivos descartados por el servidor', async () => {
     mockTicket()
     mockApi('POST', '/api/public/submissions/sub1/complete', { status: 'pending', accepted: 1, rejected: 1 })
-    const wrapper = await mountSuspended(EnviarPage)
+    const wrapper = await mountSuspended(UploadPage)
     await wrapper.get('input[type="text"]').setValue('Eva')
     wrapper.findComponent(DropZone).vm.$emit('files', [file('foto.jpg'), file('imagen.png', 'image/png')])
     await wrapper.get('form').trigger('submit')
@@ -129,7 +141,7 @@ describe('/enviar', () => {
 
   it('un 429 explica el límite y otro error deja reintentar', async () => {
     mockApi('POST', '/api/public/submissions', failWith(429))
-    const wrapper = await mountSuspended(EnviarPage)
+    const wrapper = await mountSuspended(UploadPage)
     await wrapper.get('input[type="text"]').setValue('Eva')
     wrapper.findComponent(DropZone).vm.$emit('files', [file('foto.jpg')])
     await wrapper.get('form').trigger('submit')
@@ -149,7 +161,7 @@ describe('/enviar', () => {
       setResponseStatus(event, 500)
       return { statusCode: 500, statusMessage: 'Server Error', message: 'Server Error' }
     })
-    const wrapper = await mountSuspended(EnviarPage)
+    const wrapper = await mountSuspended(UploadPage)
     await wrapper.get('input[type="text"]').setValue('Eva')
     wrapper.findComponent(DropZone).vm.$emit('files', [file('foto.jpg')])
     await wrapper.get('form').trigger('submit')
@@ -191,21 +203,12 @@ describe('SubmissionCard', () => {
     expect(wrapper.emitted('reject')).toEqual([['Borrosa']])
   })
 
-  it('muestra el origen con icono y texto: "Por enlace" o "Por permiso" con quién dio acceso (feature 003, US3)', async () => {
-    const link = await mountSuspended(SubmissionCard, { props: { submission: submission() } })
-    const linkBadge = link.findAll('.badge').find(b => b.text() === 'Por enlace')!
-    expect(linkBadge.find('.iconify').classes()).toContain('i-lucide:link')
-    expect(link.text()).not.toContain('Acceso aprobado por')
-
-    const permitted = await mountSuspended(SubmissionCard, { props: { submission: submission({ origin: 'permission', accessGrantedBy: { name: 'Luis' } }) } })
-    const permittedBadge = permitted.findAll('.badge').find(b => b.text() === 'Por permiso')!
-    expect(permittedBadge.find('.iconify').classes()).toContain('i-lucide:shield-check')
-    // Texto visible: no depende del color (badge-outline).
-    expect(permittedBadge.classes()).toContain('badge-outline')
-    expect(permitted.text()).toContain('Acceso aprobado por Luis')
-
-    const orphan = await mountSuspended(SubmissionCard, { props: { submission: submission({ origin: 'permission', accessGrantedBy: null }) } })
-    expect(orphan.text()).toContain('Acceso aprobado por una persona del equipo')
+  it('no muestra origen ni quién dio acceso: todos los envíos llegan igual', async () => {
+    const wrapper = await mountSuspended(SubmissionCard, { props: { submission: submission() } })
+    expect(wrapper.text()).not.toContain('Por enlace')
+    expect(wrapper.text()).not.toContain('Por permiso')
+    expect(wrapper.text()).not.toContain('Acceso aprobado por')
+    expect(wrapper.findAll('header .badge').map(b => b.text())).toEqual(['Pendiente'])
   })
 
   it('un envío ya revisado no muestra acciones y uno caducado lo dice', async () => {
@@ -223,8 +226,8 @@ describe('texto de las imágenes de invitados (feature 002)', () => {
   const textCalls = () => calls.filter(c => c.url === TEXT)
   const withText = (text: ImageText) => submission({ files: [{ ...submission().files[0]!, text }] })
 
-  it('/enviar avisa de la lectura automática junto al selector; el botón Enviar no cambia', async () => {
-    const wrapper = await mountSuspended(EnviarPage)
+  it('/upload avisa de la lectura automática junto al selector; el botón Enviar no cambia', async () => {
+    const wrapper = await mountSuspended(UploadPage)
     expect(wrapper.text()).toContain(messages.imageText.guestNotice)
     expect(wrapper.text()).toContain(messages.imageText.guestPrivacy)
     expect(button(wrapper, 'Enviar').attributes('disabled')).toBeUndefined()
@@ -279,27 +282,23 @@ describe('texto de las imágenes de invitados (feature 002)', () => {
 
 describe('/solicitudes', () => {
   beforeEach(() => {
-    mockApi('GET', '/api/realtime/pulse', { cursor: '2026-10-14T10:00:00.000Z', pendingCount: 1, newSubmissions: [], pendingUsers: 0, openAccessRequests: 0, newAccessRequests: [] })
-    mockApi('GET', '/api/access-requests', [])
+    mockApi('GET', '/api/realtime/pulse', { cursor: '2026-10-14T10:00:00.000Z', pendingCount: 1, newSubmissions: [], pendingUsers: 0 })
   })
 
-  it('se titula Solicitudes y muestra las solicitudes de acceso solo en la pestaña Por revisar', async () => {
+  it('se titula Solicitudes y solo lista envíos: ya no hay solicitudes de acceso', async () => {
     mockApi('GET', '/api/submissions', [])
-    mockApi('GET', '/api/access-requests', [{ id: 'r1', senderName: 'Rut', createdAt: new Date().toISOString(), expiresAt: new Date(Date.now() + 5 * 60_000).toISOString() }])
     const wrapper = await mountSuspended(SolicitudesPage)
     await flush()
     expect(wrapper.get('h1').text()).toBe('Solicitudes')
-    expect(wrapper.findAll('h2').map(h => h.text())).toEqual(expect.arrayContaining(['Solicitudes de acceso', 'Envíos']))
+    const headings = wrapper.findAll('h2').map(h => h.text())
+    expect(headings).toContain('Envíos')
+    expect(headings).not.toContain('Solicitudes de acceso')
+    expect(calls.some(c => c.url === '/api/access-requests')).toBe(false)
     expect(wrapper.findAll('[role="tab"]').map(t => t.text())).toEqual(['Por revisar', 'Aprobados', 'Rechazados'])
     // Regresión: daisyUI pinta las pestañas inactivas al 50 % (3,25:1 en el tema claro); se suben al 80 % para AA.
     expect(wrapper.findAll('[role="tab"]').map(t => t.classes().includes('text-base-content/80'))).toEqual([false, true, true])
-    expect(wrapper.text()).toContain('Rut')
     expect(wrapper.text()).toContain('No hay envíos por revisar')
-
-    await wrapper.findAll('[role="tab"]').find(t => t.text().includes('Aprobados'))!.trigger('click')
-    await flush()
     expect(wrapper.text()).not.toContain('Solicitudes de acceso')
-    expect(wrapper.text()).not.toContain('Rut')
   })
 
   it('el contador de "Por revisar" sale del listado antes del primer pulso (sin desplazar la página al hidratar)', async () => {
@@ -313,19 +312,6 @@ describe('/solicitudes', () => {
     await wrapper.findAll('[role="tab"]').find(t => t.text().includes('Aprobados'))!.trigger('click')
     await flush()
     expect(wrapper.findAll('[role="tab"]').find(t => t.text().startsWith('Por revisar'))!.find('.badge').exists()).toBe(false)
-  })
-
-  it('la lista de solicitudes de acceso se recarga cuando el pulso cambia su conteo', async () => {
-    mockApi('GET', '/api/submissions', [])
-    const wrapper = await mountSuspended(SolicitudesPage)
-    await flush()
-    expect(wrapper.text()).toContain('Nadie está pidiendo acceso ahora')
-    const before = calls.filter(c => c.url === '/api/access-requests').length
-    mockApi('GET', '/api/access-requests', [{ id: 'r2', senderName: 'Noé', createdAt: new Date().toISOString(), expiresAt: new Date(Date.now() + 5 * 60_000).toISOString() }])
-    usePulse().openAccessRequests.value += 1
-    await flush(10)
-    expect(calls.filter(c => c.url === '/api/access-requests').length).toBeGreaterThan(before)
-    expect(wrapper.text()).toContain('Noé')
   })
 
   it('lista los pendientes, aprueba hacia la raíz con aviso enlazado y cambia de pestaña', async () => {
@@ -502,7 +488,7 @@ describe('/solicitudes', () => {
     await buttonsWithText(empty, 'Copiar enlace para invitados')[1]!.trigger('click')
     await flush()
     expect(useToast().toasts.value.at(-1)?.message).toBe('Enlace para invitados copiado')
-    expect(await navigator.clipboard.readText()).toMatch(/\/enviar$/)
+    expect(await navigator.clipboard.readText()).toMatch(/\/upload$/)
   })
 })
 
@@ -523,21 +509,5 @@ describe('aviso con enlace', () => {
     await poll()
     expect(toast.toasts.value.map(t => t.message)).toEqual(['Nuevo envío de Eva (2 archivos)', 'Nuevo envío de Luis (1 archivo)'])
     expect(toast.toasts.value[0]?.action).toEqual({ label: 'Ver', to: '/solicitudes' })
-    // Un pulso sin los campos de la feature 003 (servidor anterior) deja las solicitudes en 0.
-    expect(usePulse().openAccessRequests.value).toBe(0)
-  })
-
-  it('el pulso avisa de cada solicitud de acceso nueva y guarda el conteo (feature 003)', async () => {
-    const toast = useToast()
-    toast.toasts.value = []
-    mockApi('GET', '/api/realtime/pulse', {
-      cursor: '2026-10-14T10:00:04.000Z', pendingCount: 0, pendingUsers: 0, newSubmissions: [],
-      openAccessRequests: 2, newAccessRequests: [{ id: 'r1', senderName: 'Rut', createdAt: '' }],
-    })
-    const { poll } = usePulsePolling()
-    await poll()
-    expect(toast.toasts.value.map(t => t.message)).toEqual(['Rut pide permiso para enviar archivos'])
-    expect(toast.toasts.value[0]?.action).toEqual({ label: 'Ver', to: '/solicitudes' })
-    expect(usePulse().openAccessRequests.value).toBe(2)
   })
 })

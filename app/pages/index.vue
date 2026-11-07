@@ -10,12 +10,10 @@ const { data, error, refresh } = await useApiFetch<DashboardSummary>('/api/dashb
 const upload = useUploadDialog()
 watch(upload.version, () => refresh())
 
-const { pendingCount, openAccessRequests, cursor } = usePulse()
-// Envíos por revisar + solicitudes de acceso (feature 003). El resumen del servidor llena el primer render; en cuanto
-// llega el primer pulso (`cursor`) manda el pulso, que sí baja cuando se atiende o caduca una solicitud.
-const pending = computed(() => cursor.value
-  ? pendingCount.value + openAccessRequests.value
-  : (data.value?.pendingCount ?? 0) + (data.value?.openAccessRequests ?? 0))
+const { pendingCount, cursor } = usePulse()
+// Envíos por revisar. El resumen del servidor llena el primer render; en cuanto llega el primer pulso (`cursor`)
+// manda el pulso, que sí baja cuando se aprueba o rechaza un envío.
+const pending = computed(() => cursor.value ? pendingCount.value : (data.value?.pendingCount ?? 0))
 
 const { copyGuestLink } = useGuestLink()
 

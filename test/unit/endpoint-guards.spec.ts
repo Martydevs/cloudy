@@ -52,12 +52,9 @@ describe('guards de los endpoints', () => {
     expect(source('me.get.ts')).toMatch(/\brequireSession\(/)
   })
 
-  it('public/* son las fases del envío de invitados y la solicitud de acceso, y no leen la sesión', () => {
+  it('public/* son solo las dos fases del envío de invitados y no leen la sesión', () => {
     // Una ruta pública nueva debe revisarse aquí a propósito.
     expect(files.filter(isPublic)).toEqual([
-      'public/access/current.get.ts',
-      'public/access/index.post.ts',
-      'public/access/submissions.post.ts',
       'public/submissions/[id]/complete.post.ts',
       'public/submissions/index.post.ts',
     ])
@@ -67,10 +64,7 @@ describe('guards de los endpoints', () => {
     // Fase 1: límite por IP. Fase 2: el id del envío (UUID) es la capacidad; solo cierra envíos pendientes.
     expect(source('public/submissions/index.post.ts')).toMatch(/\bhitRateLimit\(/)
     expect(source('public/submissions/[id]/complete.post.ts')).toMatch(/submission\.status !== 'pending'/)
-    // Feature 003: pedir acceso y crear con permiso tienen limitador; `current` es una lectura por índice único.
-    expect(source('public/access/index.post.ts')).toMatch(/\bhitRateLimit\(/)
-    expect(source('public/access/submissions.post.ts')).toMatch(/\bhitRateLimit\(/)
-    expect(source('public/access/current.get.ts')).not.toMatch(/\bhitRateLimit\(/)
+    expect(source('public/submissions/[id]/complete.post.ts')).toMatch(/\bhitRateLimit\(/)
   })
 
   it('los 16 endpoints de YouTube exigen rol de equipo y ninguno es público ni exento (feature 005)', () => {
@@ -120,9 +114,7 @@ describe('guards de los endpoints', () => {
     expect(files.filter(f => (isPublic(f) || isCron(f)) && f.includes('songs'))).toEqual([])
   })
 
-  it('los endpoints del equipo para solicitudes de acceso exigen rol (feature 003)', () => {
-    const team = files.filter(f => f.startsWith('access-requests/'))
-    expect(team).toEqual(['access-requests/[id]/approve.post.ts', 'access-requests/[id]/reject.post.ts', 'access-requests/index.get.ts'])
-    for (const file of team) expect(source(file), file).toMatch(/\brequireRole\(event, 'editor'\)/)
+  it('la solicitud de acceso de invitados se retiró: no quedan sus endpoints', () => {
+    expect(files.filter(f => f.startsWith('access-requests/') || f.startsWith('public/access/'))).toEqual([])
   })
 })

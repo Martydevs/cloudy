@@ -218,7 +218,7 @@ const PRIVATE_ROUTES = [
   // Página Canciones (feature 006): `:id` es una canción sembrada en esta corrida.
   '/canciones', '/canciones/:id',
 ]
-const PUBLIC_ROUTES = ['/login', '/registro', '/recuperar', '/restablecer', '/enviar', '/upload', '/acceso-denegado']
+const PUBLIC_ROUTES = ['/login', '/registro', '/recuperar', '/restablecer', '/upload', '/acceso-denegado']
 const PENDING_ROUTES = ['/pendiente']
 
 type Theme = 'cloudy' | 'cloudy-light'

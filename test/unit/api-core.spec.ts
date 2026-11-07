@@ -52,22 +52,18 @@ describe('GET /api/dashboard', () => {
       storageKey: 'files/f1', thumbKey: null, uploadStatus: 'ready', origin: 'team', uploadedBy: 'u1', guestName: null,
       submissionId: null, createdAt: created, updatedAt: created, deletedAt: null, deletedBy: null, trashRootId: null, uploaderName: 'Ana',
     }]
-    // `execute` corre al armar el lote (envíos por revisar y solicitudes de acceso); luego se resuelven los select en orden.
-    const fake = installNitro([
+    // `execute` corre al armar el lote (envíos por revisar); luego se resuelven los select en orden.
+    installNitro([
       { rows: [{ count: 2 }] },
-      { rows: [{ count: 3 }] },
       recent,
       [{ category: 'image', count: 3, bytes: '30' }, { category: 'audio', count: 1, bytes: '5' }],
       [{ activeBytes: '35', trashBytes: '7' }],
     ])
     const handler = await loadHandler('api/dashboard.get.ts')
     const summary = await handler(makeEvent())
-    // Solo las solicitudes abiertas y vigentes cuentan (feature 003).
-    expect(sqlText(fake.db.execute.mock.calls[1]![0])).toContain(`status = 'open' AND expires_at > now()`)
     expect(summary).toEqual({
       recentFiles: [expect.objectContaining({ id: 'f1', uploadedBy: { id: 'u1', name: 'Ana' } })],
       pendingCount: 2,
-      openAccessRequests: 3,
       totalsByCategory: {
         image: { count: 3, bytes: 30 },
         audio: { count: 1, bytes: 5 },
@@ -80,20 +76,19 @@ describe('GET /api/dashboard', () => {
   })
 
   it('sin datos devuelve ceros y exige rol', async () => {
-    installNitro([{ rows: [] }, { rows: [] }, [], [], []])
+    installNitro([{ rows: [] }, [], [], []])
     const handler = await loadHandler('api/dashboard.get.ts')
-    expect(await handler(makeEvent())).toMatchObject({ pendingCount: 0, openAccessRequests: 0, storage: { activeBytes: 0, trashBytes: 0 } })
+    expect(await handler(makeEvent())).toMatchObject({ pendingCount: 0, storage: { activeBytes: 0, trashBytes: 0 } })
     await expectGuarded(handler)
   })
 })
 
 describe('GET /api/realtime/pulse', () => {
   const fresh = [{ id: 's2', sender_name: 'Luis', created_at: '2026-10-14T10:05:00.000Z', completed_at: '2026-10-14T10:06:00.000Z', file_count: 2 }]
-  // Cola por pulso: conteo de pendientes, nuevos desde el cursor, usuarios pendientes, solicitudes de acceso
-  // abiertas y nuevas desde el cursor (feature 003) y, al final, el perfil de quien sondea: va en el mismo
-  // batch y el doble resuelve los `execute` al construirlos y el `select` al esperarlo.
-  const pulse = (count: number, rows: unknown[], users: number, access = 0, accessRows: unknown[] = [], profile: unknown[] = [profileRow()]) =>
-    [{ rows: [{ count }] }, { rows }, { rows: [{ count: users }] }, { rows: [{ count: access }] }, { rows: accessRows }, profile]
+  // Cola por pulso: conteo de pendientes, nuevos desde el cursor, usuarios pendientes y, al final, el perfil de
+  // quien sondea: va en el mismo batch y el doble resuelve los `execute` al construirlos y el `select` al esperarlo.
+  const pulse = (count: number, rows: unknown[], users: number, profile: unknown[] = [profileRow()]) =>
+    [{ rows: [{ count }] }, { rows }, { rows: [{ count: users }] }, profile]
   // El middleware deja solo la sesión en el pulso (perfil diferido): `auth` sin resolver.
   const pulseEvent = (url = '/api/realtime/pulse', user: { id: string, email: string, name: string } | null = authAs().user) => {
     const event = makeEvent({ auth: undefined, url })
@@ -114,7 +109,7 @@ describe('GET /api/realtime/pulse', () => {
       pendingCount: 2,
       newSubmissions: [{ id: 's2', senderName: 'Luis', fileCount: 2, createdAt: '2026-10-14T10:05:00.000Z' }],
     })
-    const sinceSql = sqlText(fake.db.execute.mock.calls[6]![0])
+    const sinceSql = sqlText(fake.db.execute.mock.calls[4]![0])
     expect(sinceSql).toContain('completed_at >')
     expect(sinceSql).toContain('2026-10-14T10:00:00.000Z')
   })
@@ -131,27 +126,16 @@ describe('GET /api/realtime/pulse', () => {
     expect(lag).toBeLessThan(11_000)
   })
 
-  it('cuenta las solicitudes de acceso abiertas y lista las nuevas desde el cursor (feature 003)', async () => {
-    const access = [{ id: 'r1', sender_name: 'Eva', created_at: '2026-10-14T10:03:00.000Z' }]
-    const fake = installNitro([...pulse(0, [], 0, 2, []), ...pulse(0, [], 0, 2, access)])
+  it('el pulso ya no expone solicitudes de acceso', async () => {
+    installNitro(pulse(0, [], 0))
     const handler = await loadHandler('api/realtime/pulse.get.ts')
-    expect(await handler(pulseEvent())).toMatchObject({ openAccessRequests: 2, newAccessRequests: [] })
-    const countSql = sqlText(fake.db.execute.mock.calls[3]![0])
-    expect(countSql).toContain(`status = 'open' AND expires_at > now()`)
-    // Sin cursor la quinta consulta no devuelve filas.
-    expect(sqlText(fake.db.execute.mock.calls[4]![0])).toContain('WHERE false')
-
-    expect(await handler(pulseEvent('/api/realtime/pulse?since=2026-10-14T10:00:00.000Z'))).toMatchObject({
-      openAccessRequests: 2,
-      newAccessRequests: [{ id: 'r1', senderName: 'Eva', createdAt: '2026-10-14T10:03:00.000Z' }],
-    })
-    const sinceSql = sqlText(fake.db.execute.mock.calls[9]![0])
-    expect(sinceSql).toContain('created_at >')
-    expect(sinceSql).toContain('2026-10-14T10:00:00.000Z')
+    const result = await handler(pulseEvent()) as Record<string, unknown>
+    expect(result).not.toHaveProperty('openAccessRequests')
+    expect(result).not.toHaveProperty('newAccessRequests')
   })
 
   it('solo el admin recibe el conteo de usuarios pendientes (T134a)', async () => {
-    const fake = installNitro([...pulse(0, [], 3, 0, [], [profileRow({ role: 'admin' })]), ...pulse(0, [], 3)])
+    const fake = installNitro([...pulse(0, [], 3, [profileRow({ role: 'admin' })]), ...pulse(0, [], 3)])
     const handler = await loadHandler('api/realtime/pulse.get.ts')
     expect(await handler(pulseEvent())).toMatchObject({ pendingUsers: 3 })
     expect(sqlText(fake.db.execute.mock.calls[2]![0])).toContain(`FROM profiles WHERE status = 'pending'`)
@@ -165,17 +149,17 @@ describe('GET /api/realtime/pulse', () => {
     const event = pulseEvent()
     await handler(event)
     expect(fake.db.batch).toHaveBeenCalledTimes(1)
-    expect(fake.db.batch.mock.calls[0]![0]).toHaveLength(6)
+    expect(fake.db.batch.mock.calls[0]![0]).toHaveLength(4)
     expect(fake.calls.filter(c => c.method === 'select')).toHaveLength(1)
     expect(event.context.auth?.profile.userId).toBe('u1')
   })
 
   it('rechaza un cursor mal formado y exige sesión activa con rol', async () => {
     const fake = installNitro([
-      ...pulse(0, [], 0, 0, [], [profileRow({ status: 'pending', role: null })]),
-      ...pulse(0, [], 0, 0, [], [profileRow({ status: 'disabled' })]),
+      ...pulse(0, [], 0, [profileRow({ status: 'pending', role: null })]),
+      ...pulse(0, [], 0, [profileRow({ status: 'disabled' })]),
       // Sin perfil aún: se crea como el middleware (pendiente) y tampoco pasa el guard.
-      ...pulse(0, [], 0, 0, [], []), [], { rows: [{ user_id: 'u1' }] }, [profileRow({ status: 'pending', role: null })],
+      ...pulse(0, [], 0, []), [], { rows: [{ user_id: 'u1' }] }, [profileRow({ status: 'pending', role: null })],
     ])
     const handler = await loadHandler('api/realtime/pulse.get.ts')
     await expectStatus(Promise.resolve().then(() => handler(pulseEvent('/api/realtime/pulse?since=ayer'))), 422)

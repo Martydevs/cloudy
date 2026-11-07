@@ -51,11 +51,11 @@ beforeAll(async () => {
 })
 
 describe('US2 · cámara dentro de Cloudy', () => {
-  it('/enviar en un teléfono: dos fotos con "Abrir cámara" llegan a Solicitudes', async () => {
+  it('/upload en un teléfono, en un solo paso: dos fotos con "Abrir cámara" llegan a Solicitudes', async () => {
     const name = `Cámara ${runId()}`
     const page = await phonePage()
     expect(await page.evaluate(() => matchMedia('(pointer: coarse)').matches)).toBe(true)
-    const response = await page.goto(`${E2E_URL}/enviar`)
+    const response = await page.goto(`${E2E_URL}/upload`)
     expect(response?.headers()['permissions-policy']).toContain('camera=(self)')
     await waitForHydration(page)
     await page.getByLabel('Tu nombre').fill(name)
@@ -85,36 +85,9 @@ describe('US2 · cámara dentro de Cloudy', () => {
     await editor.close()
   })
 
-  it('/upload aprobado en un teléfono: la foto se envía con permiso', async () => {
-    const name = `Cámara permiso ${runId()}`
-    const page = await phonePage()
-    const response = await page.goto(`${E2E_URL}/upload`)
-    expect(response?.headers()['permissions-policy']).toContain('camera=(self)')
-    await waitForHydration(page)
-    await page.getByLabel('Tu nombre').fill(name)
-    await page.getByRole('button', { name: 'Pedir acceso' }).click()
-    await expect.poll(async () => {
-      const [row] = await testSql()`SELECT id FROM guest_access_requests WHERE sender_name = ${name}`
-      return row?.id ?? null
-    }).not.toBeNull()
-
-    const editor = await createPage(undefined, { viewport: viewports.desktop })
-    await editor.context().addCookies(editorCookies)
-    const [request] = await testSql()`SELECT id FROM guest_access_requests WHERE sender_name = ${name}`
-    expect((await editor.request.post(`${E2E_URL}/api/access-requests/${request!.id}/approve`)).status()).toBe(204)
-
-    await expect.poll(() => page.getByRole('button', { name: 'Abrir cámara' }).isVisible(), { timeout: 10_000 }).toBe(true)
-    await takePhotos(page, 1)
-    await page.getByRole('button', { name: 'Enviar', exact: true }).click()
-    await expect.poll(() => page.getByText('¡Gracias! Recibimos tu envío').first().isVisible(), { timeout: 60_000 }).toBe(true)
-    expect(await testSql()`SELECT origin FROM guest_submissions WHERE sender_name = ${name}`).toEqual([{ origin: 'permission' }])
-    await page.close()
-    await editor.close()
-  })
-
   it('permiso denegado: lo explica y "Elegir archivos" sigue funcionando', async () => {
     const page = await phonePage({ denyCamera: true })
-    await page.goto(`${E2E_URL}/enviar`)
+    await page.goto(`${E2E_URL}/upload`)
     await waitForHydration(page)
     await page.getByRole('button', { name: 'Abrir cámara' }).click()
     await expect.poll(() => page.getByRole('alert').first().innerText()).toContain('Cloudy no tiene permiso para usar la cámara')
@@ -129,24 +102,12 @@ describe('US2 · cámara dentro de Cloudy', () => {
     ['1280 px', viewports.desktop],
   ])('en una computadora (%s, sin táctil) no aparece "Abrir cámara"', async (_, viewport) => {
     const page = await createPage(undefined, { viewport, permissions: ['camera'] })
-    for (const path of ['/enviar', '/upload']) {
-      await page.goto(`${E2E_URL}${path}`)
-      await waitForHydration(page)
-      // Se da tiempo a que la disponibilidad se resuelva en el cliente.
-      await page.waitForTimeout(500)
-      expect(await page.getByRole('button', { name: 'Abrir cámara' }).count(), path).toBe(0)
-    }
-    // En /upload, ni siquiera con el acceso aprobado.
-    const name = `Escritorio ${runId()}-${viewport.width}`
-    await page.getByLabel('Tu nombre').fill(name)
-    await page.getByRole('button', { name: 'Pedir acceso' }).click()
-    await expect.poll(async () => (await testSql()`SELECT id FROM guest_access_requests WHERE sender_name = ${name}`).length).toBe(1)
-    const [request] = await testSql()`SELECT id FROM guest_access_requests WHERE sender_name = ${name}`
-    const editor = await createPage(undefined, { viewport: viewports.desktop })
-    await editor.context().addCookies(editorCookies)
-    expect((await editor.request.post(`${E2E_URL}/api/access-requests/${request!.id}/approve`)).status()).toBe(204)
-    await editor.close()
-    await expect.poll(() => page.getByLabel('Elegir archivos', { exact: true }).count(), { timeout: 10_000 }).toBe(1)
+    await page.goto(`${E2E_URL}/upload`)
+    await waitForHydration(page)
+    // Se da tiempo a que la disponibilidad se resuelva en el cliente.
+    await page.waitForTimeout(500)
+    // El selector de archivos está desde el primer momento (un solo paso), pero sin cámara.
+    expect(await page.getByLabel('Elegir archivos', { exact: true }).count()).toBe(1)
     expect(await page.getByRole('button', { name: 'Abrir cámara' }).count()).toBe(0)
     await page.close()
   })

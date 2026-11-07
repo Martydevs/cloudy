@@ -1,12 +1,10 @@
-// Creación de envíos de invitados (FR-016; feature 003, research B4 y B11): un solo camino para el envío abierto
-// (`/enviar`) y el envío con permiso (`/upload`). El limitador se queda en cada endpoint.
+// Creación de envíos de invitados (FR-016): el formulario de un solo paso de `/upload`. El limitador se queda en el endpoint.
 import { randomUUID } from 'node:crypto'
-import { sql } from 'drizzle-orm'
 import { createError, getRequestIP, readBody } from 'h3'
 import type { H3Event } from 'h3'
 import { canonicalMime, categoryOf, getExtension } from '#shared/constants/files'
 import { isImageTextEligible } from '#shared/constants/image-text'
-import type { AccessState, GuestUploadTicket } from '#shared/types/api'
+import type { GuestUploadTicket } from '#shared/types/api'
 import type { Validator } from '#shared/validation/core'
 import { checkUploadFile, sanitizeFileName } from '#shared/validation/files'
 import { guestSubmissionFiles, guestSubmissions } from '../db/schema'
@@ -20,8 +18,7 @@ export interface GuestFileInput {
 }
 
 export interface GuestSubmissionInput {
-  /** Solo en el envío abierto; con permiso, el nombre sale de la solicitud. */
-  senderName?: string
+  senderName: string
   note?: string
   files: GuestFileInput[]
 }
@@ -58,18 +55,8 @@ export async function readGuestSubmission<T>(event: H3Event, validator: Validato
   return unwrap(validator({ ...raw, files: cleaned }))
 }
 
-/**
- * Registra el envío y sus archivos (`uploading`) y firma un PUT por archivo (más la copia JPEG de cada HEIC apta).
- * Con permiso, todo va en un `db.batch` condicionado a que la solicitud siga aprobada y vigente; si no lo está,
- * no se escribe nada ni se firma ninguna URL y devuelve `{ denied: state }`.
- */
-export async function createGuestSubmission(event: H3Event, input: GuestSubmissionInput, opts: { origin: 'link' }): Promise<GuestSubmissionTicket>
-export async function createGuestSubmission(event: H3Event, input: GuestSubmissionInput, opts: { origin: 'permission', tokenHash: string }): Promise<GuestSubmissionTicket | { denied: AccessState }>
-export async function createGuestSubmission(
-  event: H3Event,
-  input: GuestSubmissionInput,
-  opts: { origin: 'link' } | { origin: 'permission', tokenHash: string },
-): Promise<GuestSubmissionTicket | { denied: AccessState }> {
+/** Registra el envío y sus archivos (`uploading`) y firma un PUT por archivo (más la copia JPEG de cada HEIC apta). */
+export async function createGuestSubmission(event: H3Event, input: GuestSubmissionInput): Promise<GuestSubmissionTicket> {
   assertUploadable(input.files)
   const ip = getRequestIP(event, { xForwardedFor: true }) ?? 'unknown'
   const senderKey = hashSender(ip)
@@ -96,30 +83,10 @@ export async function createGuestSubmission(
   })
 
   const db = useDb()
-  if (opts.origin === 'link') {
-    await db.batch([
-      db.insert(guestSubmissions).values({ id: submissionId, senderName: input.senderName!, note, senderKey, origin: 'link', accessGrantedBy: null }),
-      db.insert(guestSubmissionFiles).values(rows),
-    ])
-  }
-  else {
-    // Orden fijo (research B4): envío condicional → archivos solo si el envío existe → reserva al final.
-    const { insert, reserve } = permittedSubmissionQueries(opts.tokenHash, { id: submissionId, note, senderKey })
-    const values = sql.join(rows.map(r => sql`(
-      ${r.id}::uuid, ${r.originalName}::text, ${r.extension}::text, ${r.mimeType}::text, ${r.category}::file_category, ${r.sizeBytes}::bigint, ${r.storageKey}::text
-    )`), sql`, `)
-    const [created] = await db.batch([
-      db.execute<{ id: string }>(insert),
-      db.execute(sql`
-        INSERT INTO guest_submission_files (id, submission_id, original_name, extension, mime_type, category, size_bytes, storage_key, upload_status)
-        SELECT v.id, ${submissionId}::uuid, v.original_name, v.extension, v.mime_type, v.category, v.size_bytes, v.storage_key, 'uploading'::upload_status
-        FROM (VALUES ${values}) AS v(id, original_name, extension, mime_type, category, size_bytes, storage_key)
-        WHERE EXISTS (SELECT 1 FROM guest_submissions WHERE id = ${submissionId}::uuid)
-      `),
-      db.execute(reserve),
-    ])
-    if (created.rows.length === 0) return { denied: await deniedAccessState(opts.tokenHash) }
-  }
+  await db.batch([
+    db.insert(guestSubmissions).values({ id: submissionId, senderName: input.senderName, note, senderKey }),
+    db.insert(guestSubmissionFiles).values(rows),
+  ])
 
   const uploads = await Promise.all(rows.map(async (row): Promise<GuestUploadTicket> => {
     const [uploadUrl, textSourceUploadUrl] = await Promise.all([

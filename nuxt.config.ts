@@ -49,6 +49,8 @@ export default defineNuxtConfig({
   // Pendientes pasó a llamarse Solicitudes (feature 003, FR-024): los accesos guardados siguen funcionando.
   routeRules: {
     '/pendientes': { redirect: { to: '/solicitudes', statusCode: 301 } },
+    // El envío de invitados es de un solo paso en /upload; el enlace antiguo sigue funcionando.
+    '/enviar': { redirect: { to: '/upload', statusCode: 301 } },
   },
   // Los componentes se nombran por archivo (`ThemeToggle`, no `AppThemeToggle`); las carpetas solo agrupan.
   components: [{ path: '~/components', pathPrefix: false }],

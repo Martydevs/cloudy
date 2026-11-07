@@ -83,7 +83,7 @@ const EMPTY: Record<SubmissionStatus, string> = {
     <header class="flex flex-wrap items-center justify-between gap-3">
       <div class="flex flex-col gap-1">
         <h1 class="text-2xl font-semibold">Solicitudes</h1>
-        <p class="text-base-content/70">Invitados que piden acceso y material que enviaron para revisar.</p>
+        <p class="text-base-content/70">Material que enviaron los invitados, listo para revisar.</p>
       </div>
       <button type="button" class="btn" @click="copyGuestLink">
         <Icon name="lucide:link" class="size-4" aria-hidden="true" />
@@ -107,12 +107,6 @@ const EMPTY: Record<SubmissionStatus, string> = {
       </button>
     </div>
 
-    <!-- Solicitudes de acceso de invitados (feature 003): solo con la pestaña "Por revisar". -->
-    <section v-if="tab === 'pending'" aria-labelledby="acceso-title" class="flex flex-col gap-3">
-      <h2 id="acceso-title" class="text-lg font-semibold">Solicitudes de acceso</h2>
-      <AccessRequestList />
-    </section>
-
     <section aria-labelledby="envios-title" class="flex flex-col gap-3">
       <h2 id="envios-title" class="text-lg font-semibold">Envíos</h2>
       <div v-if="staleError" role="status" class="flex flex-wrap items-center gap-3 text-sm text-base-content/70">
@@ -125,7 +119,7 @@ const EMPTY: Record<SubmissionStatus, string> = {
         v-else-if="!list || list.length === 0"
         icon="lucide:inbox"
         :title="EMPTY[tab]"
-        :description="tab === 'pending' ? 'Comparte el enlace para invitados y lo que envíen aparecerá aquí.' : ''"
+        :description="tab === 'pending' ? 'Comparte el enlace para invitados: lo que envíen aparecerá aquí, listo para aprobar.' : ''"
       >
         <button v-if="tab === 'pending'" type="button" class="btn btn-primary" @click="copyGuestLink">Copiar enlace para invitados</button>
       </EmptyState>

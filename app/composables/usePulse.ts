@@ -7,15 +7,13 @@ export function usePulse() {
   const newSubmissions = useState<Pulse['newSubmissions']>('pulse-new', () => [])
   const cursor = useState<string | null>('pulse-cursor', () => null)
   const pendingUsers = useState('pulse-pending-users', () => 0)
-  /** Solicitudes de acceso abiertas (feature 003). */
-  const openAccessRequests = useState('pulse-access', () => 0)
-  return { pendingCount, newSubmissions, cursor, pendingUsers, openAccessRequests }
+  return { pendingCount, newSubmissions, cursor, pendingUsers }
 }
 
 // Solo en el cliente: el sondeo vive en el layout y las páginas piden un pulso extra tras una acción.
 let pollNow: (() => Promise<void>) | null = null
 
-// El cursor se solapa (`PULSE_OVERLAP_MS`): cada envío o solicitud se anuncia una sola vez. A nivel de módulo (el sondeo
+// El cursor se solapa (`PULSE_OVERLAP_MS`): cada envío se anuncia una sola vez. A nivel de módulo (el sondeo
 // solo corre en el cliente) para que un remontaje del layout no repita los avisos de los últimos segundos.
 const announced = new Set<string>()
 function unannounced<T extends { id: string }>(items: T[] = []): T[] {
@@ -34,7 +32,7 @@ export function refreshPulse() {
 
 /** Arranca el sondeo; se llama una vez desde el layout del dashboard. */
 export function usePulsePolling() {
-  const { pendingCount, newSubmissions, cursor, pendingUsers, openAccessRequests } = usePulse()
+  const { pendingCount, newSubmissions, cursor, pendingUsers } = usePulse()
   const api = useApi()
   const toast = useToast()
   const visibility = useDocumentVisibility()
@@ -48,17 +46,12 @@ export function usePulsePolling() {
       const pulse = await api<Pulse>('/api/realtime/pulse', { query: cursor.value ? { since: cursor.value } : {} })
       pendingCount.value = pulse.pendingCount
       const freshSubmissions = unannounced(pulse.newSubmissions)
-      const freshRequests = unannounced(pulse.newAccessRequests)
       newSubmissions.value = freshSubmissions
       pendingUsers.value = pulse.pendingUsers ?? 0
-      openAccessRequests.value = pulse.openAccessRequests ?? 0
       cursor.value = pulse.cursor
-      // Aviso en vivo de cada envío nuevo (FR-018) y de cada solicitud de acceso (feature 003, FR-007), con enlace a Solicitudes.
+      // Aviso en vivo de cada envío nuevo (FR-018), con enlace a Solicitudes.
       for (const submission of freshSubmissions) {
         toast.info(messages.submissions.received(submission.senderName, submission.fileCount), { action: { label: 'Ver', to: '/solicitudes' } })
-      }
-      for (const request of freshRequests) {
-        toast.info(messages.access.requested(request.senderName), { action: { label: 'Ver', to: '/solicitudes' } })
       }
     }
     catch {

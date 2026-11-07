@@ -1,31 +1,22 @@
 <script setup lang="ts">
-// Formulario de envío de invitados (extraído de /enviar, feature 003): nombre, nota, selector, cola y
-// confirmación. Con `senderName` el nombre viene de la solicitud aprobada y es de solo lectura.
+// Formulario de envío de invitados en un solo paso (`/upload`): nombre, nota, selector, cola y confirmación.
+// El envío llega directo a la cola de Solicitudes del equipo.
 import { MAX_GUEST_FILES } from '#shared/constants/files'
 import { NOTE_MAX, SENDER_NAME_MAX } from '#shared/validation/submissions'
 import type { SubmissionResult } from '~/composables/useGuestSubmission'
 
-const props = defineProps<{ createUrl: string, senderName?: string | null, disabled?: boolean }>()
-const emit = defineEmits<{
-  done: [result: SubmissionResult]
-  /** Desde que se crea el envío hasta que termina o falla. */
-  submitting: [active: boolean]
-  /** 403/409 del envío con permiso: el acceso ya no vale; el mensaje es el del servidor. */
-  denied: [message: string]
-}>()
+const props = defineProps<{ createUrl: string, disabled?: boolean }>()
+const emit = defineEmits<{ done: [result: SubmissionResult] }>()
 
 const nameId = useId()
 const noteId = useId()
 const noteHintId = useId()
-const fixedName = computed(() => !!props.senderName)
 
-const state = { name: '', note: '' }
-const { r$ } = useFormSchema(state, computed(() => inferFormSchema(state, guestSubmissionSchema(fixedName.value))))
+const { r$ } = useFormSchema({ name: '', note: '' }, guestSubmissionSchema)
 const nameError = computed(() => r$.$errors.name[0] ?? '')
 
 const submission = useGuestSubmission({ createUrl: props.createUrl })
 const busy = computed(() => submission.status.value === 'submitting')
-watch(busy, active => emit('submitting', active))
 // El error del nombre desaparece en cuanto la persona corrige el campo.
 watch(() => r$.$value.name, () => r$.name.$reset())
 
@@ -38,11 +29,10 @@ async function send() {
     return
   }
   const result = await submission.submit({
-    senderName: fixedName.value ? undefined : data.name?.trim(),
+    senderName: data.name.trim(),
     note: (data.note ?? '').trim(),
   })
   if (result) emit('done', result)
-  else if (submission.errorStatus.value === 403 || submission.errorStatus.value === 409) emit('denied', submission.error.value)
 }
 
 function another() {
@@ -62,37 +52,26 @@ function another() {
         <Icon name="lucide:circle-alert" class="size-5" aria-hidden="true" />
         <span>{{ submission.result.value.rejected === 1 ? 'Un archivo no pasó la verificación y no se incluyó.' : `${submission.result.value.rejected} archivos no pasaron la verificación y no se incluyeron.` }}</span>
       </p>
-      <slot name="done-actions">
-        <button type="button" class="btn btn-primary" @click="another">Enviar más archivos</button>
-      </slot>
+      <button type="button" class="btn btn-primary" @click="another">Enviar más archivos</button>
     </div>
   </section>
 
   <form v-else class="flex flex-col gap-5" novalidate @submit.prevent="send">
     <fieldset class="fieldset" :disabled="busy || disabled">
-      <template v-if="fixedName">
-        <span class="label">Tu nombre</span>
-        <p class="flex min-h-11 items-center gap-2 font-medium">
-          <Icon name="lucide:user-round" class="size-4 text-base-content/70" aria-hidden="true" />
-          {{ senderName }}
-        </p>
-      </template>
-      <template v-else>
-        <label :for="nameId" class="label">Tu nombre</label>
-        <input
-          :id="nameId"
-          v-model="r$.$value.name"
-          type="text"
-          class="input w-full"
-          :class="{ 'input-error': nameError }"
-          autocomplete="name"
-          :maxlength="SENDER_NAME_MAX"
-          required
-          :aria-invalid="!!nameError || undefined"
-          :aria-describedby="nameError ? `${nameId}-error` : undefined"
-        >
-        <p v-if="nameError" :id="`${nameId}-error`" class="text-sm text-error" role="alert">{{ nameError }}</p>
-      </template>
+      <label :for="nameId" class="label">Tu nombre</label>
+      <input
+        :id="nameId"
+        v-model="r$.$value.name"
+        type="text"
+        class="input w-full"
+        :class="{ 'input-error': nameError }"
+        autocomplete="name"
+        :maxlength="SENDER_NAME_MAX"
+        required
+        :aria-invalid="!!nameError || undefined"
+        :aria-describedby="nameError ? `${nameId}-error` : undefined"
+      >
+      <p v-if="nameError" :id="`${nameId}-error`" class="text-sm text-error" role="alert">{{ nameError }}</p>
 
       <label :for="noteId" class="label mt-2">Nota para el equipo (opcional)</label>
       <textarea

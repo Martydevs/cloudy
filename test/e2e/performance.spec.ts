@@ -1,5 +1,5 @@
 // Constitución I / R18 — Presupuestos de rendimiento en móvil 4G: LCP ≤ 2,5 s y CLS ≤ 0,1 en el
-// Inicio (50 archivos sembrados), una carpeta con 200 elementos y /enviar. Chromium a 360×740 con
+// Inicio (50 archivos sembrados), una carpeta con 200 elementos y /upload. Chromium a 360×740 con
 // red 4G y CPU ×4 vía CDP; mediana de 3 cargas en frío (caché del navegador desactivada).
 import { createPage, setup } from '@nuxt/test-utils/e2e'
 import type { BrowserContext, Page } from 'playwright-core'
@@ -188,11 +188,7 @@ describe('Constitución I · Web Vitals en móvil 4G (T155)', () => {
     await audit(`/archivos/${folderId}`, annotate)
   })
 
-  it('/enviar (pública)', async ({ annotate }) => {
-    await audit('/enviar', annotate)
-  })
-
-  it('/upload (pública, feature 003)', async ({ annotate }) => {
+  it('/upload (pública, envío de un solo paso)', async ({ annotate }) => {
     await audit('/upload', annotate)
   })
 

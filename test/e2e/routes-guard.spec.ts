@@ -65,13 +65,21 @@ describe('US6 · protección de rutas', () => {
     await page.close()
   })
 
-  it('feature 003: /upload es pública, /solicitudes manda a /pendiente con cuenta pendiente y /pendientes redirige', async () => {
+  it('feature 003: /upload es pública y de un solo paso, /enviar redirige a /upload, /solicitudes manda a /pendiente con cuenta pendiente y /pendientes redirige', async () => {
     const anonymous = await createPage()
     const res = await anonymous.goto(`${E2E_URL}/upload`)
     expect(res?.status()).toBe(200)
     expect(new URL(anonymous.url()).pathname).toBe('/upload')
-    await expect.poll(() => anonymous.getByRole('button', { name: 'Pedir acceso' }).isVisible()).toBe(true)
+    await expect.poll(() => anonymous.getByLabel('Elegir archivos', { exact: true }).count()).toBe(1)
+    expect(await anonymous.getByRole('button', { name: 'Pedir acceso' }).count()).toBe(0)
     await anonymous.close()
+
+    // El enlace antiguo para invitados sigue funcionando: 301 permanente hacia /upload.
+    const legacy = await fetch(`${E2E_URL}/enviar`, { redirect: 'manual' })
+    expect(legacy.status).toBe(301)
+    expect(new URL(legacy.headers.get('location') ?? '', E2E_URL).pathname).toBe('/upload')
+    // La solicitud de acceso se retiró: sus endpoints públicos ya no existen.
+    expect((await fetch(`${E2E_URL}/api/public/access/current`)).status).toBe(404)
 
     const creds = { name: 'E2E guard pending page', email: email('guard-pending-page') }
     await ensureAccount(creds)
@@ -138,10 +146,6 @@ describe('US6 · protección de rutas', () => {
       ['PATCH', `/api/files/${id}/text`],
       ['GET', `/api/submissions/${id}/files/${id}/text`],
       ['POST', `/api/submissions/${id}/files/${id}/text`],
-      // Solicitudes de acceso de invitados (feature 003).
-      ['GET', '/api/access-requests'],
-      ['POST', `/api/access-requests/${id}/approve`],
-      ['POST', `/api/access-requests/${id}/reject`],
       // Página YouTube (feature 005).
       ['GET', '/api/youtube/health'],
       ['GET', '/api/youtube/videos/okShortVid1'],

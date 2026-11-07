@@ -11,7 +11,6 @@ export interface CleanupReport {
   expiredSubmissions: number
   orphanUploads: number
   rateLimitRows: number
-  accessRequests: number
   /** Videos de YouTube sin historial ni listas (feature 005). */
   orphanVideos: number
   /** Canciones sin historial ni colecciones y sin cambios en 30 días (feature 006). */
@@ -22,7 +21,7 @@ export default defineEventHandler(async (event): Promise<CleanupReport> => {
   requireCron(event)
   const db = useDb()
   const now = Date.now()
-  const report: CleanupReport = { purgedTrash: 0, expiredSubmissions: 0, orphanUploads: 0, rateLimitRows: 0, accessRequests: 0, orphanVideos: 0, orphanSongs: 0 }
+  const report: CleanupReport = { purgedTrash: 0, expiredSubmissions: 0, orphanUploads: 0, rateLimitRows: 0, orphanVideos: 0, orphanSongs: 0 }
 
   // 0. Raíces con más de 30 días en la papelera: filas y objetos, en lotes de 500.
   report.purgedTrash = await purgeAll(new Date(now - TRASH_RETENTION_DAYS * 86_400_000))
@@ -87,10 +86,7 @@ export default defineEventHandler(async (event): Promise<CleanupReport> => {
     .returning({ key: rateLimits.key })
   report.rateLimitRows = rate.length
 
-  // 5. Solicitudes de acceso terminadas o vencidas hace más de 24 h (feature 003, data-model "Retención").
-  report.accessRequests = await purgeStaleAccessRequests()
-
-  // 6. Videos de YouTube huérfanos (feature 005): fuera del historial, en ninguna lista, sin descarga guardada y sin cambios en 24 h.
+  // 5. Videos de YouTube huérfanos (feature 005): fuera del historial, en ninguna lista, sin descarga guardada y sin cambios en 24 h.
   for (;;) {
     const orphans = await db.delete(youtubeVideos)
       .where(sql`${youtubeVideos.videoId} IN (
@@ -106,7 +102,7 @@ export default defineEventHandler(async (event): Promise<CleanupReport> => {
     if (orphans.length < BATCH) break
   }
 
-  // 7. Canciones huérfanas (feature 006, FR-034, research D13): fuera del historial, en ninguna colección y sin cambios en 30
+  // 6. Canciones huérfanas (feature 006, FR-034, research D13): fuera del historial, en ninguna colección y sin cambios en 30
   // días. La letra guardada ahorra rastreos de pago: se conserva más que los videos.
   for (;;) {
     const orphans = await db.delete(songs)

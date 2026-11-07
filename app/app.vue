@@ -9,7 +9,7 @@ useHead({
   meta: [{ name: 'theme-color', content: computed(() => theme.value === 'cloudy' ? '#0a0a0a' : '#fcfbf9') }],
 })
 
-// Lighthouse SEO (la descripción vale para la página pública /enviar; el resto es privado) y la vista
+// Lighthouse SEO (la descripción vale para la página pública /upload; el resto es privado) y la vista
 // previa al compartir el enlace (FR-041). Los rastreadores exigen una imagen absoluta: sin URL pública se omite.
 const DESCRIPTION = 'Cloudy: el disco multimedia del equipo de producción. Sube, organiza y revisa fotos, audio, video y presentaciones.'
 useSeoMeta({
