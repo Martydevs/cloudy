@@ -7,7 +7,9 @@ send material from a public page into an approval queue that the team reviews li
 **Governance**: `.specify/memory/constitution.md` (v1.1.1) is the source of truth and overrides this
 file. Keep this guide aligned with it whenever the constitution is amended.
 
-**Active feature**: `specs/006-canciones-lyrics-pptx/` (Canciones page: Letras.com lyrics crawled with the Apify actor `apify/rag-web-browser` through `apify-client`, then
+**Active feature**: `specs/007-peticiones-imagenes/` (Peticiones page: approved guest prayer-request images shown as selectable cards, corrected with the feature-002 text editor and
+turned into "prayer requests of the day" images, up to 4 requests per image, by the OpenRouter preset `@preset/pray-requests-image-generation` over a bundled template; no new tables, no new
+dependencies). Previous: `specs/006-canciones-lyrics-pptx/` (Canciones page: Letras.com lyrics crawled with the Apify actor `apify/rag-web-browser` through `apify-client`, then
 turned into `.pptx` slides by the external `cloudy-api` service; reuses the shape of `specs/005-youtube-downloads/`, whose YouTube page is the previous active feature, and builds on
 `specs/001-shared-media-drive/`, `specs/002-note-text-extraction/` and `specs/003-guest-upload-access-code/`; feature 003's access-approval step was later removed, see the
 amendment at the top of its `spec.md`). Read `spec.md` (what), `plan.md` + `research.md`
@@ -82,7 +84,7 @@ fetching uses Nuxt `useFetch`, not VueUse.
 **I. Performance** — Mobile 4G budgets: LCP ≤ 2.5 s, INP ≤ 200 ms, CLS ≤ 0.1, initial JS ≤ 250 KB
 gzip per route. Index every filtered/sorted column; no N+1 queries; cursor pagination. **Never stream
 file binaries through server functions** (Vercel body limit ~4.5 MB): browsers upload/download
-directly with presigned URLs. The one bounded exception is the lyrics `.pptx` of feature 006 (see Known gotchas). Lazy-load thumbnails and non-critical components at the component level (`Lazy*` behind `v-if` for UI that only appears after an action or a later state, e.g. `LazyItemDialogs`).
+directly with presigned URLs. The bounded exceptions are the lyrics `.pptx` of feature 006 and the generated prayer-request image of feature 007 (see Known gotchas). Lazy-load thumbnails and non-critical components at the component level (`Lazy*` behind `v-if` for UI that only appears after an action or a later state, e.g. `LazyItemDialogs`).
 Guest upload (feature 003, one step): at `/upload` the guest fills name + optional note + files in one form
 (`GuestUploadForm` → `POST /api/public/submissions`, then `POST /api/public/submissions/:id/complete`) and the
 submission lands straight in the team's queue; the only approval is staff approving/rejecting the files. No guest
@@ -239,6 +241,14 @@ Never print or commit their values.
   The daily cleanup deletes songs out of the history, in no collection and unchanged for 30 days. E2E run against the Apify stub (scenario slugs
   `sin-letra`, `muy-larga`, `fallo-del-run`, `sin-credito`, `redirige`, `con-tildes`; `letrasUrl(slug)`) and the `cloudy-api` stub's
   `POST /v1/lyrics/pptx` (titles containing `vacia`, `demasiado larga`, `respaldo`).
+- Peticiones (feature 007): the grid lists **approved** guest images (`files ⋈ guest_submissions`, `status = 'approved'`), ordered and filtered by `guest_submissions.reviewed_at`
+  (approval date), keyset cursor, 12 per page; guest photos have **no thumbnail**, so each card sets `src` only when it enters the viewport. Transcript edits reuse
+  `PATCH /api/files/:id/text` through `ImageTextPanel` (it now emits `change`). `POST /api/peticiones/imagenes` takes 1–4 file ids, rereads their text on the server (the browser never sends
+  text), and returns the generated image (**second bounded exception** to "no binaries through server functions": capped at `PRAYER_IMAGE_MAX_BYTES` = 4 000 000, never stored). The call goes
+  through the existing OpenRouter client with the preset `@preset/pray-requests-image-generation` + `extraBody.modalities = ['image','text']`; the image arrives in `result.files`. The template
+  is `server/assets/peticiones/plantilla.jpg` (Nitro `serverAssets`, `assets:peticiones`): replace the file and redeploy to change it. Only `server/utils/prayer-images.ts` imports `#server/ai`
+  for this use case. The browser generates **2 images at a time** (`usePrayerImages`, state in `useState('prayer-images')`, `AbortController`/`objectURL` in module maps) and results live in the page,
+  not in a layout tray. E2E run against the OpenRouter stub's `message.images` response.
 - `guest_submissions.completed_at` is stamped with the server clock, like the pulse cursor: with Postgres' `now()` a
   skew of seconds would drop the live toast.
 - The guest access-request layer was removed (migration `drizzle/0008_*`: drops `guest_access_requests`,
