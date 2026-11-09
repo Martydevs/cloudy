@@ -168,6 +168,14 @@ describe('Mi perfil', () => {
     // Un solo h1 en la página: los formularios del perfil titulan con h2.
     expect(wrapper.findAll('h1').map(h => h.text())).toEqual(['Mi perfil'])
     expect(wrapper.findAll('legend h2').map(h => h.text())).toEqual(['Nombre visible', 'Cambiar contraseña'])
+    // La tarjeta «Cuenta» lleva el avatar grande con la inicial: arriba y centrado en teléfono, a la derecha desde `sm`.
+    const account = wrapper.get('section[aria-labelledby="cuenta-title"]')
+    const avatar = account.get('span[aria-hidden="true"].rounded-full')
+    expect(avatar.text()).toBe(useMe().me.value!.profile.name.trim().slice(0, 1).toUpperCase())
+    expect(avatar.classes()).toEqual(expect.arrayContaining(['size-20', 'self-center', 'sm:order-last']))
+    expect(account.get('.card-body').classes()).toEqual(expect.arrayContaining(['flex-col', 'sm:flex-row', 'sm:items-center']))
+    // El correo puede partirse: la tarjeta no fuerza desplazamiento horizontal a 360 px.
+    expect(account.get('dd').classes()).toContain('break-all')
 
     await fill(wrapper, 'Nombre', 'Ana María')
     await wrapper.findAll('form')[0]!.trigger('submit')
@@ -176,6 +184,8 @@ describe('Mi perfil', () => {
     expect(client.updateUser).toHaveBeenCalledWith({ name: 'Ana María' })
     expect(useMe().me.value?.profile.name).toBe('Ana María')
     expect(useToast().toasts.value.at(-1)?.message).toBe('Nombre actualizado')
+    // El avatar sigue al nombre guardado.
+    expect(wrapper.get('section[aria-labelledby="cuenta-title"] span[aria-hidden="true"].rounded-full').text()).toBe('A')
   })
 
   it('si Neon Auth no guarda su copia del nombre, Cloudy lo conserva igual y avisa', async () => {

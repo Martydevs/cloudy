@@ -63,18 +63,22 @@ async function savePassword(data: ChangePasswordForm) {
     <h1 class="text-2xl font-semibold">Mi perfil</h1>
 
     <section v-if="profile" aria-labelledby="cuenta-title" class="card border border-base-300 bg-base-100">
-      <div class="card-body gap-3">
-        <h2 id="cuenta-title" class="card-title text-lg">Cuenta</h2>
-        <dl class="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <div>
-            <dt class="text-sm text-base-content/70">Correo electrónico</dt>
-            <dd class="break-all font-medium">{{ profile.email }}</dd>
-          </div>
-          <div>
-            <dt class="text-sm text-base-content/70">Rol</dt>
-            <dd><span class="badge badge-primary badge-soft">{{ roleLabel(profile.role) }}</span></dd>
-          </div>
-        </dl>
+      <!-- En teléfono el avatar va arriba, centrado; desde `sm`, a la derecha de los datos (antes quedaba vacío). -->
+      <div class="card-body flex-col gap-4 sm:flex-row sm:items-center">
+        <UserAvatar :name="profile.name" size="lg" class="self-center sm:order-last" />
+        <div class="flex min-w-0 flex-1 flex-col gap-3">
+          <h2 id="cuenta-title" class="card-title text-lg">Cuenta</h2>
+          <dl class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div class="min-w-0">
+              <dt class="text-sm text-base-content/70">Correo electrónico</dt>
+              <dd class="break-all font-medium">{{ profile.email }}</dd>
+            </div>
+            <div>
+              <dt class="text-sm text-base-content/70">Rol</dt>
+              <dd><span class="badge badge-primary badge-soft">{{ roleLabel(profile.role) }}</span></dd>
+            </div>
+          </dl>
+        </div>
       </div>
     </section>
 

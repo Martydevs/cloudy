@@ -64,7 +64,6 @@ watch(() => props.collapsed, async () => {
 // Mi perfil, tema y Cerrar sesión. El aside recorta su contenido (`overflow-hidden`), así que el
 // menú se pinta en `body` con posición fija, igual que el aviso.
 const { logout } = useAuthClient()
-const initials = computed(() => (profile.value?.name ?? '?').trim().slice(0, 1).toUpperCase())
 
 const accountTrigger = useTemplateRef<HTMLButtonElement>('accountTrigger')
 const accountMenuEl = useTemplateRef<HTMLElement>('accountMenuEl')
@@ -244,7 +243,7 @@ useEventListener('scroll', closeAccountMenu, { passive: true, capture: true })
         @focusout="hideTip"
       >
         <!-- El círculo llena el botón entero: el hover no deja un aro. -->
-        <span class="inline-flex size-full items-center justify-center rounded-full bg-neutral text-neutral-content">{{ initials }}</span>
+        <UserAvatar :name="profile?.name" size="fill" />
       </button>
       <button
         v-else
@@ -258,7 +257,7 @@ useEventListener('scroll', closeAccountMenu, { passive: true, capture: true })
         @keydown.down.prevent="openAccountMenu('first')"
         @keydown.up.prevent="openAccountMenu('last')"
       >
-        <span class="inline-flex size-9 shrink-0 items-center justify-center rounded-full bg-neutral font-medium text-neutral-content">{{ initials }}</span>
+        <UserAvatar :name="profile?.name" />
         <span class="flex min-w-0 flex-1 flex-col">
           <span class="truncate text-sm font-medium">{{ profile?.name }}</span>
           <span class="truncate text-xs opacity-70">{{ profile?.email }}</span>
