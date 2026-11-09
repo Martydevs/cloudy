@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mockNuxtImport, mountSuspended } from '@nuxt/test-utils/runtime'
 import { getQuery } from 'h3'
 import type { FileItem, FolderItem } from '#shared/types/api'
@@ -6,6 +6,7 @@ import FileExplorer from '~/components/files/FileExplorer.vue'
 import FolderPage from '~/pages/archivos/[folderId].vue'
 import FilesIndexPage from '~/pages/archivos/index.vue'
 import FileDetailPage from '~/pages/archivos/ver/[fileId].vue'
+import type { Queryable, QueryableWithGet } from './helpers/api'
 import { buttonsWithText, calls, failWith, flush, mockApi, resetCalls } from './helpers/api'
 
 const { navigateToMock } = vi.hoisted(() => ({ navigateToMock: vi.fn() }))
@@ -264,6 +265,174 @@ describe('FileExplorer · acciones', () => {
     useUploadDialog().notifyUploaded()
     await flush()
     expect(wrapper.find('a[aria-label="Abrir nuevo.jpg"]').exists()).toBe(true)
+  })
+})
+
+describe('FileExplorer · selección múltiple', () => {
+  const F2 = '11111111-2222-4333-8444-555555555555'
+  const audio = () => file({ id: F2, name: 'audio.mp3', extension: 'mp3', mimeType: 'audio/mpeg', category: 'audio' })
+  const checkbox = (wrapper: QueryableWithGet, name: string) => wrapper.get(`input[type="checkbox"][aria-label="Seleccionar ${name}"]`)
+  const bar = (wrapper: Queryable) => wrapper.findAll('[role="region"][aria-label="Selección"]')[0]
+  const trashPosts = () => calls.filter(c => c.method === 'POST' && c.url === '/api/items/trash')
+
+  function signIn(role: 'editor' | 'admin') {
+    useMe().me.value = {
+      user: { id: 'u1', email: 'ana@iglesia.org', name: 'Ana' },
+      profile: { userId: 'u1', email: 'ana@iglesia.org', name: 'Ana', role, status: 'active', createdAt: '2026-10-01T00:00:00.000Z' },
+    }
+  }
+
+  async function mountWithSelection(names: string[]) {
+    const wrapper = await mountSuspended(FileExplorer, { props: { folderId: null } })
+    await flush()
+    for (const name of names) await checkbox(wrapper, name).setValue(true)
+    // La barra es un componente `Lazy`: su chunk llega aparte.
+    await vi.waitFor(() => expect(bar(wrapper)).toBeDefined())
+    return wrapper
+  }
+
+  beforeEach(() => {
+    signIn('editor')
+    mockApi('GET', '/api/folders/root/children', children({ files: [file(), audio()] }))
+    mockApi('POST', '/api/items/trash', { trashed: 2, skipped: [] })
+  })
+
+  afterEach(() => {
+    useMe().me.value = null
+  })
+
+  it('sin permiso de escritura no hay casillas; con él, cada archivo y carpeta tiene la suya, con nombre y siempre visible', async () => {
+    useMe().me.value = null
+    const hidden = await mountSuspended(FileExplorer, { props: { folderId: null } })
+    await flush()
+    expect(hidden.findAll('input[type="checkbox"]')).toHaveLength(0)
+    hidden.unmount()
+
+    clearNuxtData()
+    signIn('editor')
+    const wrapper = await mountSuspended(FileExplorer, { props: { folderId: null } })
+    await flush()
+    expect(wrapper.findAll('input[type="checkbox"]').map(box => box.attributes('aria-label'))).toEqual([
+      'Seleccionar la carpeta Domingo', 'Seleccionar foto.jpg', 'Seleccionar audio.mp3',
+    ])
+    // Área táctil de 44 px (`size-11`) y nada que dependa del hover.
+    for (const box of wrapper.findAll('input[type="checkbox"]')) {
+      expect(box.element.parentElement!.className).toContain('size-11')
+      expect(box.element.parentElement!.className).not.toMatch(/hover:|group-hover/)
+    }
+    // Sin nada marcado no hay barra.
+    expect(bar(wrapper)).toBeUndefined()
+  })
+
+  it('marcar muestra la barra con el conteo anunciado; Limpiar la oculta y desmarca todo', async () => {
+    const wrapper = await mountWithSelection(['foto.jpg'])
+    expect(bar(wrapper)!.get('[role="status"]').text()).toBe('1 seleccionado')
+    await checkbox(wrapper, 'la carpeta Domingo').setValue(true)
+    expect(bar(wrapper)!.get('[role="status"]').text()).toBe('2 seleccionados')
+    // Con la barra a la vista la página deja sitio abajo para que no tape contenido.
+    expect(wrapper.element.className).toContain('pb-40')
+
+    await buttons(wrapper, 'Limpiar')[0]!.trigger('click')
+    await flush()
+    expect(bar(wrapper)).toBeUndefined()
+    expect(wrapper.findAll('input[type="checkbox"]').every(box => !(box.element as HTMLInputElement).checked)).toBe(true)
+    expect(wrapper.element.className).not.toContain('pb-40')
+  })
+
+  it('desmarcar el último elemento también quita la barra', async () => {
+    const wrapper = await mountWithSelection(['audio.mp3'])
+    await checkbox(wrapper, 'audio.mp3').setValue(false)
+    await flush()
+    expect(bar(wrapper)).toBeUndefined()
+  })
+
+  it('Enviar a la papelera confirma, manda la selección en una sola petición, avisa, recarga y limpia la selección', async () => {
+    const wrapper = await mountWithSelection(['foto.jpg', 'la carpeta Domingo'])
+    const confirm = useConfirm()
+    await buttons(wrapper, 'Enviar a la papelera')[0]!.trigger('click')
+    await flush()
+    expect(confirm.options.value).toMatchObject({
+      title: '¿Enviar 2 elementos a la papelera?',
+      message: 'La carpeta se envía con todo su contenido. Puedes recuperarlos desde Papelera.',
+      confirmLabel: 'Enviar a la papelera',
+      danger: true,
+    })
+    // Hasta confirmar no se envía nada.
+    expect(trashPosts()).toHaveLength(0)
+
+    mockApi('GET', '/api/folders/root/children', children({ folders: [], files: [audio()] }))
+    confirm.accept()
+    await flush(10)
+    expect(trashPosts()).toHaveLength(1)
+    expect(trashPosts()[0]!.body).toEqual({ fileIds: [F1], folderIds: [D1] })
+    expect(useToast().toasts.value.at(-1)).toMatchObject({ type: 'success', message: 'Se enviaron 2 elementos a la papelera' })
+    expect(wrapper.find('a[aria-label="Abrir foto.jpg"]').exists()).toBe(false)
+    expect(wrapper.find('a[aria-label="Abrir carpeta Domingo"]').exists()).toBe(false)
+    expect(wrapper.find('a[aria-label="Abrir audio.mp3"]').exists()).toBe(true)
+    expect(bar(wrapper)).toBeUndefined()
+  })
+
+  it('cancelar la confirmación no envía nada y conserva la selección', async () => {
+    const wrapper = await mountWithSelection(['foto.jpg'])
+    const confirm = useConfirm()
+    await buttons(wrapper, 'Enviar a la papelera')[0]!.trigger('click')
+    await flush()
+    expect(confirm.options.value?.title).toBe('¿Enviar 1 elemento a la papelera?')
+    expect(confirm.options.value?.message).toBe('Puedes recuperarlo desde Papelera.')
+    confirm.cancel()
+    await flush()
+    expect(trashPosts()).toHaveLength(0)
+    expect(bar(wrapper)!.get('[role="status"]').text()).toBe('1 seleccionado')
+  })
+
+  it('si el servidor falla avisa y conserva la selección para reintentar', async () => {
+    mockApi('POST', '/api/items/trash', failWith(500))
+    const wrapper = await mountWithSelection(['foto.jpg', 'audio.mp3'])
+    await buttons(wrapper, 'Enviar a la papelera')[0]!.trigger('click')
+    await flush()
+    useConfirm().accept()
+    await flush(10)
+    expect(useToast().toasts.value.at(-1)).toMatchObject({ type: 'error', message: 'No pudimos enviar la selección a la papelera. Inténtalo de nuevo.' })
+    expect(bar(wrapper)!.get('[role="status"]').text()).toBe('2 seleccionados')
+    expect(wrapper.find('a[aria-label="Abrir foto.jpg"]').exists()).toBe(true)
+  })
+
+  it('lo que otra persona ya había quitado se cuenta aparte en el aviso', async () => {
+    mockApi('POST', '/api/items/trash', { trashed: 1, skipped: [F2] })
+    const wrapper = await mountWithSelection(['foto.jpg', 'audio.mp3'])
+    await buttons(wrapper, 'Enviar a la papelera')[0]!.trigger('click')
+    await flush()
+    useConfirm().accept()
+    await flush(10)
+    expect(useToast().toasts.value.at(-1)?.message).toBe('Se envió 1 elemento a la papelera. 1 ya no estaba disponible.')
+
+    mockApi('POST', '/api/items/trash', { trashed: 0, skipped: [F2] })
+    await checkbox(wrapper, 'audio.mp3').setValue(true)
+    await vi.waitFor(() => expect(bar(wrapper)).toBeDefined())
+    await buttons(wrapper, 'Enviar a la papelera')[0]!.trigger('click')
+    await flush()
+    useConfirm().accept()
+    await flush(10)
+    expect(useToast().toasts.value.at(-1)).toMatchObject({ type: 'info', message: 'Esos elementos ya no estaban disponibles. Actualizamos la lista.' })
+  })
+
+  it('la selección se mantiene al pasar a la vista de lista, que tiene las mismas casillas', async () => {
+    const wrapper = await mountWithSelection(['foto.jpg'])
+    await wrapper.get('button[aria-label="Ver en lista"]').trigger('click')
+    await flush()
+    expect(wrapper.find('ul[aria-label="Carpetas y archivos"]').exists()).toBe(true)
+    expect((checkbox(wrapper, 'foto.jpg').element as HTMLInputElement).checked).toBe(true)
+    await checkbox(wrapper, 'la carpeta Domingo').setValue(true)
+    expect(bar(wrapper)!.get('[role="status"]').text()).toBe('2 seleccionados')
+    await wrapper.get('button[aria-label="Ver en cuadrícula"]').trigger('click')
+  })
+
+  it('un elemento que desaparece de la vista (lo quitó otra persona) sale de la selección', async () => {
+    const wrapper = await mountWithSelection(['foto.jpg', 'audio.mp3'])
+    mockApi('GET', '/api/folders/root/children', children({ files: [audio()] }))
+    useUploadDialog().notifyUploaded()
+    await flush(10)
+    expect(bar(wrapper)!.get('[role="status"]').text()).toBe('1 seleccionado')
   })
 })
 

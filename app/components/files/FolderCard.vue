@@ -2,8 +2,13 @@
 import type { FolderItem } from '#shared/types/api'
 import type { ItemAction } from '~/utils/file-actions'
 
-const props = defineProps<{ folder: FolderItem & { path?: string[] } }>()
-const emit = defineEmits<{ action: [action: ItemAction, folder: FolderItem] }>()
+const props = defineProps<{
+  folder: FolderItem & { path?: string[] }
+  /** Muestra la casilla de selección múltiple (Archivos). */
+  selectable?: boolean
+  selected?: boolean
+}>()
+const emit = defineEmits<{ action: [action: ItemAction, folder: FolderItem], toggle: [id: string] }>()
 
 const href = computed(() => `/archivos/${props.folder.id}`)
 
@@ -14,7 +19,20 @@ function onSelect(key: string) {
 </script>
 
 <template>
-  <article class="relative flex items-center gap-2 rounded-box border border-base-300 bg-base-100 p-2 focus-within:border-primary hover:border-primary">
+  <article
+    class="relative flex items-center gap-2 rounded-box border bg-base-100 p-2 focus-within:border-primary hover:border-primary"
+    :class="selected ? 'border-primary' : 'border-base-300'"
+  >
+    <!-- Casilla siempre visible, con área táctil de 44 px. -->
+    <label v-if="selectable" class="flex size-11 shrink-0 cursor-pointer items-center justify-center">
+      <input
+        type="checkbox"
+        class="checkbox checkbox-primary"
+        :checked="selected"
+        :aria-label="`Seleccionar la carpeta ${folder.name}`"
+        @change="emit('toggle', folder.id)"
+      >
+    </label>
     <NuxtLink :to="href" class="flex min-w-0 flex-1 items-center gap-3 rounded-field p-1" :aria-label="`Abrir carpeta ${folder.name}`">
       <Icon name="lucide:folder" class="size-8 shrink-0 text-primary" aria-hidden="true" />
       <span class="flex min-w-0 flex-col">

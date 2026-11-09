@@ -2,6 +2,7 @@
 import type { FileItem, FolderChildren, FolderItem } from '#shared/types/api'
 import type { FileCategory } from '#shared/constants/files'
 import { FILE_CATEGORIES } from '#shared/constants/files'
+import { can } from '#shared/permissions'
 import type { ItemAction } from '~/utils/file-actions'
 import type { ItemKind } from '~/composables/useItemActions'
 
@@ -132,6 +133,34 @@ function onAction(action: ItemAction, kind: ItemKind, item: FileItem | FolderIte
   else if (action === 'trash') actions.trash(kind, item)
 }
 
+// ---------------------------------------------------------------- selección múltiple
+// Ids de archivos y carpetas marcados. Solo para quien puede escribir contenido (el servidor lo exige igual).
+const { profile } = useMe()
+const selectable = computed(() => can(profile.value?.role, 'content.write'))
+const selected = ref<string[]>([])
+// Cambiar de carpeta, de búsqueda o de filtro empieza una selección nueva.
+watch([() => props.folderId, q, type], () => {
+  selected.value = []
+})
+// Lo que ya no está en la vista (otro orden con otra página, algo eliminado o movido) sale de la selección.
+const selectedFolders = computed(() => folders.value.filter(folder => selected.value.includes(folder.id)))
+const selectedFiles = computed(() => files.value.filter(file => selected.value.includes(file.id)))
+const selectedCount = computed(() => selectedFolders.value.length + selectedFiles.value.length)
+watch([folders, files], () => {
+  if (selected.value.length === selectedCount.value) return
+  const visible = new Set([...selectedFolders.value, ...selectedFiles.value].map(item => item.id))
+  selected.value = selected.value.filter(id => visible.has(id))
+})
+
+async function trashSelected() {
+  const trashedFiles = new Set(selectedFiles.value.map(file => file.id))
+  if (!await actions.trashMany({ files: selectedFiles.value, folders: selectedFolders.value })) return
+  selected.value = []
+  // Se quitan de la vista al instante; `refresh` corrige el resto.
+  moreFiles.value = moreFiles.value.filter(file => !trashedFiles.has(file.id))
+  await refresh()
+}
+
 const TYPE_FILTERS: { value: FileCategory | undefined, label: string }[] = [
   { value: undefined, label: 'Todos' },
   ...FILE_CATEGORIES.map(value => ({ value, label: CATEGORY_LABELS[value] })),
@@ -139,7 +168,8 @@ const TYPE_FILTERS: { value: FileCategory | undefined, label: string }[] = [
 </script>
 
 <template>
-  <div class="flex flex-col gap-4">
+  <!-- Con algo marcado se deja sitio abajo para que la barra de selección no tape contenido. -->
+  <div class="flex flex-col gap-4" :class="{ 'pb-40 sm:pb-24': selectable && selectedCount > 0 }">
     <Breadcrumbs v-if="!q && breadcrumbs.length > 1" :items="breadcrumbs" />
 
     <div class="flex flex-wrap items-center justify-between gap-3">
@@ -254,15 +284,19 @@ const TYPE_FILTERS: { value: FileCategory | undefined, label: string }[] = [
     <template v-else>
       <FileGrid
         v-if="view === 'grid'"
+        v-model:selected="selected"
         :folders="folders"
         :items="files"
+        :selectable="selectable"
         @file-action="(a, f) => onAction(a, 'file', f)"
         @folder-action="(a, f) => onAction(a, 'folder', f)"
       />
       <FileList
         v-else
+        v-model:selected="selected"
         :folders="folders"
         :items="files"
+        :selectable="selectable"
         @file-action="(a, f) => onAction(a, 'file', f)"
         @folder-action="(a, f) => onAction(a, 'folder', f)"
       />
@@ -275,5 +309,13 @@ const TYPE_FILTERS: { value: FileCategory | undefined, label: string }[] = [
     </template>
 
     <LazyItemDialogs v-if="actions.dialog.value" :actions="actions" />
+
+    <LazyFilesSelectionBar
+      v-if="selectable && selectedCount > 0"
+      :count="selectedCount"
+      :busy="actions.busy.value"
+      @trash="trashSelected"
+      @clear="selected = []"
+    />
   </div>
 </template>

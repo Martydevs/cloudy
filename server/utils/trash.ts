@@ -8,6 +8,7 @@ import { daysLeft, trashPurgeAt } from '#shared/retention'
 import type { TrashItem, TrashRestoreResult } from '#shared/types/api'
 import { files, folders } from '../db/schema'
 import type { Actor } from './activity'
+import { activityInsert } from './activity'
 import { deleteMany } from './storage'
 import { thumbKeyFor } from './uploads'
 
@@ -26,6 +27,59 @@ type TrashRootRow = {
 
 function uuidList(ids: string[]): SQL {
   return sql.join(ids.map(id => sql`${id}::uuid`), sql`, `)
+}
+
+// ---------------------------------------------------------------- enviar a la papelera (FR-011, FR-034)
+// Las consultas se devuelven sin ejecutar: `DELETE /api/files/:id` y `DELETE /api/folders/:id` las corren para un
+// elemento y `POST /api/items/trash` las junta todas en un solo `db.batch` (o todo va a la papelera o nada).
+
+/** Lo mínimo de un archivo o carpeta visible para enviarlo a la papelera. */
+export interface TrashTarget { id: string, name: string }
+
+/** Marca un archivo como raíz de la papelera y registra la actividad. */
+export function trashFileOps(file: TrashTarget, actor: Actor) {
+  return [
+    useDb().update(files)
+      .set({ deletedAt: new Date(), deletedBy: actor.userId, trashRootId: file.id })
+      .where(eq(files.id, file.id)),
+    activityInsert(actor, 'file.trash', { type: 'file', id: file.id, label: file.name }),
+  ] as const
+}
+
+/**
+ * Envía una carpeta con todo su contenido a la papelera en una sola sentencia: marca carpeta, subcarpetas y archivos
+ * y registra la actividad. Si la carpeta ya no está visible (p. ej. la arrastró otra carpeta del mismo lote), no cambia
+ * nada ni registra nada.
+ */
+export function trashFolderOps(folder: TrashTarget, actor: Actor) {
+  const { id, name } = folder
+  return useDb().execute<{ folders: number, files: number, logged: number }>(sql`
+    WITH RECURSIVE tree AS (
+      SELECT id FROM folders WHERE id = ${id} AND deleted_at IS NULL
+      UNION ALL
+      SELECT f.id FROM folders f JOIN tree t ON f.parent_id = t.id WHERE f.deleted_at IS NULL
+    ),
+    trashed_folders AS (
+      UPDATE folders SET deleted_at = now(), deleted_by = ${actor.userId}, trash_root_id = ${id}
+      WHERE id IN (SELECT id FROM tree)
+      RETURNING id
+    ),
+    trashed_files AS (
+      UPDATE files SET deleted_at = now(), deleted_by = ${actor.userId}, trash_root_id = ${id}
+      WHERE folder_id IN (SELECT id FROM tree) AND deleted_at IS NULL AND upload_status = 'ready'
+      RETURNING id
+    ),
+    activity AS (
+      INSERT INTO activity_log (actor_id, actor_label, action, target_type, target_id, target_label, meta)
+      SELECT ${actor.userId}, ${actor.name}, 'folder.trash', 'folder', ${id}, ${name},
+        jsonb_build_object('items', (SELECT count(*) FROM trashed_folders) - 1 + (SELECT count(*) FROM trashed_files))
+      WHERE EXISTS (SELECT 1 FROM trashed_folders)
+      RETURNING id
+    )
+    SELECT (SELECT count(*)::int FROM trashed_folders) AS folders,
+           (SELECT count(*)::int FROM trashed_files) AS files,
+           (SELECT count(*)::int FROM activity) AS logged
+  `)
 }
 
 /**

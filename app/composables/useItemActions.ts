@@ -1,6 +1,6 @@
 // Acciones sobre archivos y carpetas compartidas por el explorador y el detalle:
 // crear carpeta, renombrar, mover y enviar a la papelera, con confirmación y avisos (Constitución VI).
-import type { FileItem, FolderItem } from '#shared/types/api'
+import type { FileItem, FolderItem, TrashItemsResult } from '#shared/types/api'
 
 export type ItemKind = 'file' | 'folder'
 type Item = FileItem | FolderItem
@@ -111,5 +111,39 @@ export function useItemActions(onChanged: (change: ItemChange, kind: ItemKind, i
     }
   }
 
-  return { dialog, busy, serverError, open, close, submitName, submitMove, trash }
+  /**
+   * Envía a la papelera la selección (archivos y carpetas) de una vez, con una sola confirmación y un solo aviso.
+   * Devuelve `true` si la lista cambió (algo fue a la papelera o ya no estaba), para que quien llama la recargue y
+   * limpie la selección; `false` si la persona canceló o la petición falló (la selección se conserva).
+   */
+  async function trashMany(selection: { files: FileItem[], folders: FolderItem[] }): Promise<boolean> {
+    const total = selection.files.length + selection.folders.length
+    if (total === 0 || busy.value) return false
+    const ok = await confirm({
+      title: messages.files.trashManyConfirm(total),
+      message: messages.files.trashManyHint(total, selection.folders.length),
+      confirmLabel: 'Enviar a la papelera',
+      danger: true,
+    })
+    if (!ok) return false
+    busy.value = true
+    try {
+      const result = await api<TrashItemsResult>('/api/items/trash', {
+        method: 'POST',
+        body: { fileIds: selection.files.map(file => file.id), folderIds: selection.folders.map(folder => folder.id) },
+      })
+      if (result.trashed > 0) toast.success(messages.files.trashedMany(result.trashed, result.skipped.length))
+      else toast.info(messages.files.trashedNone)
+      return true
+    }
+    catch (error) {
+      toast.error(serverMessage(error, messages.files.trashManyFailed))
+      return false
+    }
+    finally {
+      busy.value = false
+    }
+  }
+
+  return { dialog, busy, serverError, open, close, submitName, submitMove, trash, trashMany }
 }

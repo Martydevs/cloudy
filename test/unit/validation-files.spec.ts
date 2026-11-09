@@ -7,6 +7,8 @@ import {
   folderPatchInput,
   listQuery,
   sanitizeFileName,
+  TRASH_BATCH_MAX,
+  trashItemsInput,
   uploadInput,
 } from '../../shared/validation/files'
 import { ACCEPT_ATTRIBUTE, canonicalMime, categoryOf, getExtension, isAllowed } from '../../shared/constants/files'
@@ -47,6 +49,38 @@ describe('folderPatchInput y fileRenameInput', () => {
   it('limita el nombre de archivo a 200 caracteres', () => {
     expect(fileRenameInput({ name: `${'a'.repeat(197)}.jpg` }).ok).toBe(false)
     expect(fileRenameInput({ name: `${'a'.repeat(196)}.jpg` }).ok).toBe(true)
+  })
+})
+
+describe('trashItemsInput (selección múltiple para la papelera)', () => {
+  const A = '3f2504e0-4f89-11d3-9a0c-0305e82c3301'
+  const B = '9b2c1f0e-1d2c-4e5f-8a9b-0c1d2e3f4a5b'
+  const ids = (n: number, from = 0) => Array.from({ length: n }, (_, i) => `00000000-0000-4000-8000-${String(from + i).padStart(12, '0')}`)
+
+  it('acepta archivos, carpetas o ambos; una lista ausente es vacía y los uuid se normalizan', () => {
+    expect(trashItemsInput({ fileIds: [A], folderIds: [B] })).toEqual({ ok: true, data: { fileIds: [A], folderIds: [B] } })
+    expect(trashItemsInput({ fileIds: [A.toUpperCase()] })).toEqual({ ok: true, data: { fileIds: [A], folderIds: [] } })
+    expect(trashItemsInput({ folderIds: [B], fileIds: null })).toEqual({ ok: true, data: { fileIds: [], folderIds: [B] } })
+  })
+
+  it('pide al menos un elemento', () => {
+    for (const input of [{}, { fileIds: [], folderIds: [] }, null, 'x']) {
+      expect(trashItemsInput(input)).toEqual({ ok: false, errors: { fileIds: 'Elige al menos un elemento' } })
+    }
+  })
+
+  it(`admite ${TRASH_BATCH_MAX} elementos entre las dos listas y rechaza uno más`, () => {
+    expect(TRASH_BATCH_MAX).toBe(100)
+    expect(trashItemsInput({ fileIds: ids(60), folderIds: ids(40, 100) }).ok).toBe(true)
+    expect(trashItemsInput({ fileIds: ids(60), folderIds: ids(41, 100) }))
+      .toEqual({ ok: false, errors: { fileIds: 'Puedes enviar como máximo 100 elementos a la vez' } })
+    expect(trashItemsInput({ folderIds: ids(101) }).ok).toBe(false)
+  })
+
+  it('rechaza ids que no son uuid y listas que no son listas', () => {
+    expect(trashItemsInput({ fileIds: [A, 'f1'] })).toMatchObject({ ok: false, errors: { fileIds: expect.stringContaining('Elemento no válido') } })
+    expect(trashItemsInput({ fileIds: [A], folderIds: ['root'] })).toMatchObject({ ok: false, errors: { folderIds: expect.stringContaining('Elemento no válido') } })
+    expect(trashItemsInput({ fileIds: A })).toMatchObject({ ok: false, errors: { fileIds: expect.any(String) } })
   })
 })
 

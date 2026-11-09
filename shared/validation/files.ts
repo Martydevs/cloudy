@@ -1,7 +1,7 @@
 // Reglas de carpetas, archivos y subidas (FR-009 a FR-012).
 import { FILE_CATEGORIES, MAX_FILE_SIZE, getExtension, isAllowed } from '../constants/files'
 import type { Field } from './core'
-import { bool, int, nullable, object, oneOf, optional, str, uuid } from './core'
+import { array, bool, int, nullable, object, oneOf, optional, str, uuid } from './core'
 
 // Se prohíben / \ : * ? " < > | y los caracteres de control.
 export const NAME_PATTERN = /^[^/\\:*?"<>|\u0000-\u001F]+$/
@@ -77,6 +77,29 @@ export const uploadInput = object(
     const mime = typeof raw.mimeType === 'string' ? raw.mimeType : ''
     const ext = getExtension(name)
     return name && (!ext || !isAllowed(ext, mime)) ? { name: 'Formato no admitido' } : null
+  },
+)
+
+/** Elementos (archivos + carpetas) que se pueden enviar a la papelera de una vez desde la selección de Archivos. */
+export const TRASH_BATCH_MAX = 100
+export const TRASH_BATCH_EMPTY_MESSAGE = 'Elige al menos un elemento'
+export const TRASH_BATCH_MAX_MESSAGE = `Puedes enviar como máximo ${TRASH_BATCH_MAX} elementos a la vez`
+
+/** Lista de uuids; ausente = vacía. */
+function idList(): Field<string[]> {
+  const list = array(uuid('Elemento no válido'))
+  return input => (input === undefined || input === null ? { ok: true, value: [] } : list(input))
+}
+
+const listLength = (value: unknown) => (Array.isArray(value) ? value.length : 0)
+
+/** Selección para la papelera: `fileIds` y `folderIds`, entre 1 y `TRASH_BATCH_MAX` elementos entre los dos. */
+export const trashItemsInput = object(
+  { fileIds: idList(), folderIds: idList() },
+  (raw) => {
+    const total = listLength(raw.fileIds) + listLength(raw.folderIds)
+    if (total === 0) return { fileIds: TRASH_BATCH_EMPTY_MESSAGE }
+    return total > TRASH_BATCH_MAX ? { fileIds: TRASH_BATCH_MAX_MESSAGE } : null
   },
 )
 

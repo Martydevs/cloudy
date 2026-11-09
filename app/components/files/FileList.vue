@@ -2,11 +2,18 @@
 import type { FileItem, FolderItem } from '#shared/types/api'
 import type { ItemAction } from '~/utils/file-actions'
 
-defineProps<{ folders: (FolderItem & { path?: string[] })[], items: FileItem[] }>()
+// `selectable` muestra una casilla en cada fila; lo marcado (ids de archivos y carpetas) va en `v-model:selected`.
+defineProps<{ folders: (FolderItem & { path?: string[] })[], items: FileItem[], selectable?: boolean }>()
+const selected = defineModel<string[]>('selected', { default: () => [] })
 const emit = defineEmits<{
   fileAction: [action: ItemAction, file: FileItem]
   folderAction: [action: ItemAction, folder: FolderItem]
 }>()
+
+const selectedSet = computed(() => new Set(selected.value))
+function toggle(id: string) {
+  selected.value = selectedSet.value.has(id) ? selected.value.filter(item => item !== id) : [...selected.value, id]
+}
 // Referencia de tiempo segura para el SSR; sustituye al util del mismo nombre en esta plantilla.
 const { timeAgo } = useRelativeTime()
 
@@ -23,7 +30,17 @@ function onFolder(key: string, folder: FolderItem) {
 
 <template>
   <ul class="list rounded-box border border-base-300 bg-base-100" aria-label="Carpetas y archivos">
-    <li v-for="folder in folders" :key="folder.id" class="list-row items-center">
+    <li v-for="folder in folders" :key="folder.id" class="list-row items-center" :class="{ 'bg-primary/10': selectedSet.has(folder.id) }">
+      <!-- Casilla siempre visible, con área táctil de 44 px. -->
+      <label v-if="selectable" class="-my-1 -ml-2 flex size-11 cursor-pointer items-center justify-center">
+        <input
+          type="checkbox"
+          class="checkbox checkbox-primary"
+          :checked="selectedSet.has(folder.id)"
+          :aria-label="`Seleccionar la carpeta ${folder.name}`"
+          @change="toggle(folder.id)"
+        >
+      </label>
       <Icon name="lucide:folder" class="size-8 text-primary" aria-hidden="true" />
       <NuxtLink :to="`/archivos/${folder.id}`" class="list-col-grow flex min-w-0 flex-col rounded-field">
         <span class="truncate font-medium">{{ folder.name }}</span>
@@ -33,7 +50,16 @@ function onFolder(key: string, folder: FolderItem) {
       </NuxtLink>
       <ActionMenu :label="`Acciones de la carpeta ${folder.name}`" :items="folderMenuItems" @select="key => onFolder(key, folder)" />
     </li>
-    <li v-for="file in items" :key="file.id" class="list-row items-center">
+    <li v-for="file in items" :key="file.id" class="list-row items-center" :class="{ 'bg-primary/10': selectedSet.has(file.id) }">
+      <label v-if="selectable" class="-my-1 -ml-2 flex size-11 cursor-pointer items-center justify-center">
+        <input
+          type="checkbox"
+          class="checkbox checkbox-primary"
+          :checked="selectedSet.has(file.id)"
+          :aria-label="`Seleccionar ${file.name}`"
+          @change="toggle(file.id)"
+        >
+      </label>
       <div class="flex size-10 items-center justify-center overflow-hidden rounded-field bg-base-200">
         <img
           v-if="file.hasThumbnail"

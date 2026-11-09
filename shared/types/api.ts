@@ -94,6 +94,12 @@ export interface TrashItem {
   bytes: number
 }
 
+/** `POST /api/items/trash`: cuántos elementos de la selección fueron a la papelera y cuáles ya no estaban visibles. */
+export interface TrashItemsResult {
+  trashed: number
+  skipped: string[]
+}
+
 export interface TrashRestoreResult {
   /** Nombre final (con sufijo si el original ya estaba en uso). */
   name: string

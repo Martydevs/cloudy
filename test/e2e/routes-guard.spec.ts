@@ -140,6 +140,8 @@ describe('US6 · protección de rutas', () => {
       ['POST', `/api/files/${id}/comments`],
       ['PATCH', `/api/comments/${id}`],
       ['DELETE', `/api/comments/${id}`],
+      // Selección múltiple de Archivos.
+      ['POST', '/api/items/trash'],
       // Texto de las imágenes (feature 002).
       ['GET', `/api/files/${id}/text`],
       ['POST', `/api/files/${id}/text`],

@@ -195,6 +195,72 @@ describe('US7 · papelera', () => {
     await page.close()
   })
 
+  it('selección múltiple en Archivos: 2 archivos y 1 carpeta van juntos a la papelera con una sola confirmación', async () => {
+    const page = await editorPage(viewports.desktop)
+    const owner = await userId('trash-editor')
+    const parentName = `Lote ${tag}`
+    const childName = `Ensayo lote ${tag}`
+    const [first, second, kept, inside] = [`uno-${tag}.jpg`, `dos-${tag}.mp3`, `queda-${tag}.jpg`, `dentro-${tag}.jpg`]
+    const parentId = await seedFolder(parentName, owner)
+    const childId = await seedFolder(childName, owner, parentId)
+    await seedFile(inside, owner, childId)
+    for (const name of [first, second, kept]) await seedFile(name, owner, parentId)
+
+    await openFolder(page, parentId, parentName)
+    const bar = page.getByRole('region', { name: 'Selección' })
+    expect(await bar.count()).toBe(0)
+    await page.getByLabel(`Seleccionar ${first}`, { exact: true }).check()
+    await expect.poll(() => bar.getByText('1 seleccionado').isVisible()).toBe(true)
+    // También con teclado: la casilla recibe el foco y se marca con Espacio.
+    await page.getByLabel(`Seleccionar ${second}`, { exact: true }).focus()
+    await page.keyboard.press('Space')
+    await page.getByLabel(`Seleccionar la carpeta ${childName}`, { exact: true }).check()
+    await expect.poll(() => bar.getByText('3 seleccionados').isVisible()).toBe(true)
+
+    await bar.getByRole('button', { name: 'Enviar a la papelera' }).click()
+    const dialog = page.getByRole('dialog', { name: '¿Enviar 3 elementos a la papelera?' })
+    await expect.poll(() => dialog.isVisible()).toBe(true)
+    expect(await dialog.textContent()).toContain('Puedes recuperarlos desde Papelera.')
+    await dialog.getByRole('button', { name: 'Enviar a la papelera' }).click()
+    await expect.poll(() => page.getByText('Se enviaron 3 elementos a la papelera').isVisible()).toBe(true)
+
+    // La vista se actualiza y la selección se limpia: solo queda lo que no se marcó.
+    await expect.poll(() => bar.count()).toBe(0)
+    await expect.poll(() => page.getByRole('link', { name: `Abrir ${first}` }).count()).toBe(0)
+    expect(await page.getByRole('link', { name: `Abrir ${second}` }).count()).toBe(0)
+    expect(await page.getByRole('link', { name: `Abrir carpeta ${childName}` }).count()).toBe(0)
+    expect(await page.getByRole('link', { name: `Abrir ${kept}` }).isVisible()).toBe(true)
+
+    // En la papelera hay tres raíces: los dos archivos y la carpeta (con su contenido dentro, no aparte).
+    await open(page, '/papelera')
+    for (const name of [first, second, childName]) await expect.poll(() => trashRow(page, name).count()).toBe(1)
+    expect(await trashRow(page, inside).count()).toBe(0)
+    expect(await trashRow(page, kept).count()).toBe(0)
+    expect(await trashRow(page, childName).textContent()).toContain(`Ubicación original: /${parentName}`)
+
+    // Cada elemento deja su registro de actividad, como al eliminarlo de uno en uno.
+    const logged = await sql.query(
+      'SELECT action, target_label FROM activity_log WHERE target_label = ANY($1::text[]) ORDER BY target_label',
+      [[first, second, childName]],
+    )
+    expect(logged.map(row => [row.action, row.target_label]).sort()).toEqual([
+      ['file.trash', first], ['file.trash', second], ['folder.trash', childName],
+    ].sort())
+    await page.close()
+
+    // A 360 px la barra cabe sin desplazamiento horizontal y «Limpiar» desmarca todo.
+    const phone = await editorPage(viewports.phone)
+    await openFolder(phone, parentId, parentName)
+    await phone.getByLabel(`Seleccionar ${kept}`, { exact: true }).check()
+    const phoneBar = phone.getByRole('region', { name: 'Selección' })
+    await expect.poll(() => phoneBar.getByText('1 seleccionado').isVisible()).toBe(true)
+    expect(await phone.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+    await phoneBar.getByRole('button', { name: 'Limpiar' }).click()
+    await expect.poll(() => phoneBar.count()).toBe(0)
+    expect(await phone.getByLabel(`Seleccionar ${kept}`, { exact: true }).isChecked()).toBe(false)
+    await phone.close()
+  })
+
   it('"Vaciar papelera" solo lo ve y lo puede usar el admin; la página no se desborda a 360 px', async () => {
     const editor = await editorPage(viewports.phone)
     const owner = await userId('trash-editor')

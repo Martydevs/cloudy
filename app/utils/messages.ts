@@ -50,6 +50,19 @@ export const messages = {
     renamed: (name: string) => `Ahora se llama «${name}»`,
     moved: (name: string) => `Se movió «${name}»`,
     trashed: (name: string) => `«${name}» se envió a la papelera`,
+    /** Selección múltiple: lo que fue a la papelera y, si los hubo, los que otra persona ya había quitado. */
+    trashedMany: (n: number, skipped = 0) => {
+      const done = n === 1 ? 'Se envió 1 elemento a la papelera' : `Se enviaron ${n} elementos a la papelera`
+      if (skipped === 0) return done
+      return `${done}. ${skipped === 1 ? '1 ya no estaba disponible' : `${skipped} ya no estaban disponibles`}.`
+    },
+    trashedNone: 'Esos elementos ya no estaban disponibles. Actualizamos la lista.',
+    trashManyConfirm: (n: number) => (n === 1 ? '¿Enviar 1 elemento a la papelera?' : `¿Enviar ${n} elementos a la papelera?`),
+    trashManyHint: (n: number, folders: number) => [
+      folders > 0 ? (folders === 1 ? 'La carpeta se envía con todo su contenido.' : 'Las carpetas se envían con todo su contenido.') : '',
+      n === 1 ? 'Puedes recuperarlo desde Papelera.' : 'Puedes recuperarlos desde Papelera.',
+    ].filter(Boolean).join(' '),
+    trashManyFailed: `No pudimos enviar la selección a la papelera. ${RETRY}`,
     uploadedOne: (name: string) => `Se subió «${name}»`,
     uploadedMany: (n: number) => `Se subieron ${n} archivos`,
     uploadFailedCount: (n: number) => (n === 1 ? 'Un archivo no se pudo subir' : `${n} archivos no se pudieron subir`),
