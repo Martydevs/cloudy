@@ -168,8 +168,8 @@ const TYPE_FILTERS: { value: FileCategory | undefined, label: string }[] = [
 </script>
 
 <template>
-  <!-- Con algo marcado se deja sitio abajo para que la barra de selección no tape contenido. -->
   <div class="flex flex-col gap-4" :class="{ 'pb-40 sm:pb-24': selectable && selectedCount > 0 }">
+    <!-- Con algo marcado, el relleno de abajo deja sitio para que la barra de selección no tape contenido. -->
     <Breadcrumbs v-if="!q && breadcrumbs.length > 1" :items="breadcrumbs" />
 
     <div class="flex flex-wrap items-center justify-between gap-3">
