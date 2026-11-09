@@ -249,6 +249,210 @@ describe('Usuarios', () => {
   })
 })
 
+describe('Usuarios · selección múltiple', () => {
+  const luis = user({ status: 'active', role: 'editor' })
+  const eva = user({ userId: 'u3', email: 'eva@iglesia.org', name: 'Eva', status: 'active', role: 'editor' })
+  const batchPosts = () => calls.filter(c => c.method === 'POST' && c.url === '/api/users/batch')
+  const bar = (wrapper: Queryable) => wrapper.findAll('[role="region"][aria-label="Selección"]')[0]
+  const toast = () => useToast().toasts.value.at(-1)
+
+  /** Monta la página y marca en la tabla las cuentas con esos nombres. */
+  async function mountWithSelection(names: string[]) {
+    const wrapper = await mountSuspended(UsuariosPage, { route: '/usuarios' })
+    await flush()
+    const table = wrapper.get('table')
+    for (const name of names) await table.get(`input[aria-label="Seleccionar a ${name}"]`).setValue(true)
+    // La barra es un componente `Lazy`: su chunk llega aparte.
+    await vi.waitFor(() => expect(bar(wrapper)).toBeDefined())
+    return wrapper
+  }
+
+  beforeEach(() => {
+    mockApi('GET', '/api/users', { items: [me.profile, luis, eva], total: 3 })
+    mockApi('POST', '/api/users/batch', { updated: ['u2', 'u3'], skipped: [] })
+  })
+
+  it('cada cuenta tiene su casilla con nombre (tabla y tarjetas) y la cabecera marca toda la página', async () => {
+    const wrapper = await mountSuspended(UsuariosPage)
+    await flush()
+    const table = wrapper.get('table')
+    const labels = ['Seleccionar a Ana', 'Seleccionar a Luis', 'Seleccionar a Eva']
+    expect(table.findAll('tbody input[type="checkbox"]').map(box => box.attributes('aria-label'))).toEqual(labels)
+    expect(wrapper.get('ul[aria-label="Usuarios"]').findAll('input[type="checkbox"]').map(box => box.attributes('aria-label'))).toEqual(labels)
+    // Siempre visibles y con área táctil de 44 px.
+    for (const box of wrapper.findAll('input[type="checkbox"]')) expect(box.element.parentElement!.className).toContain('size-11')
+    expect(bar(wrapper)).toBeUndefined()
+
+    const all = table.get('input[aria-label="Seleccionar todas las cuentas de esta página"]')
+    const allState = () => all.element as HTMLInputElement
+    await table.get('input[aria-label="Seleccionar a Luis"]').setValue(true)
+    await vi.waitFor(() => expect(bar(wrapper)).toBeDefined())
+    expect(bar(wrapper)!.get('[role="status"]').text()).toBe('1 seleccionado')
+    // Con parte de la página marcada, la casilla de la cabecera queda en estado intermedio.
+    expect([allState().checked, allState().indeterminate]).toEqual([false, true])
+    // La tarjeta móvil de la misma cuenta refleja la selección.
+    expect((wrapper.get('ul[aria-label="Usuarios"] input[aria-label="Seleccionar a Luis"]').element as HTMLInputElement).checked).toBe(true)
+
+    await all.setValue(true)
+    expect(bar(wrapper)!.get('[role="status"]').text()).toBe('3 seleccionados')
+    expect([allState().checked, allState().indeterminate]).toEqual([true, false])
+    expect(wrapper.element.className).toContain('pb-40')
+
+    await all.setValue(false)
+    await flush()
+    expect(bar(wrapper)).toBeUndefined()
+    expect(wrapper.element.className).not.toContain('pb-40')
+  })
+
+  it('Desactivar manda la selección en una petición, sin preguntar si son cuentas ajenas, avisa y limpia la selección', async () => {
+    const wrapper = await mountWithSelection(['Luis', 'Eva'])
+    mockApi('GET', '/api/users', { items: [me.profile, { ...luis, status: 'disabled' }, { ...eva, status: 'disabled' }], total: 3 })
+    await buttonsWithText(bar(wrapper)!, 'Desactivar')[0]!.trigger('click')
+    await flush(10)
+    expect(useConfirm().options.value).toBeNull()
+    expect(batchPosts().map(c => c.body)).toEqual([{ ids: ['u2', 'u3'], action: 'disable' }])
+    expect(toast()).toMatchObject({ type: 'success', message: '2 cuentas actualizadas.' })
+    expect(bar(wrapper)).toBeUndefined()
+    // La lista se recarga con el estado nuevo.
+    expect(wrapper.get('table').text()).toContain('Desactivado')
+  })
+
+  it('Cambiar rol abre un menú con los roles y aplica el elegido a la selección', async () => {
+    const wrapper = await mountWithSelection(['Luis', 'Eva'])
+    const trigger = buttonsWithText(bar(wrapper)!, 'Cambiar rol')[0]!
+    expect(trigger.attributes('aria-expanded')).toBe('false')
+    await trigger.trigger('click')
+    await flush()
+    expect(trigger.attributes('aria-expanded')).toBe('true')
+    const options = bar(wrapper)!.findAll('[role="menuitem"]')
+    expect(options.map(option => option.text())).toEqual(['Editor', 'Administrador'])
+    await options[1]!.trigger('click')
+    await flush(10)
+    expect(batchPosts().map(c => c.body)).toEqual([{ ids: ['u2', 'u3'], action: 'role', role: 'admin' }])
+    expect(toast()?.message).toBe('2 cuentas actualizadas.')
+  })
+
+  it('Eliminar pide confirmación: cancelar no cambia nada y conserva la selección; confirmar elimina', async () => {
+    const wrapper = await mountWithSelection(['Luis', 'Eva'])
+    await buttonsWithText(bar(wrapper)!, 'Eliminar')[0]!.trigger('click')
+    await nextTick()
+    expect(useConfirm().options.value).toMatchObject({
+      title: '¿Eliminar 2 cuentas?',
+      message: 'Perderán el acceso a Cloudy. Sus archivos y su historial se conservan.',
+      confirmLabel: 'Eliminar cuentas',
+      danger: true,
+    })
+    useConfirm().cancel()
+    await flush()
+    expect(batchPosts()).toHaveLength(0)
+    expect(bar(wrapper)!.get('[role="status"]').text()).toBe('2 seleccionados')
+
+    await buttonsWithText(bar(wrapper)!, 'Eliminar')[0]!.trigger('click')
+    await nextTick()
+    useConfirm().accept()
+    await flush(10)
+    expect(batchPosts().map(c => c.body)).toEqual([{ ids: ['u2', 'u3'], action: 'remove' }])
+    expect(bar(wrapper)).toBeUndefined()
+  })
+
+  it('con la propia cuenta en la selección, desactivar y eliminar avisan como al hacerlo de una en una', async () => {
+    const wrapper = await mountWithSelection(['Ana', 'Luis'])
+    await buttonsWithText(bar(wrapper)!, 'Desactivar')[0]!.trigger('click')
+    await nextTick()
+    expect(useConfirm().options.value).toMatchObject({
+      title: '¿Desactivar 2 cuentas, incluida la tuya?',
+      message: 'Perderás el acceso a Cloudy en cuanto confirmes. Solo otro administrador podrá reactivar tu cuenta.',
+      danger: true,
+    })
+    useConfirm().cancel()
+    await flush()
+    expect(batchPosts()).toHaveLength(0)
+
+    await buttonsWithText(bar(wrapper)!, 'Eliminar')[0]!.trigger('click')
+    await nextTick()
+    expect(useConfirm().options.value?.message).toContain('Tu propia cuenta está en la selección: perderás el acceso en cuanto confirmes.')
+    useConfirm().cancel()
+    await flush()
+    expect(batchPosts()).toHaveLength(0)
+  })
+
+  it('solo la propia cuenta: el aviso es el de «tu propia cuenta»', async () => {
+    const wrapper = await mountWithSelection(['Ana'])
+    await buttonsWithText(bar(wrapper)!, 'Desactivar')[0]!.trigger('click')
+    await nextTick()
+    expect(useConfirm().options.value).toMatchObject({ title: '¿Desactivar tu propia cuenta?', confirmLabel: 'Desactivar mi cuenta' })
+    useConfirm().cancel()
+    await flush()
+  })
+
+  it('si el servidor se salta cuentas, el aviso dice cuántas cambiaron y nombra la regla del último administrador', async () => {
+    mockApi('POST', '/api/users/batch', { updated: ['u2'], skipped: [{ id: 'u1', reason: 'last_admin' }, { id: 'u3', reason: 'unchanged' }] })
+    const wrapper = await mountWithSelection(['Ana', 'Luis', 'Eva'])
+    const trigger = buttonsWithText(bar(wrapper)!, 'Cambiar rol')[0]!
+    await trigger.trigger('click')
+    await flush()
+    await bar(wrapper)!.findAll('[role="menuitem"]')[0]!.trigger('click')
+    await flush(10)
+    expect(batchPosts()[0]!.body).toEqual({ ids: ['u1', 'u2', 'u3'], action: 'role', role: 'editor' })
+    expect(toast()).toMatchObject({
+      type: 'success',
+      message: '1 cuenta actualizada. 1 no se cambió: debe existir al menos un administrador activo. 1 ya estaba así o ya no existe.',
+    })
+    // La propia cuenta no cambió: no hay redirección.
+    expect(navigateToMock).not.toHaveBeenCalled()
+
+    mockApi('POST', '/api/users/batch', { updated: [], skipped: [{ id: 'u1', reason: 'last_admin' }] })
+    const table = wrapper.get('table')
+    await table.get('input[aria-label="Seleccionar a Ana"]').setValue(true)
+    await vi.waitFor(() => expect(bar(wrapper)).toBeDefined())
+    await buttonsWithText(bar(wrapper)!, 'Cambiar rol')[0]!.trigger('click')
+    await flush()
+    await bar(wrapper)!.findAll('[role="menuitem"]')[0]!.trigger('click')
+    await flush(10)
+    expect(toast()).toMatchObject({ type: 'info', message: '0 cuentas actualizadas. 1 no se cambió: debe existir al menos un administrador activo.' })
+  })
+
+  it('si el cambio alcanzó a la propia cuenta, refresca el perfil y sigue la matriz de acceso', async () => {
+    mockApi('POST', '/api/users/batch', { updated: ['u1', 'u2'], skipped: [] })
+    mockApi('GET', '/api/me', { ...me, profile: { ...me.profile, role: 'editor' } })
+    const wrapper = await mountWithSelection(['Ana', 'Luis'])
+    await buttonsWithText(bar(wrapper)!, 'Cambiar rol')[0]!.trigger('click')
+    await flush()
+    await bar(wrapper)!.findAll('[role="menuitem"]')[0]!.trigger('click')
+    await flush(10)
+    expect(useMe().me.value?.profile.role).toBe('editor')
+    expect(navigateToMock).toHaveBeenCalledWith('/acceso-denegado')
+  })
+
+  it('si la petición falla avisa y conserva la selección', async () => {
+    mockApi('POST', '/api/users/batch', failWith(500))
+    const wrapper = await mountWithSelection(['Luis'])
+    await buttonsWithText(bar(wrapper)!, 'Desactivar')[0]!.trigger('click')
+    await flush(10)
+    expect(toast()).toMatchObject({ type: 'error', message: 'No pudimos cambiar las cuentas seleccionadas. Inténtalo de nuevo.' })
+    expect(bar(wrapper)!.get('[role="status"]').text()).toBe('1 seleccionado')
+  })
+
+  it('Limpiar desmarca todo; cambiar de página empieza una selección nueva', async () => {
+    mockApi('GET', '/api/users', (event) => {
+      const page = Number(new URL(event.path, 'http://x').searchParams.get('page') ?? '1')
+      return { items: [user({ userId: `p${page}`, name: `Persona ${page}`, status: 'active', role: 'editor' })], total: 45 }
+    })
+    const wrapper = await mountWithSelection(['Persona 1'])
+    await buttonsWithText(bar(wrapper)!, 'Limpiar')[0]!.trigger('click')
+    await flush()
+    expect(bar(wrapper)).toBeUndefined()
+
+    await wrapper.get('table input[aria-label="Seleccionar a Persona 1"]').setValue(true)
+    await vi.waitFor(() => expect(bar(wrapper)).toBeDefined())
+    await wrapper.find('button[aria-label="Página siguiente"]').trigger('click')
+    await flush()
+    expect(wrapper.text()).toContain('Persona 2')
+    expect(bar(wrapper)).toBeUndefined()
+    expect((wrapper.get('table input[aria-label="Seleccionar a Persona 2"]').element as HTMLInputElement).checked).toBe(false)
+  })
+})
+
 describe('Actividad', () => {
   const CREATED_AT = '2026-10-14T10:00:00.000Z'
   const entry = (changes: Partial<ActivityEntry> = {}): ActivityEntry => ({

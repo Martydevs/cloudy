@@ -65,6 +65,70 @@ describe('US4 · gestión de usuarios', () => {
     await expect.poll(() => memberRow().locator('.badge', { hasText: 'Editor' }).isVisible()).toBe(true)
   })
 
+  it('selección múltiple: desactiva dos cuentas de prueba, les cambia el rol y avisa cuando frena la regla del último administrador', async () => {
+    const extras = [
+      { name: 'Lote Uno', email: email('us4-batch-1') },
+      { name: 'Lote Dos', email: email('us4-batch-2') },
+    ]
+    for (const account of extras) {
+      await ensureAccount(account)
+      await setProfile(account.email, { status: 'active', role: 'editor' })
+    }
+    // En la rama de pruebas este administrador queda como el único activo, para comprobar el guard.
+    await testSql()`UPDATE profiles SET role = 'editor', updated_at = now() WHERE role = 'admin' AND status = 'active' AND email <> ${adminEmail}`
+    await adminPage.reload()
+    await waitForHydration(adminPage)
+
+    const rowOf = (account: { email: string }) => adminPage.getByRole('row').filter({ hasText: account.email })
+    const bar = adminPage.getByRole('region', { name: 'Selección' })
+    const select = async (names: string[]) => {
+      for (const name of names) await adminPage.getByRole('checkbox', { name: `Seleccionar a ${name}`, exact: true }).check()
+      await expect.poll(() => bar.getByText(`${names.length} seleccionados`).isVisible()).toBe(true)
+    }
+    await expect.poll(() => rowOf(extras[0]!).count()).toBe(1)
+    expect(await bar.count()).toBe(0)
+
+    // Cambiar rol: las dos pasan a administrador con una sola acción.
+    await select(extras.map(account => account.name))
+    await bar.getByRole('button', { name: 'Cambiar rol' }).click()
+    await adminPage.getByRole('menuitem', { name: 'Administrador' }).click()
+    await expect.poll(() => adminPage.getByText('2 cuentas actualizadas.').isVisible()).toBe(true)
+    for (const account of extras) await expect.poll(() => rowOf(account).locator('.badge', { hasText: 'Administrador' }).isVisible()).toBe(true)
+    await expect.poll(() => bar.count()).toBe(0)
+
+    // Desactivar a otras personas no pregunta; la selección se limpia y el estado cambia en la lista.
+    await select(extras.map(account => account.name))
+    await bar.getByRole('button', { name: 'Desactivar' }).click()
+    await expect.poll(() => adminPage.getByText('2 cuentas actualizadas.').last().isVisible()).toBe(true)
+    for (const account of extras) await expect.poll(() => rowOf(account).getByText('Desactivado', { exact: true }).isVisible()).toBe(true)
+    const stored = await testSql().query('SELECT status FROM profiles WHERE email = ANY($1::text[])', [extras.map(account => account.email)])
+    expect(stored.map(row => row.status)).toEqual(['disabled', 'disabled'])
+
+    // El único administrador activo se incluye a sí mismo: se confirma, y el guard lo salta con su motivo.
+    const selfName = (await testSql()`SELECT name FROM profiles WHERE email = ${adminEmail}`)[0]!.name as string
+    await adminPage.getByRole('checkbox', { name: `Seleccionar a ${selfName}`, exact: true }).check()
+    await expect.poll(() => bar.getByText('1 seleccionado').isVisible()).toBe(true)
+    await bar.getByRole('button', { name: 'Desactivar' }).click()
+    await adminPage.getByRole('button', { name: 'Desactivar mi cuenta' }).click()
+    await expect.poll(() => adminPage.getByText('0 cuentas actualizadas. 1 no se cambió: debe existir al menos un administrador activo.').isVisible()).toBe(true)
+    await expect.poll(() => adminPage.getByRole('row').filter({ hasText: adminEmail }).getByText('Activo', { exact: true }).isVisible()).toBe(true)
+
+    // Eliminar pide confirmación y deja el registro de actividad de cada cuenta.
+    await select(extras.map(account => account.name))
+    await bar.getByRole('button', { name: 'Eliminar' }).click()
+    const dialog = adminPage.getByRole('dialog', { name: '¿Eliminar 2 cuentas?' })
+    await expect.poll(() => dialog.isVisible()).toBe(true)
+    await dialog.getByRole('button', { name: 'Eliminar cuentas' }).click()
+    for (const account of extras) await expect.poll(() => rowOf(account).count()).toBe(0)
+    const logged = await testSql().query(
+      `SELECT action, target_label FROM activity_log WHERE target_label = ANY($1::text[]) AND action IN ('user.role_change', 'user.disable', 'user.remove')`,
+      [extras.map(account => account.name)],
+    )
+    expect(logged.map(row => `${row.action}:${row.target_label}`).sort()).toEqual(
+      extras.flatMap(account => ['user.disable', 'user.remove', 'user.role_change'].map(action => `${action}:${account.name}`)).sort(),
+    )
+  })
+
   it('el único administrador activo no puede desactivarse ni quitarse el rol', async () => {
     // Otros archivos de prueba pueden haber creado admins: en la rama de pruebas se convierten en editores.
     await testSql()`UPDATE profiles SET role = 'editor', updated_at = now() WHERE role = 'admin' AND status = 'active' AND email <> ${adminEmail}`

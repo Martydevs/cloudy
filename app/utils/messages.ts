@@ -1,6 +1,6 @@
 // Textos de avisos (toasts), respaldos de errores de la API y el ErrorState de cada vista (T153),
 // agrupados por área y siempre en español. Los títulos estáticos y los EmptyState viven en sus páginas.
-import { RATE_LIMITED_MESSAGE } from '#shared/constants/messages'
+import { LAST_ADMIN_MESSAGE, RATE_LIMITED_MESSAGE } from '#shared/constants/messages'
 import { YOUTUBE_SERVICE_MESSAGES } from '#shared/constants/youtube'
 import { YOUTUBE_URL_MESSAGES } from '#shared/validation/youtube'
 import {
@@ -137,6 +137,21 @@ export const messages = {
     reactivateFailed: `No pudimos reactivar la cuenta. ${RETRY}`,
     roleFailed: `No pudimos cambiar el rol. ${RETRY}`,
     removeFailed: `No pudimos eliminar la cuenta. ${RETRY}`,
+    /** Selección múltiple: cuántas cuentas cambiaron y, si alguna no, por qué (la regla del último administrador primero). */
+    bulkDone: (updated: number, lastAdmin = 0, other = 0) => [
+      updated === 1 ? '1 cuenta actualizada.' : `${updated} cuentas actualizadas.`,
+      lastAdmin > 0 ? `${lastAdmin === 1 ? '1 no se cambió' : `${lastAdmin} no se cambiaron`}: ${LAST_ADMIN_MESSAGE.toLowerCase()}.` : '',
+      other > 0 ? (other === 1 ? '1 ya estaba así o ya no existe.' : `${other} ya estaban así o ya no existen.`) : '',
+    ].filter(Boolean).join(' '),
+    bulkFailed: `No pudimos cambiar las cuentas seleccionadas. ${RETRY}`,
+    bulkRemoveConfirm: (n: number) => (n === 1 ? '¿Eliminar 1 cuenta?' : `¿Eliminar ${n} cuentas?`),
+    bulkRemoveHint: (n: number, self: boolean) => [
+      n === 1 ? 'Perderá el acceso a Cloudy.' : 'Perderán el acceso a Cloudy.',
+      'Sus archivos y su historial se conservan.',
+      self ? 'Tu propia cuenta está en la selección: perderás el acceso en cuanto confirmes.' : '',
+    ].filter(Boolean).join(' '),
+    bulkDisableSelfConfirm: (n: number) => (n === 1 ? '¿Desactivar tu propia cuenta?' : `¿Desactivar ${n} cuentas, incluida la tuya?`),
+    bulkDisableSelfHint: 'Perderás el acceso a Cloudy en cuanto confirmes. Solo otro administrador podrá reactivar tu cuenta.',
   },
   profile: {
     nameSaved: 'Nombre actualizado',

@@ -3,3 +3,6 @@
 
 /** 429 de cualquier endpoint (`hitRateLimit`); el cliente lo muestra para todo 429 (`serverMessage`). */
 export const RATE_LIMITED_MESSAGE = 'Demasiados intentos. Espera un momento e inténtalo de nuevo.'
+
+/** 409 al intentar dejar el sistema sin administradores (FR-022); también lo usa el aviso de la selección de Usuarios. */
+export const LAST_ADMIN_MESSAGE = 'Debe existir al menos un administrador activo'

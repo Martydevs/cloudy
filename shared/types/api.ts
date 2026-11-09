@@ -33,6 +33,18 @@ export interface UsersPage {
   total: number
 }
 
+/**
+ * Por qué una cuenta de la selección no cambió: `last_admin` (dejaría el sistema sin administradores), `not_found`
+ * (ya no existe o fue eliminada) o `unchanged` (la acción no le aplica: ya estaba así, o no está activa).
+ */
+export interface UsersBatchSkip { id: string, reason: 'last_admin' | 'not_found' | 'unchanged' }
+
+/** `POST /api/users/batch`: las cuentas que cambiaron y las que no, con su motivo. */
+export interface UsersBatchResult {
+  updated: string[]
+  skipped: UsersBatchSkip[]
+}
+
 export interface Breadcrumb {
   id: string | null
   name: string

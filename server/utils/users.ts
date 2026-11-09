@@ -1,7 +1,11 @@
 // Reglas de gestión de usuarios: nunca puede quedar el sistema sin un administrador activo (FR-022).
-import { sql } from 'drizzle-orm'
+import { and, eq, ne, sql } from 'drizzle-orm'
 import type { SQL } from 'drizzle-orm'
+import { LAST_ADMIN_MESSAGE as SHARED_LAST_ADMIN_MESSAGE } from '#shared/constants/messages'
 import { profiles } from '../db/schema'
+
+/** 409 del guard del último administrador; el texto vive en `shared/` porque el cliente también lo muestra. */
+export const LAST_ADMIN_MESSAGE = SHARED_LAST_ADMIN_MESSAGE
 
 /** Clave fija del advisory lock que serializa los cambios de rol/estado entre administradores. */
 export const ADMIN_LOCK_KEY = 7_311_001
@@ -32,4 +36,25 @@ export function lastAdminGuardSql(targetId: string, next: NextState): SQL {
   )`
 }
 
-export const LAST_ADMIN_MESSAGE = 'Debe existir al menos un administrador activo'
+/**
+ * `UPDATE` condicional de un perfil, para el `db.batch` que abre `adminLock()`: devuelve la fila si el cambio se aplicó
+ * y ninguna si el guard del último administrador lo rechazó (o si `only` no se cumple). Lo usan el cambio de una
+ * cuenta (`PATCH`/`DELETE /api/users/:id`) y el de varias (`POST /api/users/batch`): dentro del mismo lote, cada
+ * `UPDATE` ve los cambios de los anteriores.
+ */
+export function guardedProfileUpdate(id: string, changes: Partial<typeof profiles.$inferInsert>, next: NextState, only?: SQL) {
+  return useDb().update(profiles)
+    .set({ ...changes, updatedAt: new Date() })
+    .where(and(eq(profiles.userId, id), only, lastAdminGuardSql(id, next)))
+    .returning()
+}
+
+/** Eliminar una cuenta (FR-021): el perfil queda `removed` y anonimizado; nunca el último admin activo. */
+export function removeProfileUpdate(id: string) {
+  return guardedProfileUpdate(
+    id,
+    { status: 'removed', role: null, name: 'Usuario eliminado' },
+    { status: 'removed', role: null },
+    ne(profiles.status, 'removed'),
+  )
+}

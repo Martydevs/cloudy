@@ -62,6 +62,14 @@ describe('US6 · protección de rutas', () => {
     for (const path of ['/api/users', '/api/activity']) {
       expect((await fetch(`${E2E_URL}${path}`, { headers: { cookie } })).status).toBe(403)
     }
+    // Los cambios de varias cuentas a la vez también son solo de administradores (y se rechazan antes de validar).
+    const batch = (headers: Record<string, string>) => fetch(`${E2E_URL}/api/users/batch`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', ...headers },
+      body: JSON.stringify({ ids: ['nadie'], action: 'disable' }),
+    })
+    expect((await batch({ cookie })).status).toBe(403)
+    expect((await batch({})).status).toBe(401)
     await page.close()
   })
 

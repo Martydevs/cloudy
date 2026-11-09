@@ -1,5 +1,5 @@
 // Activar, desactivar, reactivar o cambiar el rol de un usuario (FR-021, FR-022).
-import { and, eq } from 'drizzle-orm'
+import { eq } from 'drizzle-orm'
 import type { Profile } from '#shared/types/api'
 import { userPatchInput } from '#shared/validation/users'
 import { profiles } from '../../db/schema'
@@ -18,7 +18,7 @@ export default defineEventHandler(async (event): Promise<Profile> => {
     throw createError({ statusCode: 422, statusMessage: 'Validation failed', data: { errors: { role: 'Elige un rol para activar la cuenta' } } })
   }
 
-  const changes: Partial<typeof profiles.$inferInsert> = { updatedAt: new Date() }
+  const changes: Partial<typeof profiles.$inferInsert> = {}
   if (input.status) changes.status = input.status
   if (input.role) changes.role = input.role
   if (activating) changes.approvedBy = me.userId
@@ -27,10 +27,7 @@ export default defineEventHandler(async (event): Promise<Profile> => {
   // después y solo si el cambio se aplicó: así nunca se registra un cambio que el guard rechazó.
   const [, rows] = await db.batch([
     adminLock(),
-    db.update(profiles)
-      .set(changes)
-      .where(and(eq(profiles.userId, id), lastAdminGuardSql(id, { status: input.status, role: input.role })))
-      .returning(),
+    guardedProfileUpdate(id, changes, { status: input.status, role: input.role }),
   ])
   const updated = rows[0]
   if (!updated) throw createError({ statusCode: 409, statusMessage: 'Conflict', message: LAST_ADMIN_MESSAGE })
