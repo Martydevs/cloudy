@@ -238,6 +238,16 @@ Never print or commit their values.
   several (selection or playlist) open `YoutubeDriveDialog` (checkboxes, all ticked) first. `startMany` queues them and they run **one at a time** (each file is
   buffered whole in the browser): the queue is driven by the `youtube-drive-imports` state itself (`pump`), not by module variables, so it can't leak between
   tests or stay stuck behind a hung import. Each import also has an `AbortController` (a module map, not state): API calls time out (`YOUTUBE_IMPORT_REQUEST_MS`), a download or upload with no progress for `YOUTUBE_IMPORT_STALL_MS` is aborted ("La conexión se quedó sin respuesta"), and the tray's **Cancelar** aborts a running import (or drops a queued one) so the queue keeps moving; the service job is always released. Progress lives in a "Guardar en el drive" section of `YoutubeDownloadTray` (the layout mounts the tray for downloads **or** imports).
+- Multi-select (Archivos, Usuarios): selection is a `string[]` of ids (`v-model:selected` on `FileGrid`/`FileList`; a local ref in
+  `usuarios.vue`) that is pruned to what is on screen and cleared when the folder, search, type filter or page changes. Checkboxes
+  are always visible inside a `size-11` label with an `aria-label` naming the item. The fixed bar is `ui/SelectionBar.vue` (count in
+  `role="status"`, "Limpiar", safe-area padding, sits above the YouTube tray); `FilesSelectionBar` and `UsersSelectionBar` only add
+  their actions, and the page gets `pb-40 sm:pb-24` while something is selected. Bulk endpoints never fail the whole request for one
+  item: `POST /api/items/trash` (editor; ≤ 100 ids; one `db.batch`; `{ trashed, skipped }`) reuses `trashFileOps`/`trashFolderOps`
+  from the single `DELETE`s, and `POST /api/users/batch` (admin; ≤ 20 ids; `disable` | `remove` | `role`) runs `adminLock()` plus one
+  `guardedProfileUpdate` per account in order, so the last-admin guard sees earlier changes of the same batch; it answers
+  `{ updated, skipped: [{ id, reason: 'last_admin' | 'not_found' | 'unchanged' }] }` and logs activity only for accounts that changed.
+  Confirmation, toast and self-warnings live in `useItemActions().trashMany` and `useUserAdmin().bulk`.
 - `useFetch`/`useApiFetch` errors are `NuxtError`s (`statusCode`, and the server's JSON body in `data`), not ofetch `FetchError`s:
   read `error.value.statusCode` / `error.value.data.data.code`. And `serverMessage(error, fallback, byStatus)` only uses
   `byStatus` for 4xx: name a 503 explicitly (e.g. `messages.youtube.service.waking`).
