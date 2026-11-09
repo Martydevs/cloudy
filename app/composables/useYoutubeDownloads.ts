@@ -2,9 +2,12 @@
 // se sondean cada 2,5 s y, al terminar, se intenta guardar el archivo. Una lista o selección de más de 10 videos se parte
 // en lotes y se crea **un lote a la vez** (el siguiente nace cuando el anterior termina). El estado vive en `useState`
 // (sobrevive a la navegación, no a la recarga) y lo muestra `YoutubeDownloadTray`, dueño del sondeo.
+// Motores: el servidor crea cada trabajo en `v2` y, si ese motor falla al crearlo, en `v1`. Si el fallo llega después,
+// dentro del trabajo (`engineRetryVideoIds`), aquí se repiten esos videos en `v1`: la misma fila si falló todo, o una
+// fila nueva del mismo grupo si el resto ya se entregó. Un trabajo de `v1` no se repite.
 import { FetchError } from 'ofetch'
-import type { YoutubeFormat, YoutubeJob } from '#shared/types/api'
-import { chunkVideoIds, YOUTUBE_JOB_POLL_MS } from '#shared/constants/youtube'
+import type { YoutubeEngine, YoutubeFormat, YoutubeJob } from '#shared/types/api'
+import { chunkVideoIds, engineRetryVideoIds, YOUTUBE_FALLBACK_ENGINE, YOUTUBE_JOB_POLL_MS } from '#shared/constants/youtube'
 
 export type DownloadStatus = 'creating' | 'queued' | 'running' | 'zipping' | 'done' | 'failed' | 'expired' | 'paused' | 'cancelled'
 
@@ -17,6 +20,8 @@ export interface DownloadRow {
   /** 1-based. */
   batch: number
   total: number
+  /** Motor obligado: `v1` cuando la fila repite lo que falló en `v2`; `null` = lo elige el servidor (`v2` y, si falla, `v1`). */
+  engine: YoutubeEngine | null
   status: DownloadStatus
   job: YoutubeJob | null
   /** Por qué falló o está en pausa (ya en español). */
@@ -34,6 +39,8 @@ interface DownloadGroup {
   batches: string[][]
   /** Índice del siguiente lote por crear. */
   next: number
+  /** Videos que fallaron por el motor en un lote ya cerrado: se repiten en `v1` antes de seguir con el siguiente lote. */
+  retries: { videoIds: string[], batch: number }[]
 }
 
 interface DownloadsState {
@@ -91,22 +98,26 @@ export function useYoutubeDownloads() {
 
   /** El grupo sigue vivo mientras le queden lotes por crear o alguno esté en curso o en pausa. */
   function groupBusy(group: DownloadGroup): boolean {
-    if (group.next < group.batches.length) return true
+    if (group.next < group.batches.length || group.retries.length > 0) return true
     return state.value.rows.some(row => row.groupId === group.id && (ACTIVE.has(row.status) || row.status === 'paused'))
   }
 
   async function startNext(groupId: number) {
     const group = findGroup(groupId)
-    if (!group || group.next >= group.batches.length) return
-    const index = group.next++
+    if (!group) return
+    // Primero lo pendiente de repetir en `v1`; después, el siguiente lote.
+    const again = group.retries.shift()
+    if (!again && group.next >= group.batches.length) return
+    const index = again ? again.batch - 1 : group.next++
     const row: DownloadRow = {
       id: ++nextId,
       groupId,
       label: group.label,
       format: group.format,
-      videoIds: group.batches[index]!,
+      videoIds: again?.videoIds ?? group.batches[index]!,
       batch: index + 1,
       total: group.batches.length,
+      engine: again ? YOUTUBE_FALLBACK_ENGINE : null,
       status: 'creating',
       job: null,
       message: null,
@@ -124,7 +135,8 @@ export function useYoutubeDownloads() {
     patch(rowId, { status: 'creating', message: null, rejected: [], job: null, saved: false })
 
     try {
-      const job = await api<YoutubeJob>('/api/youtube/jobs', { method: 'POST', body: { videoIds: row.videoIds, format: row.format } })
+      const body = { videoIds: row.videoIds, format: row.format, ...(row.engine ? { engine: row.engine } : {}) }
+      const job = await api<YoutubeJob>('/api/youtube/jobs', { method: 'POST', body })
       patch(rowId, { job, status: job.status })
     }
     catch (error) {
@@ -134,14 +146,32 @@ export function useYoutubeDownloads() {
         return
       }
       const videos = (error as FetchError).data?.data?.videos as { videoId: string, message: string }[] | undefined
+      // Los dos motores fallaron (502): se dice la causa. `serverMessage` solo toma el texto del servidor en un 4xx.
+      const message = serverMessage(error, engineFailureMessage(error) ?? m.downloads.startFailed)
       patch(rowId, {
         status: 'failed',
-        message: serverMessage(error, m.downloads.startFailed),
+        message,
         rejected: Array.isArray(videos) ? videos.map(v => ({ videoId: v.videoId, message: v.message })) : [],
       })
-      toast.error(row.total > 1 ? m.downloads.batchFailed(row.batch) : serverMessage(error, m.downloads.startFailed))
+      toast.error(row.total > 1 ? m.downloads.batchFailed(row.batch) : message)
       await startNext(row.groupId)
     }
+  }
+
+  /** Un trabajo se consulta y se cancela con el motor que lo creó. */
+  const jobQuery = (job: YoutubeJob) => ({ engine: job.engine })
+
+  /** Deja en la cola del grupo los videos que fallaron por el motor, para repetirlos en `v1`. */
+  function queueEngineRetry(row: DownloadRow, job: YoutubeJob) {
+    const videoIds = engineRetryVideoIds(job)
+    if (videoIds.length > 0) findGroup(row.groupId)?.retries.push({ videoIds, batch: row.batch })
+  }
+
+  /** Qué decir cuando un trabajo falla del todo: con un solo lote, la causa (si es una sola); con varios, qué lote fue. */
+  function failureMessage(row: DownloadRow, job: YoutubeJob): string {
+    if (row.total > 1) return m.downloads.batchFailed(row.batch)
+    const causes = new Set(job.items.flatMap(item => (item.error ? [item.error.message] : [])))
+    return causes.size === 1 ? [...causes][0]! : m.downloads.failed
   }
 
   /** Anota el lote en «Descargas». Si falla no pasa nada: el archivo ya se guardó. */
@@ -174,12 +204,25 @@ export function useYoutubeDownloads() {
     if (!row?.job) return
     const before = row.status
     try {
-      const job = await api<YoutubeJob>(`/api/youtube/jobs/${row.job.jobId}`)
+      const job = await api<YoutubeJob>(`/api/youtube/jobs/${row.job.jobId}`, { query: jobQuery(row.job) })
       patch(rowId, { job, status: job.status })
-      if (job.status === 'done' && before !== 'done') finish(rowId)
+      if (job.status === 'done' && before !== 'done') {
+        // Se entrega lo que salió bien; lo que falló por el motor se repite en `v1` en una fila nueva del grupo.
+        queueEngineRetry(row, job)
+        finish(rowId)
+      }
       else if (job.status === 'failed' && before !== 'failed') {
-        patch(rowId, { message: m.downloads.batchFailed(row.batch) })
-        toast.error(m.downloads.batchFailed(row.batch))
+        const again = engineRetryVideoIds(job)
+        if (again.length > 0 && job.items.every(item => again.includes(item.videoId))) {
+          // Todo falló por el motor: la misma fila se repite en `v1`, sin avisar de un fallo que aún no es definitivo.
+          patch(rowId, { engine: YOUTUBE_FALLBACK_ENGINE })
+          await create(rowId)
+          return
+        }
+        queueEngineRetry(row, job)
+        const message = failureMessage(row, job)
+        patch(rowId, { message })
+        toast.error(message)
         await startNext(row.groupId)
       }
     }
@@ -213,7 +256,7 @@ export function useYoutubeDownloads() {
     const key = `${format}:${ids.join(',')}`
     const batches = chunkVideoIds(ids)
     if (state.value.groups.some(group => group.key === key && groupBusy(group))) return batches.length
-    const group: DownloadGroup = { id: ++nextId, key, label, format, batches, next: 0 }
+    const group: DownloadGroup = { id: ++nextId, key, label, format, batches, next: 0, retries: [] }
     state.value.groups.push(group)
     void startNext(group.id)
     return batches.length
@@ -224,7 +267,7 @@ export function useYoutubeDownloads() {
     const row = findRow(rowId)
     if (!row?.job) return
     try {
-      const job = await api<YoutubeJob>(`/api/youtube/jobs/${row.job.jobId}`)
+      const job = await api<YoutubeJob>(`/api/youtube/jobs/${row.job.jobId}`, { query: jobQuery(row.job) })
       patch(rowId, { job, status: job.status })
       if (job.downloadUrl) {
         saveFile(job.downloadUrl, job.filename)
@@ -242,10 +285,13 @@ export function useYoutubeDownloads() {
     const row = findRow(rowId)
     if (!row) return
     const group = findGroup(row.groupId)
-    if (group) group.next = group.batches.length
-    const jobId = row.job?.jobId
+    if (group) {
+      group.next = group.batches.length
+      group.retries = []
+    }
+    const job = row.job
     patch(rowId, { status: 'cancelled', message: null })
-    if (jobId) await api(`/api/youtube/jobs/${jobId}`, { method: 'DELETE' }).catch(() => {})
+    if (job) await api(`/api/youtube/jobs/${job.jobId}`, { method: 'DELETE', query: jobQuery(job) }).catch(() => {})
     toast.info(m.downloads.cancelled)
   }
 
@@ -256,6 +302,8 @@ export function useYoutubeDownloads() {
     const group = findGroup(row.groupId)
     // Un lote que vuelve a empezar reabre su grupo para que sigan los lotes que faltaban.
     if (group && row.status === 'paused') group.next = Math.max(group.next, row.batch)
+    // Un lote en pausa sigue donde iba; uno fallido o expirado empieza de cero: `v2` y, si falla, `v1`.
+    if (row.status !== 'paused') patch(rowId, { engine: null })
     await create(rowId)
   }
 

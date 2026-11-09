@@ -1,9 +1,15 @@
 // Única frontera con el servicio de descargas `cloudy-api` (feature 005, research D1, D6, D8). Solo este módulo lee
 // `cloudyApiUrl`/`cloudyApiKey` y llama al servicio; los endpoints `/api/youtube/**` usan sus funciones. La clave
-// nunca sale en una respuesta ni en un registro: los fallos se registran solo con estado HTTP y código.
+// nunca sale en una respuesta ni en un registro: los fallos se registran solo con motor, estado HTTP y código.
+//
+// Para YouTube el servicio expone el mismo contrato con dos motores y no cambia de uno a otro por su cuenta: `/v2` (pytubefix, el
+// principal: esquiva el `bot_check` de YouTube en IPs de centros de datos) y `/v1` (yt-dlp, el respaldo). Sondear un
+// video y crear un trabajo prueban `v2` y, si falla por el motor o el servidor, repiten en `v1` (`withFallback`). Un
+// trabajo se consulta y se cancela solo con el motor que lo creó: su enlace firmado sale del mismo prefijo.
 import type { H3Event } from 'h3'
 import { createError, setResponseHeader } from 'h3'
 import type {
+  YoutubeEngine,
   YoutubeFormat,
   YoutubeJob,
   YoutubeJobItem,
@@ -11,7 +17,15 @@ import type {
   YoutubeServiceHealth,
   YoutubeVideoDetail,
 } from '#shared/types/api'
-import { isBlockReason, itemErrorMessage, YOUTUBE_SERVICE_MESSAGES as MSG } from '#shared/constants/youtube'
+import type { YoutubeEngineFailure } from '#shared/constants/youtube'
+import {
+  isBlockReason,
+  itemErrorMessage,
+  YOUTUBE_ENGINES_FAILED,
+  YOUTUBE_FALLBACK_ENGINE,
+  YOUTUBE_PRIMARY_ENGINE,
+  YOUTUBE_SERVICE_MESSAGES as MSG,
+} from '#shared/constants/youtube'
 import type { SongPresentationItemError } from '#shared/constants/songs'
 import { SONG_FONT_COLOR, SONG_SERVICE_MESSAGES } from '#shared/constants/songs'
 import { songError } from './songs'
@@ -36,6 +50,20 @@ interface ServiceDetail {
 }
 
 export interface RejectedVideo { videoId: string, code: string, message: string }
+
+/** Un intento fallido tal como se le cuenta al cliente: sin mensajes del servicio ni URLs. `status` 0 = sin respuesta. */
+export interface EngineAttempt { engine: YoutubeEngine, status: number, code: string | null }
+
+/**
+ * Respuesta de error del servicio ya leída (el cuerpo de un `Response` solo se lee una vez). `engine` es `null` en las
+ * llamadas que no tienen motor: las presentaciones de Canciones, que solo existen en `/v1`.
+ */
+interface Failure<E extends YoutubeEngine | null = YoutubeEngine | null> {
+  engine: E
+  status: number
+  code: string | null
+  detail: ServiceDetail | null
+}
 
 // ---------------------------------------------------------------- errores (research D6)
 
@@ -70,6 +98,16 @@ async function readDetail(res: Response): Promise<ServiceDetail | null> {
   }
 }
 
+async function failureOf<E extends YoutubeEngine | null>(res: Response, engine: E): Promise<Failure<E>> {
+  const detail = await readDetail(res)
+  return { engine, status: res.status, code: typeof detail?.code === 'string' ? detail.code : null, detail }
+}
+
+const attemptOf = ({ engine, status, code }: EngineAttempt): EngineAttempt => ({ engine, status, code })
+/** Para el registro: motor (si la llamada lo tiene), estado y código; nada más. */
+const describeAttempt = ({ engine, status, code }: Pick<Failure, 'engine' | 'status' | 'code'>) =>
+  `${engine ? `${engine} ` : ''}→ ${status}${code ? ` (${code})` : ''}`
+
 function rejectedVideos(value: unknown): RejectedVideo[] {
   if (!Array.isArray(value)) return []
   return value.flatMap((item) => {
@@ -81,12 +119,26 @@ function rejectedVideos(value: unknown): RejectedVideo[] {
   })
 }
 
+/**
+ * Los motores no pudieron: el error dice la causa para que la persona sepa qué pasó. `botCheck` si algún intento lo
+ * reportó; `waking` si el último no trajo código (respondió la plataforma por el servicio, o nadie): es el servicio
+ * dormido de siempre, un 503 que se puede reintentar; en otro caso, `engineFailed`.
+ */
+function enginesFailed(attempts: EngineAttempt[]) {
+  const cause: YoutubeEngineFailure = attempts.some(attempt => attempt.code === 'bot_check')
+    ? 'botCheck'
+    : attempts.at(-1)!.code ? 'engineFailed' : 'waking'
+  const data = { code: YOUTUBE_ENGINES_FAILED, cause, attempts }
+  if (cause === 'waking') {
+    return createError({ statusCode: 503, statusMessage: 'Service Unavailable', message: MSG.waking, data: { state: 'waking', ...data } })
+  }
+  return createError({ statusCode: 502, statusMessage: 'Bad Gateway', message: MSG[cause], data })
+}
+
 /** Traduce una respuesta de error del servicio a un `createError` en español. Siempre lanza. */
-async function fail(res: Response, call: Call, event?: H3Event): Promise<never> {
-  const status = res.status
-  const detail = await readDetail(res)
-  const code = typeof detail?.code === 'string' ? detail.code : null
-  console.warn(`[cloudy-api] ${call} → ${status}${code ? ` (${code})` : ''}`)
+function raise(failure: Failure, call: Call, event?: H3Event): never {
+  const { status, code, detail } = failure
+  console.warn(`[cloudy-api] ${call} ${describeAttempt(failure)}`)
 
   // Presentaciones de Canciones (feature 006, research D9): errores con `data.code` y textos del servicio de presentaciones.
   if (call === 'pptx' || call === 'pptxBatch') {
@@ -123,8 +175,15 @@ async function fail(res: Response, call: Call, event?: H3Event): Promise<never> 
   if (status === 404) {
     throw createError({ statusCode: 404, statusMessage: 'Not Found', message: MSG.videoNotFound })
   }
+  // El único motor que se pidió falló con un código suyo: se dice la causa en vez de «está despertando».
+  if (status >= 500 && code && call === 'create' && failure.engine) throw enginesFailed([{ engine: failure.engine, status, code }])
   // 502/503/504 (Render dormido o caído) y cualquier otro fallo del servicio: se ofrece reintentar.
   throw waking()
+}
+
+/** Lo mismo para una llamada sin motor (las presentaciones de Canciones): lee la respuesta y lanza. */
+async function fail(res: Response, call: Call, event?: H3Event): Promise<never> {
+  return raise(await failureOf(res, null), call, event)
 }
 
 interface RequestOptions {
@@ -155,6 +214,48 @@ async function request(path: string, call: Call, { method = 'GET', body, timeout
     console.warn(`[cloudy-api] ${call} → network (${codeOf(error)})`)
     throw waking()
   }
+}
+
+// ---------------------------------------------------------------- v2 → v1
+
+/**
+ * Cuándo vale repetir en `v1` lo que falló en `v2`: un 5xx (`bot_check`, `download_failed`, `ffmpeg_missing`,
+ * `metadata_unavailable`, el 502 del proxy…) o un 404 sin código (el servicio desplegado no tiene `/v2`). Un 401/403,
+ * un 429 (la cola es compartida), un 422 o un 404 con código darían lo mismo en `v1`. La red caída o el plazo vencido
+ * tampoco se repiten (`request` ya lanzó): es el mismo host.
+ */
+const shouldFallback = ({ status, code }: EngineAttempt) => status >= 500 || (status === 404 && !code)
+
+/**
+ * Llama a `v2` y, si falla por el motor o el servidor, repite la misma llamada en `v1`. `handle` recibe la respuesta
+ * correcta y el motor que la dio. Si `v1` tampoco puede, el error dice la causa (`enginesFailed`); un rechazo de `v1`
+ * que no es del motor (422, 429…) sigue la tabla de siempre. `v1` nunca vuelve a `v2`: no hay ciclos.
+ */
+async function withFallback<T>(
+  call: Call,
+  run: (engine: YoutubeEngine) => Promise<Response>,
+  handle: (res: Response, engine: YoutubeEngine) => Promise<T>,
+  event?: H3Event,
+): Promise<T> {
+  const first = await run(YOUTUBE_PRIMARY_ENGINE)
+  if (first.ok) return handle(first, YOUTUBE_PRIMARY_ENGINE)
+  const primary = await failureOf(first, YOUTUBE_PRIMARY_ENGINE)
+  if (!shouldFallback(primary)) return raise(primary, call, event)
+  console.warn(`[cloudy-api] ${call} ${describeAttempt(primary)}; fallback ${YOUTUBE_FALLBACK_ENGINE}`)
+
+  let second: Response
+  try {
+    second = await run(YOUTUBE_FALLBACK_ENGINE)
+  }
+  catch {
+    // `request` ya registró que `v1` no respondió (red o plazo).
+    throw enginesFailed([attemptOf(primary), { engine: YOUTUBE_FALLBACK_ENGINE, status: 0, code: null }])
+  }
+  if (second.ok) return handle(second, YOUTUBE_FALLBACK_ENGINE)
+  const fallback = await failureOf(second, YOUTUBE_FALLBACK_ENGINE)
+  if (fallback.status < 500) return raise(fallback, call, event)
+  console.warn(`[cloudy-api] ${call} ${describeAttempt(fallback)}`)
+  throw enginesFailed([attemptOf(primary), attemptOf(fallback)])
 }
 
 // ---------------------------------------------------------------- mapeo a los DTOs
@@ -195,10 +296,11 @@ function toJobItem(raw: Record<string, unknown>): YoutubeJobItem {
   }
 }
 
-function toJob(raw: Record<string, unknown>): YoutubeJob {
+function toJob(raw: Record<string, unknown>, engine: YoutubeEngine): YoutubeJob {
   const expires = num(raw.expires_at)
   return {
     jobId: str(raw.job_id) ?? '',
+    engine,
     status: JOB_STATUSES.includes(raw.status as YoutubeJobStatus) ? raw.status as YoutubeJobStatus : 'queued',
     format: raw.format as YoutubeFormat,
     progress: percent(raw.progress),
@@ -211,9 +313,10 @@ function toJob(raw: Record<string, unknown>): YoutubeJob {
 }
 
 /** Trabajo recién creado, con un elemento en cola por video (contracts/api.md § POST /jobs). */
-export function queuedJob(jobId: string, videoIds: string[], format: YoutubeFormat): YoutubeJob {
+export function queuedJob(jobId: string, videoIds: string[], format: YoutubeFormat, engine: YoutubeEngine): YoutubeJob {
   return {
     jobId,
+    engine,
     status: 'queued',
     format,
     progress: 0,
@@ -227,35 +330,53 @@ export function queuedJob(jobId: string, videoIds: string[], format: YoutubeForm
 
 // ---------------------------------------------------------------- llamadas
 
-/** Datos del video y si se puede descargar (`GET /v1/videos/{id}`). */
+/** Datos del video y si se puede descargar (`GET /v2/videos/{id}`; si el motor falla, `/v1`). */
 export async function probeVideo(videoId: string): Promise<YoutubeVideoDetail> {
-  const res = await request(`/v1/videos/${encodeURIComponent(videoId)}`, 'video', { timeoutMs: CLOUDY_API_TIMEOUTS.probe })
-  if (!res.ok) return fail(res, 'video')
-  return toVideoDetail(await res.json() as Record<string, unknown>, videoId)
+  return withFallback(
+    'video',
+    engine => request(`/${engine}/videos/${encodeURIComponent(videoId)}`, 'video', { timeoutMs: CLOUDY_API_TIMEOUTS.probe }),
+    async res => toVideoDetail(await res.json() as Record<string, unknown>, videoId),
+  )
 }
 
-/** Crea un trabajo de hasta `YOUTUBE_MAX_BATCH` videos (`POST /v1/jobs`). */
-export async function createJob(videoIds: string[], format: YoutubeFormat, event?: H3Event): Promise<{ jobId: string, status: YoutubeJobStatus }> {
-  const res = await request('/v1/jobs', 'create', { method: 'POST', body: { video_ids: videoIds, format }, timeoutMs: CLOUDY_API_TIMEOUTS.create })
-  if (!res.ok) return fail(res, 'create', event)
-  const raw = await res.json() as Record<string, unknown>
-  const jobId = str(raw.job_id)
-  if (!jobId) throw waking()
-  return { jobId, status: JOB_STATUSES.includes(raw.status as YoutubeJobStatus) ? raw.status as YoutubeJobStatus : 'queued' }
+/**
+ * Crea un trabajo de hasta `YOUTUBE_MAX_BATCH` videos (`POST /v2/jobs`; si el motor falla, `/v1`). Con `engine` usa solo
+ * ese motor: así el navegador repite en `v1` los videos que fallaron dentro de un trabajo de `v2`. Devuelve el motor
+ * que lo creó, con el que después se consulta y se cancela.
+ */
+export async function createJob(
+  videoIds: string[],
+  format: YoutubeFormat,
+  event?: H3Event,
+  engine?: YoutubeEngine,
+): Promise<{ jobId: string, status: YoutubeJobStatus, engine: YoutubeEngine }> {
+  const run = (prefix: YoutubeEngine) =>
+    request(`/${prefix}/jobs`, 'create', { method: 'POST', body: { video_ids: videoIds, format }, timeoutMs: CLOUDY_API_TIMEOUTS.create })
+  const handle = async (res: Response, prefix: YoutubeEngine) => {
+    const raw = await res.json() as Record<string, unknown>
+    const jobId = str(raw.job_id)
+    if (!jobId) throw waking()
+    const status: YoutubeJobStatus = JOB_STATUSES.includes(raw.status as YoutubeJobStatus) ? raw.status as YoutubeJobStatus : 'queued'
+    return { jobId, status, engine: prefix }
+  }
+  if (!engine) return withFallback('create', run, handle, event)
+  const res = await run(engine)
+  if (!res.ok) return raise(await failureOf(res, engine), 'create', event)
+  return handle(res, engine)
 }
 
-/** Avance del trabajo; con `done` trae el enlace firmado nuevo (`GET /v1/jobs/{id}`). */
-export async function getJob(jobId: string, event?: H3Event): Promise<YoutubeJob> {
-  const res = await request(`/v1/jobs/${encodeURIComponent(jobId)}`, 'job', { timeoutMs: CLOUDY_API_TIMEOUTS.job })
-  if (!res.ok) return fail(res, 'job', event)
-  return toJob(await res.json() as Record<string, unknown>)
+/** Avance del trabajo; con `done` trae el enlace firmado nuevo (`GET /{engine}/jobs/{id}`). Sin respaldo: 404 = expiró. */
+export async function getJob(jobId: string, engine: YoutubeEngine, event?: H3Event): Promise<YoutubeJob> {
+  const res = await request(`/${engine}/jobs/${encodeURIComponent(jobId)}`, 'job', { timeoutMs: CLOUDY_API_TIMEOUTS.job })
+  if (!res.ok) return raise(await failureOf(res, engine), 'job', event)
+  return toJob(await res.json() as Record<string, unknown>, engine)
 }
 
 /** Cancela y olvida el trabajo; si el servicio ya no lo conoce, el resultado buscado ya se cumple. */
-export async function cancelJob(jobId: string, event?: H3Event): Promise<void> {
-  const res = await request(`/v1/jobs/${encodeURIComponent(jobId)}`, 'cancel', { method: 'DELETE', timeoutMs: CLOUDY_API_TIMEOUTS.job })
+export async function cancelJob(jobId: string, engine: YoutubeEngine, event?: H3Event): Promise<void> {
+  const res = await request(`/${engine}/jobs/${encodeURIComponent(jobId)}`, 'cancel', { method: 'DELETE', timeoutMs: CLOUDY_API_TIMEOUTS.job })
   if (res.ok || res.status === 404 || res.status === 410) return
-  return fail(res, 'cancel', event)
+  return raise(await failureOf(res, engine), 'cancel', event)
 }
 
 /**

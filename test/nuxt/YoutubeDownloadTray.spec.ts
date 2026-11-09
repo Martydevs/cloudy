@@ -17,17 +17,17 @@ const item = (changes: Partial<YoutubeJobItem> = {}): YoutubeJobItem => ({
   videoId: 'okShortVid1', title: 'Alabanza', status: 'done', progress: 100, error: null, actualHeight: null, ...changes,
 })
 const job = (changes: Partial<YoutubeJob> = {}): YoutubeJob => ({
-  jobId: JOB, status: 'running', format: 'mp3', progress: 30, items: [item({ status: 'running', progress: 30 })],
+  jobId: JOB, engine: 'v2', status: 'running', format: 'mp3', progress: 30, items: [item({ status: 'running', progress: 30 })],
   downloadUrl: null, filename: null, sizeBytes: null, expiresAt: null, ...changes,
 })
 let id = 100
 const row = (changes: Partial<DownloadRow> = {}): DownloadRow => ({
-  id: ++id, groupId: 1, label: 'Alabanza', format: 'mp3', videoIds: ['okShortVid1'], batch: 1, total: 1, status: 'running',
+  id: ++id, groupId: 1, label: 'Alabanza', format: 'mp3', videoIds: ['okShortVid1'], batch: 1, total: 1, engine: null, status: 'running',
   job: job(), message: null, rejected: [], saved: false, ...changes,
 })
 
 function setRows(rows: DownloadRow[]) {
-  useState('youtube-downloads').value = { rows, groups: [{ id: 1, key: 'k', label: 'Alabanza', format: 'mp3', batches: [['okShortVid1']], next: 1 }] }
+  useState('youtube-downloads').value = { rows, groups: [{ id: 1, key: 'k', label: 'Alabanza', format: 'mp3', batches: [['okShortVid1']], next: 1, retries: [] }] }
 }
 
 beforeEach(() => {
@@ -99,6 +99,19 @@ describe('YoutubeDownloadTray', () => {
     expect(wrapper.text()).toContain('Este video ya no está disponible en YouTube')
     expect(wrapper.text()).toContain('Falló')
     expect(wrapper.text()).toContain('En cola')
+  })
+
+  it('una descarga de un video que falló dice la causa una sola vez (no en la fila y otra vez en el video)', async () => {
+    const cause = 'YouTube bloqueó la descarga con su verificación anti-robots. Intenta de nuevo en unos minutos.'
+    const items = [item({ status: 'failed', progress: 0, error: { code: 'bot_check', message: cause } })]
+    setRows([row({ status: 'failed', message: cause, job: job({ engine: 'v1', status: 'failed', items }) })])
+    const wrapper = await mountSuspended(YoutubeDownloadTray)
+    await flush()
+    expect(wrapper.text()).toContain('No se pudo descargar')
+    expect(wrapper.text().split(cause)).toHaveLength(2)
+    // El motor que lo intentó no se muestra: es un detalle interno.
+    expect(wrapper.text()).not.toMatch(/\bv[12]\b/)
+    expect(button(wrapper, 'Preparar de nuevo')).toBeDefined()
   })
 
   it('en pausa: el motivo y Reintentar; rechazado: cada video con su motivo y sin Preparar de nuevo', async () => {

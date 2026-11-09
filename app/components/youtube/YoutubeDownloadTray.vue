@@ -145,7 +145,8 @@ watch(() => drive.list.value.map(item => ({ videoId: item.videoId, title: item.t
               <span class="min-w-0 flex-1 truncate" :title="item.label">{{ item.label }}</span>
               <span class="shrink-0 text-base-content/70">{{ item.delivered ?? ITEM_TEXT[item.status] }}</span>
             </span>
-            <span v-if="item.error" class="pl-6 text-error">{{ item.error.message }}</span>
+            <!-- Si la fila ya dice esa misma causa (un solo lote que falló entero), no se repite en cada video. -->
+            <span v-if="item.error && item.error.message !== row.message" class="pl-6 text-error">{{ item.error.message }}</span>
           </li>
         </ul>
 

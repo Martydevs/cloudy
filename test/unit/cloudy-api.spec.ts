@@ -5,7 +5,7 @@ import { createEvent } from 'h3'
 import { IncomingMessage, ServerResponse } from 'node:http'
 import { Socket } from 'node:net'
 import { cancelJob, CLOUDY_API_TIMEOUTS, createJob, createLyricsPptx, createLyricsPptxBatch, getJob, pingService, probeVideo, queuedJob } from '../../server/utils/cloudy-api'
-import { ITEM_ERROR_MESSAGES } from '../../shared/constants/youtube'
+import { ITEM_ERROR_MESSAGES, YOUTUBE_SERVICE_MESSAGES } from '../../shared/constants/youtube'
 import { readZipEntry } from '../../server/utils/zip'
 import { expectStatus } from './helpers/nitro'
 import { makeZip } from './helpers/zip'
@@ -49,7 +49,7 @@ function expectNoKeyLeak(error?: unknown) {
 }
 
 describe('llamadas y mapeo', () => {
-  it('probeVideo manda X-API-Key a GET /v1/videos/{id} y mapea a camelCase', async () => {
+  it('probeVideo manda X-API-Key a GET /v2/videos/{id} (el motor principal) y mapea a camelCase', async () => {
     fetchMock.mockResolvedValue(json(200, {
       video_id: 'okShortVid1',
       title: 'Alabanza',
@@ -71,7 +71,8 @@ describe('llamadas y mapeo', () => {
       reason: null,
     })
     const [url, init] = lastCall()
-    expect(url).toBe(`${URL_BASE}/v1/videos/okShortVid1`)
+    expect(url).toBe(`${URL_BASE}/v2/videos/okShortVid1`)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
     expect(headersOf(init)['X-API-Key']).toBe(KEY)
   })
 
@@ -82,11 +83,11 @@ describe('llamadas y mapeo', () => {
     expect(await probeVideo('xxxxxxxxxxx')).toMatchObject({ reason: 'unavailable', title: 'xxxxxxxxxxx', availableHeights: [] })
   })
 
-  it('createJob manda POST /v1/jobs con video_ids y format', async () => {
+  it('createJob manda POST /v2/jobs con video_ids y format y dice qué motor lo creó', async () => {
     fetchMock.mockResolvedValue(json(202, { job_id: JOB, status: 'queued' }))
-    expect(await createJob(['okShortVid1'], 'mp3')).toEqual({ jobId: JOB, status: 'queued' })
+    expect(await createJob(['okShortVid1'], 'mp3')).toEqual({ jobId: JOB, status: 'queued', engine: 'v2' })
     const [url, init] = lastCall()
-    expect(url).toBe(`${URL_BASE}/v1/jobs`)
+    expect(url).toBe(`${URL_BASE}/v2/jobs`)
     expect(init?.method).toBe('POST')
     expect(JSON.parse(String(init?.body))).toEqual({ video_ids: ['okShortVid1'], format: 'mp3' })
     expect(headersOf(init)['X-API-Key']).toBe(KEY)
@@ -113,9 +114,10 @@ describe('llamadas y mapeo', () => {
       size_bytes: 1234,
       expires_at: 1_800_000_000,
     }))
-    const job = await getJob(JOB)
+    const job = await getJob(JOB, 'v2')
     expect(job).toMatchObject({
       jobId: JOB,
+      engine: 'v2',
       status: 'done',
       format: 'mp4_1080',
       progress: 100,
@@ -129,22 +131,22 @@ describe('llamadas y mapeo', () => {
     expect(job.items[1]!.error).toEqual({ code: 'unavailable', message: ITEM_ERROR_MESSAGES.unavailable })
     expect(job.items[1]!.progress).toBe(33)
     expect(job.items[2]).toMatchObject({ status: 'queued', progress: 0, error: { code: 'internal' } })
-    expect(lastCall()[0]).toBe(`${URL_BASE}/v1/jobs/${JOB}`)
+    expect(lastCall()[0]).toBe(`${URL_BASE}/v2/jobs/${JOB}`)
   })
 
   it('getJob en curso: sin enlace ni vencimiento', async () => {
     fetchMock.mockResolvedValue(json(200, { job_id: JOB, status: 'running', format: 'mp3', progress: 0.5, items: [] }))
-    expect(await getJob(JOB)).toMatchObject({ status: 'running', progress: 50, downloadUrl: null, expiresAt: null, sizeBytes: null })
+    expect(await getJob(JOB, 'v2')).toMatchObject({ status: 'running', progress: 50, downloadUrl: null, expiresAt: null, sizeBytes: null })
   })
 
   it('cancelJob llama DELETE y trata 404 como éxito', async () => {
     fetchMock.mockResolvedValueOnce(new Response(null, { status: 204 }))
-    await expect(cancelJob(JOB)).resolves.toBeUndefined()
+    await expect(cancelJob(JOB, 'v2')).resolves.toBeUndefined()
     expect(lastCall()[1]?.method).toBe('DELETE')
     fetchMock.mockResolvedValueOnce(json(404, { detail: { code: 'not_found', message: 'Job not found or expired' } }))
-    await expect(cancelJob(JOB)).resolves.toBeUndefined()
+    await expect(cancelJob(JOB, 'v2')).resolves.toBeUndefined()
     fetchMock.mockResolvedValueOnce(json(503, {}))
-    await expectStatus(cancelJob(JOB), 503)
+    await expectStatus(cancelJob(JOB, 'v2'), 503)
   })
 
   it('pingService llama /healthz sin X-API-Key: up, down y waking', async () => {
@@ -168,20 +170,20 @@ describe('llamadas y mapeo', () => {
     fetchMock.mockResolvedValueOnce(json(200, { video_id: 5, downloadable: true, available_heights: 'x', duration: 'larga' }))
     expect(await probeVideo('okShortVid1')).toMatchObject({ videoId: 'okShortVid1', title: 'okShortVid1', availableHeights: [], durationSeconds: null, reason: null })
     fetchMock.mockResolvedValueOnce(json(202, { job_id: JOB, status: 'rarísimo' }))
-    expect(await createJob(['okShortVid1'], 'mp3')).toEqual({ jobId: JOB, status: 'queued' })
+    expect(await createJob(['okShortVid1'], 'mp3')).toEqual({ jobId: JOB, status: 'queued', engine: 'v2' })
     fetchMock.mockResolvedValueOnce(json(200, { status: 'rarísimo', items: 'x', progress: 7 }))
-    expect(await getJob(JOB)).toMatchObject({ jobId: '', status: 'queued', items: [], progress: 100 })
+    expect(await getJob(JOB, 'v2')).toMatchObject({ jobId: '', status: 'queued', items: [], progress: 100 })
     fetchMock.mockResolvedValueOnce(json(200, { job_id: JOB, status: 'running', items: [null, { video_id: 'okShortVid1', error: { code: 'private' } }] }))
-    const job = await getJob(JOB)
+    const job = await getJob(JOB, 'v2')
     expect(job.items[0]).toMatchObject({ videoId: '', status: 'queued', error: null })
     expect(job.items[1]!.error).toEqual({ code: 'private', message: ITEM_ERROR_MESSAGES.private })
     fetchMock.mockResolvedValueOnce(new Response('{}', { status: 410 }))
-    await expect(cancelJob(JOB)).resolves.toBeUndefined()
+    await expect(cancelJob(JOB, 'v2')).resolves.toBeUndefined()
   })
 
   it('queuedJob arma el trabajo recién creado', () => {
-    expect(queuedJob(JOB, ['okShortVid1'], 'mp3')).toEqual({
-      jobId: JOB, status: 'queued', format: 'mp3', progress: 0,
+    expect(queuedJob(JOB, ['okShortVid1'], 'mp3', 'v1')).toEqual({
+      jobId: JOB, engine: 'v1', status: 'queued', format: 'mp3', progress: 0,
       items: [{ videoId: 'okShortVid1', title: null, status: 'queued', progress: 0, error: null, actualHeight: null }],
       downloadUrl: null, filename: null, sizeBytes: null, expiresAt: null,
     })
@@ -193,15 +195,31 @@ describe('tabla de errores (research D6)', () => {
     ['red', () => Promise.reject(new TypeError('fetch failed'))],
     ['plazo (AbortError)', () => Promise.reject(Object.assign(new Error('aborted'), { name: 'AbortError' }))],
     ['plazo (TimeoutError)', () => Promise.reject(Object.assign(new Error('timeout'), { name: 'TimeoutError' }))],
-    ['502', () => Promise.resolve(new Response('Bad Gateway', { status: 502 }))],
-    ['503', () => Promise.resolve(json(503, {}))],
-    ['504', () => Promise.resolve(new Response('', { status: 504 }))],
-    ['500', () => Promise.resolve(json(500, { detail: 'boom' }))],
-  ])('%s → 503 waking', async (_, response) => {
+  ])('%s → 503 waking sin probar el otro motor (es el mismo host)', async (_, response) => {
     fetchMock.mockImplementation(response as () => Promise<Response>)
     const error = await expectStatus(probeVideo('okShortVid1'), 503)
     expect(error.data).toEqual({ state: 'waking' })
     expect(error.message).toMatch(/despertando/)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expectNoKeyLeak(error)
+  })
+
+  it.each([
+    ['502', () => Promise.resolve(new Response('Bad Gateway', { status: 502 }))],
+    ['503', () => Promise.resolve(json(503, {}))],
+    ['504', () => Promise.resolve(new Response('', { status: 504 }))],
+    ['500', () => Promise.resolve(json(500, { detail: 'boom' }))],
+  ])('%s sin código en los dos motores (servicio dormido o caído) → 503 waking', async (status, response) => {
+    fetchMock.mockImplementation(response as () => Promise<Response>)
+    const error = await expectStatus(probeVideo('okShortVid1'), 503)
+    expect(error.data).toEqual({
+      state: 'waking',
+      code: 'engines_failed',
+      cause: 'waking',
+      attempts: [{ engine: 'v2', status: Number(status), code: null }, { engine: 'v1', status: Number(status), code: null }],
+    })
+    expect(error.message).toMatch(/despertando/)
+    expect(fetchMock.mock.calls.map(call => call[0])).toEqual([`${URL_BASE}/v2/videos/okShortVid1`, `${URL_BASE}/v1/videos/okShortVid1`])
     expectNoKeyLeak(error)
   })
 
@@ -211,6 +229,7 @@ describe('tabla de errores (research D6)', () => {
     expect(error.data).toBeUndefined()
     expect(error.message).toMatch(/administrador/)
     expect(warn.mock.calls.flat().join(' ')).toContain('401')
+    expect(fetchMock).toHaveBeenCalledTimes(1)
     expectNoKeyLeak(error)
   })
 
@@ -220,21 +239,27 @@ describe('tabla de errores (research D6)', () => {
     const error = await expectStatus(createJob(['okShortVid1'], 'mp3', ev), 429)
     expect(ev.node.res.getHeader('Retry-After')).toBe(30)
     expect(error.message).toMatch(/ocupado/)
+    // La cola es compartida: `v1` respondería lo mismo.
+    expect(fetchMock).toHaveBeenCalledTimes(1)
   })
 
   it.each([404, 410])('%i de un trabajo → 404 expired', async (status) => {
     fetchMock.mockResolvedValue(json(status, { detail: { code: 'expired', message: 'x' } }))
-    const error = await expectStatus(getJob(JOB), 404)
+    const error = await expectStatus(getJob(JOB, 'v2'), 404)
     expect(error.data).toEqual({ code: 'expired' })
   })
 
   it('404 o 422 con código de un video → 404 con el código', async () => {
-    fetchMock.mockResolvedValueOnce(json(404, {}))
+    // Un 404 sin código puede ser que falte la ruta `/v2`: se pregunta a `v1`, que confirma que el video no existe.
+    fetchMock.mockResolvedValueOnce(json(404, {})).mockResolvedValueOnce(json(404, {}))
     expect((await expectStatus(probeVideo('okShortVid1'), 404)).data).toEqual({ code: 'unavailable' })
+    expect(fetchMock).toHaveBeenCalledTimes(2)
     fetchMock.mockResolvedValueOnce(json(422, { detail: { code: 'private', message: 'Private video. Sign in' } }))
     const error = await expectStatus(probeVideo('privateVid1'), 404)
     expect(error.data).toEqual({ code: 'private' })
     expect(error.message).toBe('No encontramos ese video. Revisa el enlace.')
+    // Un video privado lo es en los dos motores: no se repite.
+    expect(fetchMock).toHaveBeenCalledTimes(3)
   })
 
   it('422 videos_rejected → 422 con data.videos en español', async () => {
@@ -272,13 +297,180 @@ describe('tabla de errores (research D6)', () => {
   })
 })
 
+describe('v2 principal, v1 de respaldo', () => {
+  const botCheck = () => json(502, { detail: { code: 'bot_check', message: 'Sign in to confirm you\'re not a bot' } })
+  const created = () => json(202, { job_id: JOB, status: 'queued' })
+  const urls = () => fetchMock.mock.calls.map(call => call[0])
+  const logs = () => warn.mock.calls.map(call => call.join(' '))
+  const create = (engine?: 'v1' | 'v2') => createJob(['okShortVid1'], 'mp3', undefined, engine)
+  type EnginesData = { code: string, cause: string, state?: string, attempts: { engine: string, status: number, code: string | null }[] }
+
+  it.each([
+    ['500 download_failed', json(500, { detail: { code: 'download_failed', message: 'yt-dlp exited 1' } })],
+    ['502 bot_check', botCheck()],
+    ['502 del proxy, sin cuerpo JSON', new Response('Bad Gateway', { status: 502 })],
+    ['503 ffmpeg_missing', json(503, { detail: { code: 'ffmpeg_missing', message: 'ffmpeg not found' } })],
+    ['504 metadata_unavailable', json(504, { detail: { code: 'metadata_unavailable', message: 'timed out' } })],
+    ['404 sin código (el servicio no tiene /v2)', json(404, { detail: 'Not Found' })],
+  ])('createJob: %s en v2 → repite la misma petición en v1 y dice que lo creó v1', async (_, response) => {
+    fetchMock.mockResolvedValueOnce(response).mockResolvedValueOnce(created())
+    expect(await createJob(['okShortVid1', 'lowResVid01'], 'mp4_720')).toEqual({ jobId: JOB, status: 'queued', engine: 'v1' })
+    expect(urls()).toEqual([`${URL_BASE}/v2/jobs`, `${URL_BASE}/v1/jobs`])
+    for (const [, init] of fetchMock.mock.calls) {
+      expect(init?.method).toBe('POST')
+      expect(JSON.parse(String(init?.body))).toEqual({ video_ids: ['okShortVid1', 'lowResVid01'], format: 'mp4_720' })
+      expect(headersOf(init)['X-API-Key']).toBe(KEY)
+    }
+    expect(logs().some(line => /^\[cloudy-api\] create v2 → \d{3}( \(\w+\))?; fallback v1$/.test(line))).toBe(true)
+    expectNoKeyLeak()
+  })
+
+  it('probeVideo: bot_check en v2 → la ficha sale de v1', async () => {
+    fetchMock.mockResolvedValueOnce(botCheck()).mockResolvedValueOnce(json(200, { video_id: 'okShortVid1', title: 'Alabanza', downloadable: true }))
+    expect(await probeVideo('okShortVid1')).toMatchObject({ videoId: 'okShortVid1', title: 'Alabanza', downloadable: true })
+    expect(urls()).toEqual([`${URL_BASE}/v2/videos/okShortVid1`, `${URL_BASE}/v1/videos/okShortVid1`])
+    expect(logs()).toContain('[cloudy-api] video v2 → 502 (bot_check); fallback v1')
+  })
+
+  it.each([
+    ['401', json(401, { detail: { code: 'unauthorized', message: 'x' } }), 502],
+    ['403', json(403, { detail: { code: 'forbidden', message: 'x' } }), 502],
+    ['429 queue_full', json(429, { detail: { code: 'queue_full', message: 'x' } }), 429],
+    ['422 videos_rejected', json(422, { detail: { code: 'videos_rejected', message: 'x', videos: [] } }), 422],
+    ['422 batch_too_large', json(422, { detail: { code: 'batch_too_large', message: 'x' } }), 422],
+    ['422 de validación', json(422, { detail: [{ loc: ['body'], msg: 'bad' }] }), 422],
+    ['404 con código', json(404, { detail: { code: 'not_found', message: 'x' } }), 404],
+  ])('%s en v2 no se repite en v1: daría la misma respuesta', async (_, response, status) => {
+    fetchMock.mockResolvedValue(response)
+    await expectStatus(create(), status)
+    expect(urls()).toEqual([`${URL_BASE}/v2/jobs`])
+  })
+
+  it('la red caída o el plazo vencido en v2 no se repiten en v1', async () => {
+    fetchMock.mockRejectedValue(Object.assign(new Error('timeout'), { name: 'TimeoutError' }))
+    const error = await expectStatus(create(), 503)
+    expect(error.data).toEqual({ state: 'waking' })
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it.each([
+    ['v2 bot_check y v1 bot_check', botCheck, botCheck, [{ engine: 'v2', status: 502, code: 'bot_check' }, { engine: 'v1', status: 502, code: 'bot_check' }]],
+    ['v2 bot_check y v1 502 sin código', botCheck, () => new Response('Bad Gateway', { status: 502 }), [{ engine: 'v2', status: 502, code: 'bot_check' }, { engine: 'v1', status: 502, code: null }]],
+    ['v2 502 sin código y v1 bot_check', () => new Response('', { status: 502 }), botCheck, [{ engine: 'v2', status: 502, code: null }, { engine: 'v1', status: 502, code: 'bot_check' }]],
+  ])('los dos fallan, %s → 502 engines_failed con causa botCheck', async (_, first, second, attempts) => {
+    fetchMock.mockResolvedValueOnce(first()).mockResolvedValueOnce(second())
+    const error = await expectStatus(create(), 502)
+    expect(error.data).toEqual({ code: 'engines_failed', cause: 'botCheck', attempts })
+    expect(error.message).toBe(YOUTUBE_SERVICE_MESSAGES.botCheck)
+    // Ni el mensaje del servicio ni su URL salen en el error.
+    expect(JSON.stringify(error)).not.toMatch(/Sign in|cloudy-api\.test/)
+    expectNoKeyLeak(error)
+  })
+
+  it('los dos fallan con otros códigos → 502 engines_failed con causa engineFailed', async () => {
+    fetchMock
+      .mockResolvedValueOnce(json(500, { detail: { code: 'download_failed', message: 'pytubefix: HTTP Error 403' } }))
+      .mockResolvedValueOnce(json(500, { detail: { code: 'internal', message: 'Traceback (most recent call last)' } }))
+    const error = await expectStatus(create(), 502)
+    expect(error.data).toEqual({
+      code: 'engines_failed',
+      cause: 'engineFailed',
+      attempts: [{ engine: 'v2', status: 500, code: 'download_failed' }, { engine: 'v1', status: 500, code: 'internal' }],
+    })
+    expect(error.message).toBe(YOUTUBE_SERVICE_MESSAGES.engineFailed)
+    expect(JSON.stringify(error)).not.toMatch(/pytubefix|Traceback/)
+    expect(logs()).toEqual(['[cloudy-api] create v2 → 500 (download_failed); fallback v1', '[cloudy-api] create v1 → 500 (internal)'])
+  })
+
+  it('v2 falla con código y v1 no da código (502 del proxy) o no responde → 503 waking: se puede reintentar', async () => {
+    fetchMock.mockResolvedValueOnce(json(500, { detail: { code: 'download_failed', message: 'x' } })).mockResolvedValueOnce(new Response('Bad Gateway', { status: 502 }))
+    const proxy = await expectStatus(create(), 503)
+    expect(proxy.data).toMatchObject({ state: 'waking', code: 'engines_failed', cause: 'waking' })
+    expect(proxy.message).toBe(YOUTUBE_SERVICE_MESSAGES.waking)
+
+    fetchMock.mockResolvedValueOnce(json(500, { detail: { code: 'download_failed', message: 'x' } })).mockRejectedValueOnce(new TypeError('fetch failed'))
+    const network = await expectStatus(create(), 503)
+    expect((network.data as EnginesData).attempts).toEqual([{ engine: 'v2', status: 500, code: 'download_failed' }, { engine: 'v1', status: 0, code: null }])
+    expect((network.data as EnginesData).cause).toBe('waking')
+  })
+
+  it('v2 dijo bot_check y v1 no responde → la causa sigue siendo el bloqueo anti-robots', async () => {
+    fetchMock.mockResolvedValueOnce(botCheck()).mockRejectedValueOnce(new TypeError('fetch failed'))
+    const error = await expectStatus(create(), 502)
+    expect((error.data as EnginesData).cause).toBe('botCheck')
+  })
+
+  it('un rechazo de v1 que no es del motor sigue la tabla de siempre', async () => {
+    fetchMock.mockResolvedValueOnce(botCheck()).mockResolvedValueOnce(json(422, {
+      detail: { code: 'videos_rejected', message: 'x', videos: [{ video_id: 'privateVid1', code: 'private', message: 'Private video' }] },
+    }))
+    const rejected = await expectStatus(createJob(['privateVid1'], 'mp3'), 422)
+    expect(rejected.data).toEqual({ videos: [{ videoId: 'privateVid1', code: 'private', message: ITEM_ERROR_MESSAGES.private }] })
+
+    fetchMock.mockResolvedValueOnce(botCheck()).mockResolvedValueOnce(json(429, { detail: { code: 'queue_full', message: 'x' } }))
+    const ev = event()
+    await expectStatus(createJob(['okShortVid1'], 'mp3', ev), 429)
+    expect(ev.node.res.getHeader('Retry-After')).toBe(30)
+
+    fetchMock.mockResolvedValueOnce(botCheck()).mockResolvedValueOnce(json(401, { detail: { code: 'unauthorized', message: 'x' } }))
+    expect((await expectStatus(create(), 502)).data).toBeUndefined()
+  })
+
+  it('v1 nunca vuelve a v2: como mucho dos llamadas', async () => {
+    fetchMock.mockImplementation(async () => botCheck())
+    await expectStatus(create(), 502)
+    expect(urls()).toEqual([`${URL_BASE}/v2/jobs`, `${URL_BASE}/v1/jobs`])
+  })
+
+  it.each(['v1', 'v2'] as const)('con engine=%s createJob usa solo ese prefijo y no cambia de motor si falla', async (engine) => {
+    fetchMock.mockResolvedValueOnce(created())
+    expect(await create(engine)).toEqual({ jobId: JOB, status: 'queued', engine })
+    expect(urls()).toEqual([`${URL_BASE}/${engine}/jobs`])
+
+    fetchMock.mockResolvedValueOnce(botCheck())
+    const blocked = await expectStatus(create(engine), 502)
+    expect(blocked.data).toEqual({ code: 'engines_failed', cause: 'botCheck', attempts: [{ engine, status: 502, code: 'bot_check' }] })
+    expect(blocked.message).toBe(YOUTUBE_SERVICE_MESSAGES.botCheck)
+
+    fetchMock.mockResolvedValueOnce(json(500, { detail: { code: 'download_failed', message: 'x' } }))
+    expect((await expectStatus(create(engine), 502)).data).toMatchObject({ cause: 'engineFailed' })
+
+    // Sin código es el servicio dormido de siempre, no un fallo del motor.
+    fetchMock.mockResolvedValueOnce(new Response('Bad Gateway', { status: 502 }))
+    expect((await expectStatus(create(engine), 503)).data).toEqual({ state: 'waking' })
+
+    fetchMock.mockResolvedValueOnce(json(422, { detail: { code: 'batch_too_large', message: 'x' } }))
+    await expectStatus(create(engine), 422)
+    expect(fetchMock).toHaveBeenCalledTimes(5)
+    expect(urls().every(url => url === `${URL_BASE}/${engine}/jobs`)).toBe(true)
+  })
+
+  it.each(['v1', 'v2'] as const)('getJob y cancelJob usan el prefijo %s del trabajo, sin respaldo', async (engine) => {
+    fetchMock.mockResolvedValueOnce(json(200, { job_id: JOB, status: 'running', format: 'mp3', progress: 0.5, items: [] }))
+    expect(await getJob(JOB, engine)).toMatchObject({ jobId: JOB, engine, status: 'running' })
+    fetchMock.mockResolvedValueOnce(new Response(null, { status: 204 }))
+    await cancelJob(JOB, engine)
+    expect(urls()).toEqual([`${URL_BASE}/${engine}/jobs/${JOB}`, `${URL_BASE}/${engine}/jobs/${JOB}`])
+
+    // Un 5xx al consultar o cancelar no prueba el otro motor (el trabajo solo existe en el suyo): 503 y se reintenta.
+    fetchMock.mockResolvedValueOnce(json(500, { detail: { code: 'internal', message: 'x' } }))
+    expect((await expectStatus(getJob(JOB, engine), 503)).data).toEqual({ state: 'waking' })
+    fetchMock.mockResolvedValueOnce(json(502, { detail: { code: 'bot_check', message: 'x' } }))
+    await expectStatus(cancelJob(JOB, engine), 503)
+    // Y un 404 sigue siendo «expiró», no «falta la ruta».
+    fetchMock.mockResolvedValueOnce(json(404, { detail: 'Not Found' }))
+    expect((await expectStatus(getJob(JOB, engine), 404)).data).toEqual({ code: 'expired' })
+    expect(fetchMock).toHaveBeenCalledTimes(5)
+  })
+})
+
 describe('configuración', () => {
   it.each([
     { cloudyApiUrl: '', cloudyApiKey: KEY },
     { cloudyApiUrl: URL_BASE, cloudyApiKey: '' },
   ])('sin URL o sin clave toda función responde 503 «no está configurado» sin llamar a fetch', async (cfg) => {
     config = cfg
-    for (const call of [() => probeVideo('okShortVid1'), () => createJob(['okShortVid1'], 'mp3'), () => getJob(JOB), () => cancelJob(JOB), () => pingService()]) {
+    for (const call of [() => probeVideo('okShortVid1'), () => createJob(['okShortVid1'], 'mp3'), () => getJob(JOB, 'v2'), () => cancelJob(JOB, 'v2'), () => pingService()]) {
       const error = await expectStatus(call(), 503)
       expect(error.message).toBe('El servicio de descargas no está configurado.')
     }
@@ -291,9 +483,9 @@ describe('plazos', () => {
     const timeout = vi.spyOn(AbortSignal, 'timeout')
     fetchMock.mockImplementation(async () => json(200, { job_id: JOB, status: 'queued', format: 'mp3', items: [], title: 't' }))
     await pingService()
-    await getJob(JOB)
+    await getJob(JOB, 'v2')
     fetchMock.mockImplementationOnce(async () => new Response(null, { status: 204 }))
-    await cancelJob(JOB)
+    await cancelJob(JOB, 'v2')
     await probeVideo('okShortVid1')
     await createJob(['okShortVid1'], 'mp3')
     expect(timeout.mock.calls.map(c => c[0])).toEqual([5_000, 10_000, 10_000, 20_000, 45_000])

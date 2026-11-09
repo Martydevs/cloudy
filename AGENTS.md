@@ -215,6 +215,22 @@ Never print or commit their values.
   (`/youtube/<id>/ventana`) that autoplays the same embed. Cloudy sets no CSP, so no `frame-src` is needed. E2E run against `test/e2e/setup/cloudy-api-stub.ts` (scenario video IDs
   such as `okShortVid1`, `privateVid1`, `tooLongVid1`, `lowResVid01`; `setCloudyStubState('asleep')`) and serve `i.ytimg.com`
   thumbnails from a fixture with `routeYoutubeThumbnails(page)` and the embed iframe from a local page with `routeYoutubeEmbed(page)`.
+- YouTube engines: `cloudy-api` serves the same contract under `/v2` (pytubefix, **primary**: works around YouTube's `bot_check` on
+  datacenter IPs) and `/v1` (yt-dlp, **fallback**) and never switches by itself, so Cloudy does. `server/utils/cloudy-api.ts`
+  (`withFallback`) probes videos and creates jobs on v2 and repeats the same call on v1 when v2 answers a 5xx or a 404 without
+  `detail.code` (a deployment without `/v2`). It does **not** fall back on a network error/timeout (same host), 401/403, 429 (shared
+  queue), 422 or a 404 with a code. A job is polled and cancelled only on the engine that created it: `YoutubeJob.engine` comes back
+  from `POST /api/youtube/jobs` and travels as `?engine=` (`youtubeEngineQuery`, default `v2`) on `GET`/`DELETE /api/youtube/jobs/:id`;
+  `POST` takes an optional `engine` that forces one prefix. When a v2 job ends `failed`, or `done` with items whose `error.code` is in
+  `ENGINE_RETRY_CODES` (`engineRetryVideoIds` in `shared/constants/youtube.ts`), the browser re-creates those videos on v1: the same tray
+  row if everything failed, a new row of the same group if the rest was delivered (`useYoutubeDownloads`), and a second job inside the
+  same `MAX_WAIT_MS` for the drive import. v1 jobs never retry (no loops). If both engines fail the server answers **502**
+  `data: { code: 'engines_failed', cause: 'botCheck' | 'engineFailed', attempts }` (or the usual **503** `waking`, also with
+  `cause: 'waking'`, when the last attempt carried no service code); clients turn it into copy with `engineFailureMessage()`
+  (`app/utils/youtube.ts`), because `serverMessage()` ignores the server text on a 5xx. The engine is never shown in the UI, only in
+  server logs (`[cloudy-api] create v2 → 502 (bot_check); fallback v1`). E2E stub: every route exists under both prefixes; scenario IDs
+  `v2BotCheck1`, `bothBotChk1`, `v2ItemFail1`, `bothItemFl1`; `setCloudyStubState('v2-missing')`; `cloudyStubCalls()` returns
+  `jobsCreated: { v1, v2 }`, `createAttempts` and `probes` in order.
 - YouTube → drive: "Guardar en el drive" (`useYoutubeDriveImport`) moves the file **through the browser** (job in cloudy-api → `fetch` of the signed
   `downloadUrl` → the normal upload flow to the drive root), so the service's `ALLOWED_ORIGINS` must include the Cloudy origin (the e2e stub sends `access-control-allow-origin: *`).
   Files over `MAX_FILE_SIZE` (100 MB) are refused; `POST /api/uploads/:id/complete` takes an optional `source` that tags the `file.upload` activity (no new enum value).

@@ -107,6 +107,24 @@ describe('/youtube/:id', () => {
     expect(missing.get('[role="alert"]').text()).toMatch(/No encontramos ese video|No pudimos cargar el video/)
   })
 
+  it.each([
+    ['botCheck', 'YouTube bloqueó la descarga con su verificación anti-robots en los dos servicios'],
+    ['engineFailed', 'Los dos servicios de descarga fallaron con este video'],
+  ])('si los dos motores del servicio fallan (%s), dice la causa en vez de un error genérico y deja reintentar', async (cause, text) => {
+    mockApi('GET', '/api/youtube/videos/okShortVid1', failWith(502, { code: 'engines_failed', cause, attempts: [] }))
+    const wrapper = await mountSuspended(VideoPage, { route: '/youtube/okShortVid1' })
+    await flush(10)
+    expect(wrapper.text()).toContain(text)
+    expect(wrapper.text()).not.toContain('No pudimos cargar el video')
+    // No es el servicio dormido: no se muestra ese aviso.
+    expect(wrapper.text()).not.toContain('Despertando el servicio')
+    mockApi('GET', '/api/youtube/videos/okShortVid1', detail())
+    await button(wrapper, 'Reintentar')!.trigger('click')
+    await flush(10)
+    expect(wrapper.get('h1').text()).toBe('Alabanza')
+    expect(wrapper.text()).not.toContain(text)
+  })
+
   it('si la ficha cargó aunque el último ping siga en «despertando», no muestra el aviso (el servicio ya respondió)', async () => {
     mockApi('GET', '/api/youtube/health', failWith(502))
     const wrapper = await mountSuspended(VideoPage, { route: '/youtube/okShortVid1' })

@@ -97,6 +97,26 @@ Las referencias al servicio vienen de `C:\Users\andre.perez\Dev\cloudy-api` (REA
   Los códigos por elemento (`private`, `unavailable`, `age_restricted`, `members_only`, `geo_restricted`, `live`,
   `format_unavailable`, `bot_check`, `ffmpeg_missing`, `download_failed`, `cancelled`, `internal`) y los motivos de `downloadable: false`
   (`too_long`, `live`, `unknown_duration`) tienen su texto en `shared/constants/youtube.ts`, usado en cliente y servidor.
+- **Nota (v2 → v1, 2026-11-09)**: el servicio expone el mismo contrato en `/v2` (pytubefix, esquiva el `bot_check` de YouTube en IPs
+  de centros de datos) y en `/v1` (yt-dlp), y no cambia de motor por su cuenta. `cloudy-api.ts` sondea videos y crea trabajos en
+  **`v2`** y repite la misma llamada en **`v1`** cuando `v2` responde un 5xx (con o sin código: `bot_check`, `download_failed`,
+  `ffmpeg_missing`, `metadata_unavailable`, el 502 del proxy) o un 404 **sin** `detail.code` (despliegue sin `/v2`). No hay respaldo
+  ante red caída o plazo vencido (mismo host), 401/403, `429 queue_full` (cola compartida), 422 ni un 404 con código: `v1` daría lo
+  mismo, y la tabla de arriba se aplica a esa respuesta. Un trabajo se consulta y se cancela solo en el motor que lo creó
+  (`?engine=`); allí un 5xx sigue siendo **503** y un 404, `expired`. Si fallan los dos motores:
+
+  | `v2` y `v1` | Cloudy | `data` y copy |
+  |-------------|--------|---------------|
+  | alguno dijo `bot_check` | **502** | `{ code: 'engines_failed', cause: 'botCheck', attempts }` · "YouTube bloqueó la descarga con su verificación anti-robots en los dos servicios. Intenta de nuevo en unos minutos." |
+  | el último intento trajo otro código | **502** | `{ code: 'engines_failed', cause: 'engineFailed', attempts }` · "Los dos servicios de descarga fallaron con este video. Intenta de nuevo más tarde." |
+  | el último intento no trajo código (proxy) o no respondió | **503** | `{ state: 'waking', code: 'engines_failed', cause: 'waking', attempts }` · el texto de "despertando" (se puede reintentar, como siempre) |
+
+  `attempts` es `[{ engine, status, code }]`: sin mensajes del servicio ni URLs. Con el motor obligado (`engine` en el cuerpo de
+  `POST /api/youtube/jobs`), un 5xx con código da el mismo **502** con un solo intento. El fallo que llega después, dentro del
+  trabajo, lo repite el navegador en `v1` para los videos con un código de `ENGINE_RETRY_CODES` (`bot_check`, `download_failed`,
+  `ffmpeg_missing`, `format_unavailable`, `internal`); los códigos del video (`private`, `unavailable`, `age_restricted`,
+  `members_only`, `geo_restricted`, `live`, `cancelled`, `too_long`) no se repiten. Un trabajo de `v1` nunca se repite. El motor no
+  se muestra en la interfaz; queda en los registros del servidor.
 - **Razón**: el usuario nunca ve respuestas crudas (AGENTS: solo `serverMessage()`); un único mapa evita copy duplicado.
 - **Alternativas**: reenviar el `detail.message` del servicio (está en inglés y filtra detalles internos).
 
@@ -120,7 +140,8 @@ Las referencias al servicio vienen de `C:\Users\andre.perez\Dev\cloudy-api` (REA
   con 10 videos puede tardar decenas de segundos.
 - **Riesgo**: el tiempo máximo de la función de Vercel depende del plan. **Verificar en el despliegue** que `createJob` (45 s)
   cabe; si no, bajar el lote a 5 videos (`YOUTUBE_MAX_BATCH`, constante en `shared/constants/youtube.ts`) sin tocar el servicio.
-  Queda como paso de quickstart §6.
+  Queda como paso de quickstart §6. Con el respaldo `v2` → `v1` (D6) el plazo es **por intento**: si `v2` tarda en fallar, crear un
+  trabajo puede sumar hasta dos plazos (el `bot_check` suele llegar pronto, en el sondeo). Vale la misma verificación.
 
 ## D9. Datos: videos, historial y listas (FR-015–FR-026, FR-032)
 

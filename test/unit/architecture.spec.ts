@@ -127,11 +127,15 @@ describe('arquitectura de la feature 002', () => {
     expect(youtube.length).toBeGreaterThan(0)
     const offenders = youtube.filter(f => /\b(\$?fetch|ofetch)\s*\(/.test(f.code)).map(f => f.path)
     expect(offenders).toEqual([])
-    // En server/utils, solo la frontera habla con el servicio (`/v1/` o `/healthz`).
+    // En server/, solo la frontera habla con el servicio: `/v1/…`, `/v2/…`, `/${motor}/…` o `/healthz`.
     const callers = files
-      .filter(f => f.path.startsWith('server/') && /['"`]\/(v1\/(videos|jobs)|healthz)/.test(f.code))
+      .filter(f => f.path.startsWith('server/') && /['"`]\/((v1|v2|\$\{\w+\})\/(videos|jobs)|healthz)/.test(f.code))
       .map(f => f.path)
     expect(callers).toEqual([BOUNDARY])
+    // Y la frontera arma las rutas con el motor: ninguna queda fija en `/v1` (el respaldo se decide en un solo lugar).
+    const boundary = files.find(f => f.path === BOUNDARY)!.code
+    expect(boundary).toMatch(/`\/\$\{\w+\}\/jobs/)
+    expect(boundary).not.toMatch(/['"`]\/v[12]\/(videos|jobs)/)
   })
 
   // Feature 006 (research D1): una sola puerta a Apify; el parser de la letra es puro.

@@ -4,7 +4,8 @@
 // y que una descarga o subida sin avance se aborte en vez de bloquear la cola.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mockNuxtImport } from '@nuxt/test-utils/runtime'
-import type { YoutubeJob } from '#shared/types/api'
+import { getQuery, readBody } from 'h3'
+import type { YoutubeJob, YoutubeJobItem } from '#shared/types/api'
 import { calls, failWith, flush, mockApi, resetCalls } from './helpers/api'
 
 // Topes y sondeo chicos para no mover cientos de MB ni esperar 2,5 s por vuelta.
@@ -19,7 +20,7 @@ const URL_FILE = `https://svc.test/v1/jobs/${JOB}/file?exp=1&sig=x`
 const VIDEO = { videoId: 'okShortVid1', title: 'Alabanza' }
 
 const job = (changes: Partial<YoutubeJob> = {}): YoutubeJob => ({
-  jobId: JOB, status: 'queued', format: 'mp3', progress: 0, items: [], downloadUrl: null, filename: null, sizeBytes: null, expiresAt: null, ...changes,
+  jobId: JOB, engine: 'v2', status: 'queued', format: 'mp3', progress: 0, items: [], downloadUrl: null, filename: null, sizeBytes: null, expiresAt: null, ...changes,
 })
 const ready = (changes: Partial<YoutubeJob> = {}) => job({ status: 'done', progress: 100, downloadUrl: URL_FILE, filename: 'a.mp3', sizeBytes: 6, ...changes })
 
@@ -292,6 +293,108 @@ describe('useYoutubeDriveImport', () => {
 
   it('of devuelve null si el video no tiene importación', () => {
     expect(useYoutubeDriveImport().of('nadaNadaNad')).toBeNull()
+  })
+})
+
+describe('useYoutubeDriveImport · motores (v2 principal, v1 de respaldo)', () => {
+  const JOB_V1 = 'b'.repeat(32)
+  const BOT_CHECK = 'YouTube bloqueó la descarga con su verificación anti-robots. Intenta de nuevo en unos minutos.'
+  const failedItem = (code = 'bot_check', message = BOT_CHECK): YoutubeJobItem =>
+    ({ videoId: 'okShortVid1', title: null, status: 'failed', progress: 0, error: { code, message }, actualHeight: null })
+  const jobPosts = () => posts('/api/youtube/jobs').map(c => c.body)
+  /** Anota con qué `?engine=` llega cada petición a un trabajo. */
+  function track(method: 'GET' | 'DELETE', id: string, response: () => unknown) {
+    const engines: unknown[] = []
+    mockApi(method, `/api/youtube/jobs/${id}`, (event) => {
+      engines.push(getQuery(event).engine)
+      return response()
+    })
+    return engines
+  }
+  /** El trabajo de v2 se crea bien y falla después, dentro del trabajo, con `item`. */
+  function v2FailsInside(item = failedItem()) {
+    // Como el servidor: responde el trabajo del motor que se le pidió (sin `engine`, el principal).
+    mockApi('POST', '/api/youtube/jobs', async event => ((await readBody<{ engine?: string }>(event)).engine === 'v1'
+      ? job({ jobId: JOB_V1, engine: 'v1' })
+      : job()))
+    return {
+      v2Polls: track('GET', JOB, () => job({ status: 'failed', items: [item] })),
+      v2Deletes: track('DELETE', JOB, () => null),
+    }
+  }
+
+  it('si el video falla dentro del trabajo de v2 por el motor, lo libera, lo repite en v1 y sube el archivo', async () => {
+    const { v2Polls, v2Deletes } = v2FailsInside()
+    const v1Polls = track('GET', JOB_V1, () => ready({ jobId: JOB_V1, engine: 'v1' }))
+    const v1Deletes = track('DELETE', JOB_V1, () => null)
+    const { of } = await run()
+
+    expect(jobPosts()).toEqual([
+      { videoIds: ['okShortVid1'], format: 'mp3' },
+      { videoIds: ['okShortVid1'], format: 'mp3', engine: 'v1' },
+    ])
+    // Cada trabajo se consulta y se libera con su motor.
+    expect(v2Polls).toEqual(['v2'])
+    expect(v2Deletes).toEqual(['v2'])
+    expect(v1Polls).toEqual(['v1'])
+    expect(v1Deletes).toEqual(['v1'])
+    expect(of('okShortVid1')).toMatchObject({ stage: 'done', message: 'Alabanza.mp3' })
+    expect(posts('/api/uploads/f1/complete')).toHaveLength(1)
+    expect(useToast().toasts.value.filter(t => t.type === 'error')).toEqual([])
+  })
+
+  it('si v1 también falla no se repite más: avisa con la causa y no sube nada', async () => {
+    v2FailsInside()
+    track('GET', JOB_V1, () => job({ jobId: JOB_V1, engine: 'v1', status: 'failed', items: [failedItem()] }))
+    const v1Deletes = track('DELETE', JOB_V1, () => null)
+    const { of } = await run()
+    expect(jobPosts()).toHaveLength(2)
+    expect(of('okShortVid1')).toMatchObject({ stage: 'error', message: BOT_CHECK })
+    expect(useToast().toasts.value.at(-1)).toMatchObject({ type: 'error', message: BOT_CHECK })
+    expect(v1Deletes).toEqual(['v1'])
+    expect(posts('/api/uploads')).toHaveLength(0)
+  })
+
+  it('un fallo que es del video (privado) no se repite en v1 y dice ese motivo', async () => {
+    v2FailsInside(failedItem('private', 'Este video es privado. Pide a su dueño que lo haga público o no listado.'))
+    const { of } = await run()
+    expect(jobPosts()).toHaveLength(1)
+    expect(of('okShortVid1')!.message).toBe('Este video es privado. Pide a su dueño que lo haga público o no listado.')
+  })
+
+  it.each([
+    ['botCheck', messages.youtube.service.botCheck],
+    ['engineFailed', messages.youtube.service.engineFailed],
+  ])('los dos motores fallan al crear el trabajo (502 engines_failed, %s): avisa con la causa', async (cause, message) => {
+    mockApi('POST', '/api/youtube/jobs', failWith(502, { code: 'engines_failed', cause, attempts: [] }))
+    const { of } = await run()
+    expect(of('okShortVid1')).toMatchObject({ stage: 'error', message })
+    expect(useToast().toasts.value.at(-1)).toMatchObject({ type: 'error', message })
+    expect(posts('/api/uploads')).toHaveLength(0)
+  })
+
+  it('si al repetir en v1 el servicio no responde (503), lo dice y deja reintentar', async () => {
+    let creates = 0
+    mockApi('POST', '/api/youtube/jobs', event => (++creates === 1 ? job() : failWith(503, { state: 'waking' })(event)))
+    track('GET', JOB, () => job({ status: 'failed', items: [failedItem()] }))
+    const driveImport = await run()
+    expect(driveImport.of('okShortVid1')!.message).toBe(messages.youtube.service.waking)
+    // El reintento empieza de cero: sin motor obligado.
+    mockApi('POST', '/api/youtube/jobs', ready())
+    await driveImport.retry('okShortVid1')
+    expect(jobPosts().at(-1)).toEqual({ videoIds: ['okShortVid1'], format: 'mp3' })
+    expect(driveImport.of('okShortVid1')?.stage).toBe('done')
+  })
+
+  it('la espera máxima cuenta para los dos motores juntos', async () => {
+    let skew = 0
+    vi.spyOn(Date, 'now').mockImplementation(() => performance.timeOrigin + performance.now() + skew)
+    v2FailsInside()
+    track('GET', JOB_V1, () => {
+      skew = 11 * 60_000
+      return job({ jobId: JOB_V1, engine: 'v1', status: 'running' })
+    })
+    expect((await run()).of('okShortVid1')!.message).toContain('tardó demasiado')
   })
 })
 

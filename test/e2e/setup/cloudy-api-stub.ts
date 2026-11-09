@@ -1,6 +1,8 @@
 // Stub local del servicio de descargas `cloudy-api` para los e2e (feature 005, research D17). La app de pruebas lo
 // usa vía `NUXT_CLOUDY_API_URL`; los e2e nunca llaman a YouTube ni a Render. Implementa el contrato del servicio
-// (`/healthz`, `/v1/videos/:id`, `/v1/jobs`, `/v1/jobs/:id`, `/v1/jobs/:id/file`) con escenarios por ID de video.
+// (`/healthz` y, bajo `/v2` y `/v1` por igual, `/videos/:id`, `/jobs`, `/jobs/:id`, `/jobs/:id/file`) con escenarios por ID
+// de video. Como en el servicio, los dos prefijos comparten los trabajos y solo cambia el motor: `v2` es el principal y
+// `v1` el respaldo; un trabajo falla o no según el motor que lo creó y su enlace sale del prefijo con que se consulta.
 // Los archivos son fixtures reproducibles diminutos (`test/fixtures/files/stub-video.mp4` y `stub-audio.mp3`,
 // H.264/AAC y MP3); el `.zip` de un lote se arma en código (STORED).
 import { createHmac, randomBytes } from 'node:crypto'
@@ -31,10 +33,17 @@ interface Scenario {
   probeError?: string
   /** El video falla dentro del trabajo con este código (pasa la sonda). */
   jobError?: string
+  /** Motores en los que falla dentro del trabajo; sin esto, en los dos. */
+  jobErrorOn?: Engine[]
   /** Fracción de avance en la que falla. */
   failAt?: number
   slow?: boolean
+  /** Ese motor responde 502 con este código al sondear el video o al crear un trabajo que lo incluya. */
+  engineError?: Partial<Record<Engine, string>>
 }
+
+/** Prefijo de la ruta = motor del servicio. */
+export type Engine = 'v1' | 'v2'
 
 const HEIGHTS = [144, 240, 360, 480, 720, 1080]
 
@@ -48,6 +57,11 @@ export const SCENARIOS: Record<string, Partial<Scenario>> = {
   failMidVid1: { title: 'Video que falla', jobError: 'download_failed', failAt: 0.5 },
   unavailVid1: { title: 'Video que ya no está', jobError: 'unavailable', failAt: 0 },
   lowResVid01: { title: 'Video en baja calidad', heights: [144, 240, 360, 480] },
+  // Motores (v2 principal, v1 respaldo): el bloqueo anti-robots de YouTube al sondear o crear, o ya dentro del trabajo.
+  v2BotCheck1: { title: 'Bloqueado solo en v2', engineError: { v2: 'bot_check' } },
+  bothBotChk1: { title: 'Bloqueado en los dos', engineError: { v2: 'bot_check', v1: 'bot_check' } },
+  v2ItemFail1: { title: 'Falla dentro de v2', jobError: 'bot_check', jobErrorOn: ['v2'], failAt: 0 },
+  bothItemFl1: { title: 'Falla dentro de los dos', jobError: 'bot_check', failAt: 0 },
 }
 
 function scenario(videoId: string): Scenario {
@@ -125,6 +139,8 @@ type Format = 'mp4_720' | 'mp4_1080' | 'mp3'
 
 interface Job {
   id: string
+  /** Motor que lo creó: decide qué videos fallan. */
+  engine: Engine
   format: Format
   createdAt: number
   videoIds: string[]
@@ -155,7 +171,8 @@ function view(job: Job, now = Date.now()) {
     clock += duration
     const fraction = Math.max(0, Math.min(1, (elapsed - start) / duration))
     const height = job.format === 'mp3' ? null : Math.min(job.format === 'mp4_1080' ? 1080 : 720, Math.max(...s.heights))
-    if (s.jobError && fraction >= (s.failAt ?? 0) && elapsed >= start) {
+    const fails = s.jobError && (s.jobErrorOn ?? ['v1', 'v2']).includes(job.engine)
+    if (fails && s.jobError && fraction >= (s.failAt ?? 0) && elapsed >= start) {
       return { video_id: videoId, title: s.title, status: 'failed', progress: s.failAt ?? 0, error: { code: s.jobError, message: 'Stub failure' }, actual_height: null }
     }
     if (elapsed < start) return { video_id: videoId, title: s.title, status: 'queued', progress: 0, error: null, actual_height: null }
@@ -204,11 +221,15 @@ function minimalPptx(title: string): Buffer {
   ])
 }
 
-export type StubState = 'up' | 'asleep' | 'degraded'
+/** `v2-missing`: un despliegue del servicio sin `/v2` (todo `/v2` responde el 404 de FastAPI, sin código). */
+export type StubState = 'up' | 'asleep' | 'degraded' | 'v2-missing'
 
 export interface CloudyStubCalls {
-  /** Trabajos creados (`POST /v1/jobs` aceptados). */
-  jobsCreated: number
+  /** Trabajos creados (`POST /{motor}/jobs` aceptados), por motor. */
+  jobsCreated: Record<Engine, number>
+  /** Motor de cada intento de crear un trabajo (aceptado o no) y de cada sonda, en orden: muestra el paso de v2 a v1. */
+  createAttempts: Engine[]
+  probes: Engine[]
   /** Peticiones a rutas con clave que llegaron sin la clave correcta. */
   unauthorized: number
   /** Formatos de cada trabajo creado, en orden. */
@@ -219,10 +240,13 @@ export interface CloudyStubCalls {
   pptxBatch: { title: string, fontColor: string | null, html: string }[][]
 }
 
+const noCalls = (): CloudyStubCalls =>
+  ({ jobsCreated: { v1: 0, v2: 0 }, createAttempts: [], probes: [], unauthorized: 0, formats: [], pptx: [], pptxBatch: [] })
+
 export async function startCloudyApiStub(): Promise<{ url: string, close: () => Promise<void> }> {
   const jobs = new Map<string, Job>()
   let state: StubState = 'up'
-  let calls: CloudyStubCalls = { jobsCreated: 0, unauthorized: 0, formats: [], pptx: [], pptxBatch: [] }
+  let calls = noCalls()
   let base = ''
 
   const server = createServer(async (req: IncomingMessage, res: ServerResponse) => {
@@ -245,7 +269,7 @@ export async function startCloudyApiStub(): Promise<{ url: string, close: () => 
     }
     if (req.method === 'POST' && path === '/__stub/reset') {
       state = 'up'
-      calls = { jobsCreated: 0, unauthorized: 0, formats: [], pptx: [], pptxBatch: [] }
+      calls = noCalls()
       jobs.clear()
       return json(200, calls)
     }
@@ -262,7 +286,13 @@ export async function startCloudyApiStub(): Promise<{ url: string, close: () => 
       return json(ok ? 200 : 503, { status: ok ? 'ok' : 'degraded', yt_dlp_version: 'stub', ffmpeg: ok, js_runtime: ok })
     }
 
-    const file = /^\/v1\/jobs\/([0-9a-f]{32})\/file$/.exec(path)
+    // Las rutas del servicio llevan el motor como prefijo; el resto de la ruta es igual en los dos.
+    const versioned = /^\/(v1|v2)(\/.*)$/.exec(path)
+    const engine = (versioned?.[1] ?? 'v1') as Engine
+    const route = versioned?.[2] ?? ''
+    if (versioned && engine === 'v2' && state === 'v2-missing') return json(404, { detail: 'Not Found' })
+
+    const file = /^\/jobs\/([0-9a-f]{32})\/file$/.exec(route)
     if (req.method === 'GET' && file) {
       const exp = Number(url.searchParams.get('exp'))
       const sig = url.searchParams.get('sig') ?? ''
@@ -299,7 +329,7 @@ export async function startCloudyApiStub(): Promise<{ url: string, close: () => 
       return detail(401, 'unauthorized', 'Invalid or missing API key')
     }
 
-    // Presentación de una letra (feature 006, research D9). Escenarios por el título: «vacia» → 422 no_lyrics,
+    // Presentación de una letra (feature 006, research D9). Solo existe en `/v1`: no depende del motor. Escenarios por el título: «vacia» → 422 no_lyrics,
     // «demasiado larga» → 422 lyrics_too_long, «respaldo» → reparto de respaldo; un cuerpo sin `html` → 422 de validación.
     if (req.method === 'POST' && path === '/v1/lyrics/pptx') {
       const body = (raw ? JSON.parse(raw) : {}) as { html?: unknown, title?: unknown, font_color?: unknown }
@@ -366,11 +396,17 @@ export async function startCloudyApiStub(): Promise<{ url: string, close: () => 
       return res.end(data)
     }
 
-    const video = /^\/v1\/videos\/([^/]+)$/.exec(path)
+    /** El motor no puede con el video (p. ej. el bloqueo anti-robots): 502 con su código, como el servicio. */
+    const engineFailure = (videoIds: string[]) => videoIds.map(id => scenario(id).engineError?.[engine]).find(Boolean)
+
+    const video = /^\/videos\/([^/]+)$/.exec(route)
     if (req.method === 'GET' && video) {
       const videoId = decodeURIComponent(video[1]!)
       if (!VIDEO_ID_RE.test(videoId)) return json(422, { detail: [{ loc: ['path', 'video_id'], msg: 'pattern' }] })
+      calls.probes.push(engine)
       const s = scenario(videoId)
+      const blocked = engineFailure([videoId])
+      if (blocked) return detail(502, blocked, 'Sign in to confirm you\'re not a bot')
       if (s.probeError) return detail(422, s.probeError, 'Private video. Sign in if you\'ve been granted access')
       return json(200, {
         video_id: videoId,
@@ -384,7 +420,7 @@ export async function startCloudyApiStub(): Promise<{ url: string, close: () => 
       })
     }
 
-    if (req.method === 'POST' && path === '/v1/jobs') {
+    if (req.method === 'POST' && route === '/jobs') {
       const body = raw ? JSON.parse(raw) as { video_ids?: unknown, format?: unknown } : {}
       const ids = Array.isArray(body.video_ids) ? [...new Set(body.video_ids as string[])] : []
       const format = body.format as Format
@@ -392,6 +428,9 @@ export async function startCloudyApiStub(): Promise<{ url: string, close: () => 
         return json(422, { detail: [{ loc: ['body'], msg: 'invalid' }] })
       }
       if (ids.length > 10) return detail(422, 'batch_too_large', 'At most 10 videos per job')
+      calls.createAttempts.push(engine)
+      const blocked = engineFailure(ids)
+      if (blocked) return detail(502, blocked, 'Sign in to confirm you\'re not a bot')
       const problems = ids.flatMap((id) => {
         const s = scenario(id)
         if (s.probeError) return [{ video_id: id, code: s.probeError, message: 'Private video' }]
@@ -400,13 +439,13 @@ export async function startCloudyApiStub(): Promise<{ url: string, close: () => 
       })
       if (problems.length) return detail(422, 'videos_rejected', 'Some videos can\'t be downloaded', { videos: problems })
       const id = randomBytes(16).toString('hex')
-      jobs.set(id, { id, format, createdAt: Date.now(), videoIds: ids, cancelled: false })
-      calls.jobsCreated++
+      jobs.set(id, { id, engine, format, createdAt: Date.now(), videoIds: ids, cancelled: false })
+      calls.jobsCreated[engine]++
       calls.formats.push(format)
       return json(202, { job_id: id, status: 'queued' })
     }
 
-    const jobMatch = /^\/v1\/jobs\/([^/]+)$/.exec(path)
+    const jobMatch = /^\/jobs\/([^/]+)$/.exec(route)
     if (jobMatch) {
       const job = jobs.get(jobMatch[1]!)
       if (!job) return detail(404, 'not_found', 'Job not found or expired')
@@ -427,7 +466,8 @@ export async function startCloudyApiStub(): Promise<{ url: string, close: () => 
         if (v.status === 'done') {
           const exp = Math.floor(Date.now() / 1000) + 600
           const file = fileOf(job, v.successes)
-          out.download_url = `${base}/v1/jobs/${job.id}/file?exp=${exp}&sig=${sign(job.id, exp)}`
+          // El enlace sale del prefijo con que se consultó el trabajo.
+          out.download_url = `${base}/${engine}/jobs/${job.id}/file?exp=${exp}&sig=${sign(job.id, exp)}`
           out.filename = file.name
           out.size_bytes = file.data.length
           out.expires_at = v.finishedAt / 1000 + 1800

@@ -11,6 +11,7 @@ import {
   resetCloudyStub,
   routeYoutubeThumbnails,
   seedYoutubeHistory,
+  seedYoutubeVideo,
   signedInAs,
   testSql,
   viewports,
@@ -87,6 +88,34 @@ describe('Guardar en el drive · historial, selección y listas', () => {
     await expect.poll(() => page.getByText(new RegExp(`Video ${ids[0]}.*\\.mp3`)).first().isVisible()).toBe(true)
     await expect.poll(() => page.getByText(new RegExp(`Video ${ids[2]}.*\\.mp3`)).first().isVisible()).toBe(true)
     expect(await page.getByText(new RegExp(`Video ${ids[1]}.*\\.mp3`)).count()).toBe(0)
+    await page.close()
+  })
+
+  it('motores: un video que falla dentro de v2 se guarda por v1; si falla en los dos, la bandeja dice la causa', async () => {
+    await resetCloudyStub()
+    const page = await editorPage()
+    const viewer = await profileUserId(email('yt-drive'))
+    await seedYoutubeVideo(viewer, 'bothItemFl1', 'Falla dentro de los dos')
+    await seedYoutubeVideo(viewer, 'v2ItemFail1', 'Falla dentro de v2')
+    await openYoutube(page)
+
+    await page.getByRole('button', { name: 'Acciones de Falla dentro de v2' }).click()
+    await page.getByRole('menuitem', { name: 'Guardar en el drive: audio MP3' }).click()
+    await expect.poll(() => tray(page).getByText(/ya está en el drive/).first().isVisible(), { timeout: 30000 }).toBe(true)
+    // El trabajo de v2 falló por el motor, se liberó y el archivo salió del de v1, sin avisos de fallo.
+    expect(await cloudyStubCalls()).toMatchObject({ createAttempts: ['v2', 'v1'], jobsCreated: { v1: 1, v2: 1 }, formats: ['mp3', 'mp3'] })
+    expect(await tray(page).getByText(/anti-robots/).count()).toBe(0)
+
+    await page.getByRole('button', { name: 'Acciones de Falla dentro de los dos' }).click()
+    await page.getByRole('menuitem', { name: 'Guardar en el drive: audio MP3' }).click()
+    await expect.poll(() => tray(page).getByText('YouTube bloqueó la descarga con su verificación anti-robots. Intenta de nuevo en unos minutos.').isVisible(), { timeout: 30000 }).toBe(true)
+    // Un intento por motor y nada más.
+    expect(await cloudyStubCalls()).toMatchObject({ createAttempts: ['v2', 'v1', 'v2', 'v1'], jobsCreated: { v1: 2, v2: 2 } })
+
+    await page.goto(`${E2E_URL}/archivos`)
+    await waitForHydration(page)
+    await expect.poll(() => page.getByText(/Falla dentro de v2.*\.mp3/).first().isVisible()).toBe(true)
+    expect(await page.getByText(/Falla dentro de los dos.*\.mp3/).count()).toBe(0)
     await page.close()
   })
 

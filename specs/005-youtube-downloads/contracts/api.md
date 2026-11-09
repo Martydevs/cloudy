@@ -30,7 +30,10 @@ El servicio de descargas (`cloudy-api`) se llama **solo** desde `server/utils/cl
 
 - **Body**: `{ videoIds: string[1..10], format: 'mp4_720' | 'mp4_1080' | 'mp3' }` (`youtubeJobInput`). IDs con el patrón de 11 caracteres; se quitan los repetidos
   conservando el orden. Más de 10 → **422** (el cliente ya parte en lotes).
-- Llama a `POST /v1/jobs`; el servicio sondea todos los videos antes de encolar (puede tardar; plazo 45 s).
+- `engine?: 'v1' | 'v2'` opcional en el cuerpo: sin él llama a `POST /v2/jobs` y, si el motor falla, a `POST /v1/jobs` (research D6,
+  nota v2 → v1); con él usa solo ese prefijo. La respuesta trae `engine`: el motor que creó el trabajo.
+- El servicio sondea todos los videos antes de encolar (puede tardar; plazo 45 s por intento).
+- **502** `{ data: { code: 'engines_failed', cause: 'botCheck' | 'engineFailed', attempts } }` si fallan los dos motores.
 - **202** → `YoutubeJob` con `status: 'queued'` y el resto vacío (`progress: 0`, `items` con un elemento por video, `downloadUrl: null`).
 - **422** `{ data: { videos: [{ videoId, code, message }] } }` si algún video se rechaza (privado, muy largo, en vivo…): no se crea nada.
 - **429** cola llena + `Retry-After: 30` · **503** servicio dormido/caído · **502** clave mal configurada.
@@ -38,6 +41,7 @@ El servicio de descargas (`cloudy-api`) se llama **solo** desde `server/utils/cl
 ### `GET /api/youtube/jobs/:jobId` — avance y enlace (FR-008)
 
 - `:jobId` debe ser 32 hex (`^[0-9a-f]{32}$`; es el `uuid4().hex` del servicio); si no, **404**.
+- **Query**: `engine?` (`v1` | `v2`, por defecto `v2`; `youtubeEngineQuery`): el motor que creó el trabajo. Otro valor → **422**.
 - **200** → `YoutubeJob` actualizado. Cuando `status = 'done'` trae `downloadUrl` firmado (~10 min), `filename`, `sizeBytes` y `expiresAt`
   (ISO del vencimiento del archivo). Cada consulta con `done` renueva la firma (D4, D5).
 - **404** `{ data: { code: 'expired' } }` si el servicio ya no conoce el trabajo o responde `404`/`410` → el cliente ofrece "Preparar de nuevo".
@@ -45,7 +49,7 @@ El servicio de descargas (`cloudy-api`) se llama **solo** desde `server/utils/cl
 
 ### `DELETE /api/youtube/jobs/:jobId` — cancelar (FR-009)
 
-- **204**. Si el servicio ya lo olvidó (`404`), también **204** (el resultado buscado ya se cumple).
+- **204**. Si el servicio ya lo olvidó (`404`), también **204** (el resultado buscado ya se cumple). Misma query `engine?` que el `GET`.
 
 ## Historial
 

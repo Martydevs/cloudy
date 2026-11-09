@@ -1,6 +1,7 @@
 // Textos de avisos (toasts), respaldos de errores de la API y el ErrorState de cada vista (T153),
 // agrupados por área y siempre en español. Los títulos estáticos y los EmptyState viven en sus páginas.
 import { RATE_LIMITED_MESSAGE } from '#shared/constants/messages'
+import { YOUTUBE_SERVICE_MESSAGES } from '#shared/constants/youtube'
 import { YOUTUBE_URL_MESSAGES } from '#shared/validation/youtube'
 import {
   SONG_ERROR_MESSAGES,
@@ -163,6 +164,9 @@ export const messages = {
       busy: 'El servicio está ocupado. Intenta de nuevo en un momento.',
       down: 'El servicio de descargas no está disponible ahora. Reintenta en unos minutos.',
       notConfigured: 'El servicio de descargas no está configurado. Avisa a un administrador.',
+      /** Los dos motores del servicio fallaron (`engines_failed`): mismo texto que responde el servidor. */
+      botCheck: YOUTUBE_SERVICE_MESSAGES.botCheck,
+      engineFailed: YOUTUBE_SERVICE_MESSAGES.engineFailed,
     },
     load: {
       video: `No pudimos cargar el video. ${CONNECTION}`,
@@ -205,6 +209,8 @@ export const messages = {
       paused: 'Descarga en pausa. Pulsa Reintentar cuando el servicio responda.',
       startFailed: `No pudimos iniciar la descarga. ${RETRY}`,
       batchFailed: (n: number | string) => `El lote ${n} no se pudo descargar. Seguimos con el resto.`,
+      /** Un solo lote falló entero y sus videos no comparten una causa (cada uno muestra la suya). */
+      failed: 'Ningún video se pudo descargar. Revisa el motivo de cada uno.',
       cancelled: 'Descarga cancelada',
       filesCount: (n: number) => (n === 1 ? 'Recibirás 1 archivo' : `Recibirás ${n} archivos`),
       bestAvailable: 'Si el video no llega a 1080p, se entregará la mayor calidad disponible.',

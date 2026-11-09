@@ -3,15 +3,23 @@ import { describe, expect, it } from 'vitest'
 import {
   BLOCK_REASON_MESSAGES,
   chunkVideoIds,
+  ENGINE_RETRY_CODES,
+  engineRetryVideoIds,
   isBlockReason,
   ITEM_ERROR_MESSAGES,
   itemErrorMessage,
+  YOUTUBE_ENGINES,
+  YOUTUBE_ENGINES_FAILED,
+  YOUTUBE_FALLBACK_ENGINE,
   YOUTUBE_FORMATS,
   YOUTUBE_MAX_BATCH,
+  YOUTUBE_PRIMARY_ENGINE,
+  YOUTUBE_SERVICE_MESSAGES,
   youtubeFormatLabel,
 } from '../../shared/constants/youtube'
 import type { YoutubeBlockReason } from '../../shared/constants/youtube'
 import {
+  youtubeEngineQuery,
   youtubeHistoryQuery,
   youtubeJobInput,
   youtubePlaylistInput,
@@ -138,5 +146,66 @@ describe('youtubeHistoryQuery', () => {
     expect(youtubeHistoryQuery({ limit: '49' })).toMatchObject({ ok: false, errors: { limit: expect.any(String) } })
     expect(youtubeHistoryQuery({ limit: '2.5' })).toMatchObject({ ok: false })
     expect(youtubeHistoryQuery({ exclude: 'malo' })).toMatchObject({ ok: false, errors: { exclude: expect.any(String) } })
+  })
+})
+
+describe('motores del servicio (v2 principal, v1 de respaldo)', () => {
+  const failed = (videoId: string, code: string) => ({ videoId, status: 'failed', error: { code } })
+  const ok = (videoId: string) => ({ videoId, status: 'done', error: null })
+
+  it('v2 es el principal y v1 el respaldo', () => {
+    expect(YOUTUBE_ENGINES).toEqual(['v2', 'v1'])
+    expect(YOUTUBE_PRIMARY_ENGINE).toBe('v2')
+    expect(YOUTUBE_FALLBACK_ENGINE).toBe('v1')
+    expect(YOUTUBE_ENGINES_FAILED).toBe('engines_failed')
+  })
+
+  it('los textos de «los dos motores fallaron» dicen la causa y qué hacer, en español', () => {
+    expect(YOUTUBE_SERVICE_MESSAGES.botCheck).toMatch(/anti-robots.*los dos servicios.*Intenta de nuevo/)
+    expect(YOUTUBE_SERVICE_MESSAGES.engineFailed).toMatch(/Los dos servicios.*Intenta de nuevo/)
+    expect(ITEM_ERROR_MESSAGES.bot_check).toMatch(/anti-robots/)
+    expect(ITEM_ERROR_MESSAGES.download_failed).toMatch(/YouTube/)
+  })
+
+  it('youtubeJobInput: `engine` es opcional y solo admite v1 o v2', () => {
+    expect(youtubeJobInput({ videoIds: [id(1)], format: 'mp3' })).toEqual({ ok: true, data: { videoIds: [id(1)], format: 'mp3', engine: undefined } })
+    expect(youtubeJobInput({ videoIds: [id(1)], format: 'mp3', engine: 'v1' })).toMatchObject({ ok: true, data: { engine: 'v1' } })
+    expect(youtubeJobInput({ videoIds: [id(1)], format: 'mp3', engine: 'v2' })).toMatchObject({ ok: true, data: { engine: 'v2' } })
+    expect(youtubeJobInput({ videoIds: [id(1)], format: 'mp3', engine: 'v3' })).toEqual({ ok: false, errors: { engine: 'Motor no válido' } })
+    expect(youtubeJobInput({ videoIds: [id(1)], format: 'mp3', engine: 2 })).toMatchObject({ ok: false, errors: { engine: 'Motor no válido' } })
+  })
+
+  it('youtubeEngineQuery: v2 si no se dice; rechaza lo demás', () => {
+    expect(youtubeEngineQuery({})).toEqual({ ok: true, data: { engine: 'v2' } })
+    expect(youtubeEngineQuery({ engine: '' })).toEqual({ ok: true, data: { engine: 'v2' } })
+    expect(youtubeEngineQuery({ engine: 'v1' })).toEqual({ ok: true, data: { engine: 'v1' } })
+    expect(youtubeEngineQuery({ engine: 'v2' })).toEqual({ ok: true, data: { engine: 'v2' } })
+    expect(youtubeEngineQuery({ engine: 'V1' })).toEqual({ ok: false, errors: { engine: 'Motor no válido' } })
+    expect(youtubeEngineQuery({ engine: ['v1', 'v2'] })).toMatchObject({ ok: false })
+  })
+
+  it.each(['bot_check', 'download_failed', 'ffmpeg_missing', 'format_unavailable', 'internal'])('%s es del motor: se repite en v1', (code) => {
+    expect(ENGINE_RETRY_CODES).toContain(code)
+    expect(engineRetryVideoIds({ engine: 'v2', items: [failed(id(1), code)] })).toEqual([id(1)])
+  })
+
+  it.each(['private', 'unavailable', 'age_restricted', 'members_only', 'geo_restricted', 'live', 'cancelled', 'too_long'])('%s es del video: v1 daría lo mismo', (code) => {
+    expect(ENGINE_RETRY_CODES).not.toContain(code)
+    expect(engineRetryVideoIds({ engine: 'v2', items: [failed(id(1), code)] })).toEqual([])
+  })
+
+  it('engineRetryVideoIds: solo los fallidos con código del motor, en orden y sin repetidos', () => {
+    const items = [ok(id(1)), failed(id(2), 'bot_check'), failed(id(3), 'private'), failed(id(4), 'download_failed'), failed(id(2), 'bot_check')]
+    expect(engineRetryVideoIds({ engine: 'v2', items })).toEqual([id(2), id(4)])
+    // Sin videos, sin fallos, o con un fallo que no trae error: nada que repetir.
+    expect(engineRetryVideoIds({ engine: 'v2', items: [] })).toEqual([])
+    expect(engineRetryVideoIds({ engine: 'v2', items: [ok(id(1))] })).toEqual([])
+    expect(engineRetryVideoIds({ engine: 'v2', items: [{ videoId: id(1), status: 'failed', error: null }] })).toEqual([])
+    // Un video aún en curso con un error viejo no cuenta: solo los que terminaron en fallo.
+    expect(engineRetryVideoIds({ engine: 'v2', items: [{ videoId: id(1), status: 'running', error: { code: 'bot_check' } }] })).toEqual([])
+  })
+
+  it('un trabajo de v1 nunca se repite (sin ciclos)', () => {
+    expect(engineRetryVideoIds({ engine: 'v1', items: [failed(id(1), 'bot_check'), failed(id(2), 'download_failed')] })).toEqual([])
   })
 })

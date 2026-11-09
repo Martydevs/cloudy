@@ -36,6 +36,8 @@ const videoError = computed(() => {
   const code = body?.data?.code
   return isBlockReason(code) ? BLOCK_REASON_MESSAGES[code] : body?.message || messages.youtube.load.video
 })
+// Los dos motores del servicio fallaron con este video (502): se dice la causa, no un error genérico de carga.
+const loadError = computed(() => (error.value && !video.value ? engineFailureMessage(error.value) : null) ?? messages.youtube.load.video)
 
 // Servicio dormido: se muestra el aviso y, en cuanto despierta, la ficha se vuelve a pedir sola (SC-010).
 watch(sleeping, (asleep) => {
@@ -102,7 +104,7 @@ const recentHeading = useId()
 
     <template v-else-if="!video && sleeping" />
 
-    <ErrorState v-else-if="!video && error" :message="messages.youtube.load.video" @retry="refresh()" />
+    <ErrorState v-else-if="!video && error" :message="loadError" @retry="refresh()" />
 
     <YoutubeVideoMeta v-else-if="video" :video="video" @playlist="playlistDialog = true" @open-window="openWindow" />
 

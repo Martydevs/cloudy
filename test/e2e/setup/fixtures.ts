@@ -303,8 +303,11 @@ async function cloudyStubRequest<T>(path: string, body?: unknown): Promise<T> {
   return res.json() as Promise<T>
 }
 
+/** Lo que el stub recibió (`cloudy-api-stub.ts`): trabajos aceptados por motor y el orden de los intentos (v2 → v1). */
 export interface CloudyStubCalls {
-  jobsCreated: number
+  jobsCreated: { v1: number, v2: number }
+  createAttempts: ('v1' | 'v2')[]
+  probes: ('v1' | 'v2')[]
   unauthorized: number
   formats: string[]
   /** Presentaciones pedidas (feature 006): título y color de letra recibidos. */
@@ -314,7 +317,7 @@ export interface CloudyStubCalls {
 }
 
 /** `asleep`: el stub responde 502 a todo, como Render mientras levanta la instancia. */
-export const setCloudyStubState = (state: 'up' | 'asleep' | 'degraded') => cloudyStubRequest('/__stub/state', { state })
+export const setCloudyStubState = (state: 'up' | 'asleep' | 'degraded' | 'v2-missing') => cloudyStubRequest('/__stub/state', { state })
 export const cloudyStubCalls = () => cloudyStubRequest<CloudyStubCalls>('/__stub/calls')
 export const resetCloudyStub = () => cloudyStubRequest('/__stub/reset', {})
 
@@ -349,6 +352,16 @@ export async function seedYoutubeHistory(viewer: string, count: number, prefix =
     [ids, viewer],
   )
   return ids
+}
+
+/** Deja en el historial un video concreto (un escenario del stub, p. ej. `bothBotChk1`) como lo más reciente. */
+export async function seedYoutubeVideo(viewer: string, videoId: string, title: string): Promise<void> {
+  await testSql().query(
+    `INSERT INTO youtube_videos (video_id, title, channel, duration_seconds, thumbnail_url, last_viewed_at, last_viewed_by)
+     VALUES ($1, $2, 'Canal Cloudy', 95, 'https://i.ytimg.com/vi/' || $1 || '/hqdefault.jpg', now(), $3)
+     ON CONFLICT (video_id) DO UPDATE SET title = excluded.title, last_viewed_at = excluded.last_viewed_at, last_viewed_by = excluded.last_viewed_by`,
+    [videoId, title, viewer],
+  )
 }
 
 /**
