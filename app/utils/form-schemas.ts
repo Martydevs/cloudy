@@ -88,21 +88,15 @@ export const commentSchema = z.object({ body: z.string().check(filled, maxChars(
 
 export const imageTextSchema = z.object({ text: z.string().check(filled, maxChars(MAX_IMAGE_TEXT_LENGTH)) })
 
-/** Nombre del invitado (solicitud de acceso y envío). */
+/** Nombre del invitado en su envío. */
 export const senderNameSchema = z.string().check(filled, maxChars(SENDER_NAME_MAX))
 
 /** Nota opcional del envío: sin `filled`. */
 export const noteSchema = z.string().check(maxChars(NOTE_MAX))
 
-/** Solicitud de acceso en `/upload`: solo el nombre. */
-export const accessRequestSchema = z.object({ name: senderNameSchema })
-
-/**
- * Envío del invitado en `GuestUploadForm`. Con el nombre fijo de la solicitud aprobada no hay campo que validar:
- * `fixedName` deja pasar cualquier texto en `name`.
- */
-export const guestSubmissionSchema = (fixedName: boolean) => z.object({
-  name: fixedName ? z.string() : senderNameSchema,
+/** Envío del invitado en `GuestUploadForm` (`/upload`): nombre obligatorio y nota opcional. */
+export const guestSubmissionSchema = z.object({
+  name: senderNameSchema,
   note: noteSchema,
 })
 

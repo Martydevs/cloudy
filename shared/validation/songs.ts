@@ -1,7 +1,8 @@
 // Validadores de la página Canciones (feature 006, data-model.md § Validadores) y lectura del enlace pegado
 // (research D6). Cliente y servidor usan las mismas reglas; en el servidor `parseLetrasUrl` es el filtro contra SSRF.
 import type { SongUrlReason } from '../constants/songs'
-import { SONG_COLLECTION_NAME_MAX, SONG_HISTORY_MAX_LIMIT, SONG_HISTORY_PAGE } from '../constants/songs'
+import { SONG_COLLECTION_NAME_MAX, SONG_HISTORY_MAX_LIMIT, SONG_HISTORY_PAGE, SONG_PRESENTATION_BATCH_MAX } from '../constants/songs'
+import type { Field } from './core'
 import { int, object, optional, str, uuid } from './core'
 
 export type LetrasUrlResult =
@@ -72,3 +73,27 @@ export const songHistoryQuery = object({
   cursor: optional(str({ max: 500 })),
   exclude: optional(uuid()),
 })
+
+/** Se aceptan unos pocos repetidos (se quitan), no listas de cualquier largo: el tope se revisa antes de mirar cada id. */
+const RAW_ID_LIMIT = SONG_PRESENTATION_BATCH_MAX * 4
+const TOO_MANY = `Puedes generar como máximo ${SONG_PRESENTATION_BATCH_MAX} presentaciones a la vez`
+
+/** 1–`SONG_PRESENTATION_BATCH_MAX` ids de canción; los repetidos se quitan conservando el orden. */
+function songIdList(): Field<string[]> {
+  const id = uuid()
+  return (input) => {
+    if (!Array.isArray(input) || input.length === 0) return { ok: false, error: 'Elige al menos una canción' }
+    if (input.length > RAW_ID_LIMIT) return { ok: false, error: TOO_MANY }
+    const ids: string[] = []
+    for (const item of input) {
+      const res = id(item)
+      if (!res.ok) return res
+      if (!ids.includes(res.value)) ids.push(res.value)
+    }
+    if (ids.length > SONG_PRESENTATION_BATCH_MAX) return { ok: false, error: TOO_MANY }
+    return { ok: true, value: ids }
+  }
+}
+
+/** Cuerpo de `POST /api/songs/presentations`. */
+export const songPresentationBatchInput = object({ songIds: songIdList() })

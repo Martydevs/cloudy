@@ -60,6 +60,14 @@ describe('POST /api/songs/:id/pptx', () => {
     expect(createLyricsPptx).not.toHaveBeenCalled()
   })
 
+  it('≤ 300 líneas pero más de 500 000 caracteres de HTML → 422 lyrics_too_long sin llamar al servicio (la misma regla que el lote)', async () => {
+    const createLyricsPptx = vi.fn()
+    installNitro([[row({ lyrics: [Array.from({ length: 100 }, () => 'x'.repeat(5_100))] })]], { createLyricsPptx })
+    const error = await expectStatus(Promise.resolve((await loadHandler('api/songs/[id]/pptx.post.ts'))(post())), 422)
+    expect(error.data).toEqual({ code: 'lyrics_too_long' })
+    expect(createLyricsPptx).not.toHaveBeenCalled()
+  })
+
   it('letra vacía → 422 no_lyrics sin llamar al servicio', async () => {
     const createLyricsPptx = vi.fn()
     installNitro([[row({ lyrics: null })]], { createLyricsPptx })

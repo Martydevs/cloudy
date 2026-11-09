@@ -1,6 +1,7 @@
 <script setup lang="ts">
 // Página Canciones (feature 006, contracts/ui.md § /canciones): pegar el enlace de una canción de Letras.com para ver su letra,
-// las colecciones del equipo y el historial compartido con selección múltiple y generación por lotes.
+// las colecciones del equipo y el historial compartido con selección múltiple y generación por lotes. En modo cola, cada enlace
+// pegado se agrega a la cola del .zip (`SongBatchQueue`) en vez de abrir la ficha.
 import type { SongHistoryItem } from '#shared/types/api'
 
 definePageMeta({ layout: 'dashboard', access: 'private', roles: ['editor', 'admin'] })
@@ -13,6 +14,11 @@ const bannerState = computed(() => (service.state.value === 'up' || service.stat
 const songs = useSongs()
 const searching = ref(false)
 const fetchError = ref<string | null>(null)
+
+// ---- Cola del .zip (un solo dueño: `useSongPresentationQueue`)
+const queue = useSongPresentationQueue()
+// Ref de primer nivel para que `v-model:batch-mode` funcione en la plantilla.
+const { batchMode } = queue
 
 // ---- Colecciones
 const collections = useSongCollections()
@@ -35,6 +41,12 @@ async function generateSelection() {
   if (await generateSongs(songs) > 0) selected.value = []
 }
 
+/** «Descargar en un .zip» de la barra: la selección pasa por la cola, así hay un solo resultado (el panel de arriba). */
+async function zipSelection() {
+  queue.replaceWith(historyList.value?.songsOf(selected.value) ?? [])
+  if ((await queue.generate())?.ok) selected.value = []
+}
+
 function addToCollection(song: SongHistoryItem) {
   dialog.value = { songId: song.id, songTitle: song.title }
 }
@@ -43,7 +55,21 @@ async function open(url: string) {
   searching.value = true
   fetchError.value = null
   try {
-    fetchError.value = await songs.open(url)
+    if (!batchMode.value) {
+      fetchError.value = await songs.open(url)
+      return
+    }
+    // Antes de rastrear: una canción que no cabe en la cola no debe gastar crédito de Apify.
+    if (queue.full.value) {
+      fetchError.value = messages.songs.present.queueFull
+      return
+    }
+    const { song, error } = await songs.fetchSong(url)
+    if (!song) {
+      fetchError.value = error
+      return
+    }
+    if (queue.add(song) === 'full') fetchError.value = messages.songs.present.queueFull
   }
   finally {
     searching.value = false
@@ -52,7 +78,7 @@ async function open(url: string) {
 </script>
 
 <template>
-  <div class="flex flex-col gap-8" :class="{ 'pb-40 sm:pb-24': selected.length > 0 }">
+  <div class="flex flex-col gap-8" :class="{ 'pb-56 sm:pb-24': selected.length > 0 }">
     <div class="flex flex-col gap-4">
       <header class="flex flex-col gap-1">
         <h1 class="text-2xl font-semibold">Canciones</h1>
@@ -61,7 +87,9 @@ async function open(url: string) {
 
       <YoutubeServiceBanner v-if="bannerState" :state="bannerState" @retry="service.retry()" />
 
-      <SongUrlInput :busy="searching" :error="fetchError" @submit="open" />
+      <SongUrlInput v-model:batch-mode="batchMode" :busy="searching" :error="fetchError" @submit="open" />
+
+      <LazySongBatchQueue v-if="queue.visible.value" />
     </div>
 
     <SongCollectionRow
@@ -82,7 +110,14 @@ async function open(url: string) {
       <SongHistoryList ref="historyList" v-model:selected="selected" @collection="addToCollection" @generate="generateSongs" />
     </section>
 
-    <SongSelectionBar v-if="selected.length > 0" :count="selected.length" @generate="generateSelection" @clear="selected = []" />
+    <SongSelectionBar
+      v-if="selected.length > 0"
+      :count="selected.length"
+      :busy="queue.pending.value"
+      @generate="generateSelection"
+      @clear="selected = []"
+      @zip="zipSelection"
+    />
 
     <LazySongCollectionDialog
       v-if="dialog"

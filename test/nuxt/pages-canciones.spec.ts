@@ -1,8 +1,10 @@
 // T026 — Páginas de Canciones (feature 006, contracts/ui.md): el índice con su campo y la ficha con metadatos → acciones →
-// letra en ese orden, y sus estados (cargando, no encontrada, error con reintento y contenido).
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+// letra en ese orden, y sus estados (cargando, no encontrada, error con reintento y contenido); el modo cola y «Descargar en un .zip».
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mountSuspended } from '@nuxt/test-utils/runtime'
 import { nextTick } from 'vue'
+import { setResponseHeader } from 'h3'
+import type { H3Event } from 'h3'
 import type { Me, SongDetail } from '#shared/types/api'
 import CancionesPage from '~/pages/canciones/index.vue'
 import CancionPage from '~/pages/canciones/[id].vue'
@@ -41,6 +43,10 @@ beforeEach(() => {
   mockApi('GET', '/api/songs/collections', { items: [] })
   mockApi('GET', '/api/songs/history', { items: [], nextCursor: null })
   useState('songs-history-selected').value = []
+  useState('songs-presentation-batch-pending').value = false
+  useState('songs-presentation-batch-mode').value = false
+  useState('songs-presentation-batch-queue').value = []
+  useState('songs-presentation-batch-result').value = null
 })
 
 describe('/canciones', () => {
@@ -316,3 +322,136 @@ describe('/canciones · Historial', () => {
     expect(calls.some(c => c.url === '/api/songs/history')).toBe(true)
   })
 })
+
+describe('/canciones · cola del .zip', () => {
+  const item = (n: number) => ({
+    id: `00000000-0000-4000-8000-00000000000${n}`, title: `Canción ${n}`, artist: 'Banda', sourceUrl: `https://letras.com/a/c${n}`,
+    viewedAt: new Date(Date.now() - 3_600_000).toISOString(), viewedBy: { userId: 'u2', name: 'Luis', active: true },
+  })
+
+  function zip(ids: string[]) {
+    return (event: H3Event) => {
+      setResponseHeader(event, 'content-type', 'application/zip')
+      setResponseHeader(event, 'content-disposition', 'attachment; filename="canciones.zip"')
+      setResponseHeader(event, 'x-song-presentations', encodeURIComponent(JSON.stringify(ids.map(songId => (
+        { songId, status: 'done', filename: 'x.pptx', slideCount: 2, arrangedBy: 'llm', errorCode: null })))))
+      return Buffer.from([0x50, 0x4B, 5, 6])
+    }
+  }
+
+  beforeEach(() => {
+    vi.spyOn(URL, 'createObjectURL').mockImplementation(() => 'blob:cloudy/1')
+    vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {})
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+  })
+
+  afterEach(() => {
+    useSongPresentationBatch().release()
+    vi.restoreAllMocks()
+  })
+
+  async function paste(wrapper: Awaited<ReturnType<typeof mountSuspended>>, url: string) {
+    await wrapper.get('input[type="url"]').setValue(url)
+    await wrapper.get('form').trigger('submit')
+    await flush(10)
+  }
+
+  it('en modo cola, pegar un enlace agrega la canción sin abrir la ficha y aparece el panel; luego genera el .zip', async () => {
+    mockApi('POST', '/api/songs/fetch', { song: songDetail(), crawled: true })
+    mockApi('POST', '/api/songs/presentations', zip([ID]))
+    const router = useRouter()
+    const push = vi.spyOn(router, 'push')
+    const wrapper = await mountSuspended(CancionesPage, { attachTo: document.body })
+    await flush()
+    expect(wrapper.find('[aria-label="Cola de presentaciones"]').exists()).toBe(false)
+    await wrapper.get('form button[type="button"]').trigger('click')
+    expect(wrapper.get('form button[type="button"]').attributes('aria-pressed')).toBe('true')
+    expect(wrapper.get('button[type="submit"]').text()).toBe('Agregar')
+
+    await paste(wrapper, 'https://www.letras.com/musiko/de-buenas/')
+    expect(calls.filter(c => c.url === '/api/songs/fetch')).toEqual([{ method: 'POST', url: '/api/songs/fetch', body: { url: 'https://letras.com/musiko/de-buenas' } }])
+    expect(push).not.toHaveBeenCalled()
+    expect(useToast().toasts.value.map(t => t.message)).toEqual(['Letra obtenida', '«De Buenas» agregada a la cola'])
+    await vi.waitUntil(() => wrapper.find('[aria-label="Cola de presentaciones"]').exists(), { timeout: 3000 })
+    const panel = wrapper.get('[aria-label="Cola de presentaciones"]')
+    expect(panel.text()).toContain('De Buenas')
+    expect(panel.text()).toContain('1 de 3')
+
+    await buttonsWithText(panel, 'Generar 1 presentación (.zip)')[0]!.trigger('click')
+    await flush(10)
+    expect(calls.filter(c => c.url === '/api/songs/presentations')).toEqual([{ method: 'POST', url: '/api/songs/presentations', body: { songIds: [ID] } }])
+    expect(useToast().toasts.value.map(t => t.message)).toContain('canciones.zip descargado: 1 presentación')
+    wrapper.unmount()
+  })
+
+  it('con la cola llena avisa junto al campo y no rastrea', async () => {
+    mockApi('POST', '/api/songs/fetch', { song: songDetail(), crawled: false })
+    useState('songs-presentation-batch-mode').value = true
+    useSongPresentationQueue().replaceWith([1, 2, 3].map(item))
+    const wrapper = await mountSuspended(CancionesPage, { attachTo: document.body })
+    await flush()
+    await paste(wrapper, 'https://letras.com/musiko/de-buenas')
+    expect(wrapper.get('[role="alert"]').text()).toBe('La cola está llena: admite hasta 3 canciones. Genera el .zip o quita una.')
+    expect(calls.some(c => c.url === '/api/songs/fetch')).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('un error al obtener la canción en modo cola aparece junto al campo y la cola no cambia', async () => {
+    mockApi('POST', '/api/songs/fetch', failFromServer(404, 'Not Found', 'No encontramos una letra en ese enlace.', { code: 'no_lyrics' }))
+    useState('songs-presentation-batch-mode').value = true
+    const wrapper = await mountSuspended(CancionesPage, { attachTo: document.body })
+    await flush()
+    await paste(wrapper, 'https://letras.com/e2e/sin-letra')
+    expect(wrapper.get('[role="alert"]').text()).toBe('No encontramos una letra en ese enlace.')
+    expect(useSongPresentationQueue().count.value).toBe(0)
+    wrapper.unmount()
+  })
+
+  it('si la cola se llenó mientras rastreaba, la canción no entra y se avisa', async () => {
+    mockApi('POST', '/api/songs/fetch', () => {
+      useSongPresentationQueue().replaceWith([1, 2, 3].map(item))
+      return { song: songDetail(), crawled: false }
+    })
+    useState('songs-presentation-batch-mode').value = true
+    const wrapper = await mountSuspended(CancionesPage, { attachTo: document.body })
+    await flush()
+    await paste(wrapper, 'https://letras.com/musiko/de-buenas')
+    expect(wrapper.get('[role="alert"]').text()).toBe('La cola está llena: admite hasta 3 canciones. Genera el .zip o quita una.')
+    expect(useSongPresentationQueue().items.value.map(s => s.id)).not.toContain(ID)
+    wrapper.unmount()
+  })
+
+  it('«Descargar en un .zip» de la barra: con 2 marcadas genera el lote con sus ids y limpia la selección; con 1 no aparece', async () => {
+    mockApi('GET', '/api/songs/history', { items: [item(1), item(2)], nextCursor: null })
+    mockApi('POST', '/api/songs/presentations', zip([item(1).id, item(2).id]))
+    const wrapper = await mountSuspended(CancionesPage, { attachTo: document.body })
+    await flush(10)
+    const boxes = wrapper.findAll('input[type="checkbox"]')
+    await boxes[0]!.setValue(true)
+    const bar = () => wrapper.get('[role="region"][aria-label="Selección"]')
+    expect(buttonsWithText(bar(), 'Descargar en un .zip')).toHaveLength(0)
+    await boxes[1]!.setValue(true)
+    await buttonsWithText(bar(), 'Descargar en un .zip')[0]!.trigger('click')
+    await flush(10)
+    expect(calls.filter(c => c.url === '/api/songs/presentations')).toEqual([
+      { method: 'POST', url: '/api/songs/presentations', body: { songIds: [item(1).id, item(2).id] } },
+    ])
+    expect(useState('songs-history-selected').value).toEqual([])
+    await vi.waitUntil(() => wrapper.find('[aria-label="Cola de presentaciones"]').exists(), { timeout: 3000 })
+    expect(buttonsWithText(wrapper.get('[aria-label="Cola de presentaciones"]'), 'Descargar de nuevo')).toHaveLength(1)
+    wrapper.unmount()
+  })
+
+  it('si el .zip de la selección falla, la selección se conserva', async () => {
+    mockApi('GET', '/api/songs/history', { items: [item(1), item(2)], nextCursor: null })
+    mockApi('POST', '/api/songs/presentations', failWith(503, { code: 'waking' }))
+    useState('songs-history-selected').value = [item(1).id, item(2).id]
+    const wrapper = await mountSuspended(CancionesPage, { attachTo: document.body })
+    await flush(10)
+    await buttonsWithText(wrapper.get('[role="region"][aria-label="Selección"]'), 'Descargar en un .zip')[0]!.trigger('click')
+    await flush(10)
+    expect(useState('songs-history-selected').value).toEqual([item(1).id, item(2).id])
+    wrapper.unmount()
+  })
+})
+

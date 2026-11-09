@@ -1,5 +1,6 @@
 // T025 — Campo del enlace de Letras.com (feature 006, FR-004–FR-006): etiqueta, envío con Enter o con el botón, el enlace
-// normalizado, el mensaje de cada rechazo, la espera del rastreo y el error del servidor junto al campo.
+// normalizado, el mensaje de cada rechazo, la espera del rastreo, el error del servidor junto al campo y el interruptor del modo
+// cola («Agregar a la cola»).
 import { describe, expect, it } from 'vitest'
 import { mountSuspended } from '@nuxt/test-utils/runtime'
 import SongUrlInput from '~/components/songs/SongUrlInput.vue'
@@ -95,6 +96,51 @@ describe('SongUrlInput', () => {
     await wrapper.setProps({ error: 'No encontramos una letra en ese enlace.' })
     expect(wrapper.get('[role="alert"]').text()).toBe('No encontramos una letra en ese enlace.')
     expect((wrapper.get('input').element as HTMLInputElement).value).toBe('https://letras.com/a/b')
+    wrapper.unmount()
+  })
+
+  it('el interruptor «Agregar a la cola» va entre el campo y el envío, sin presionar', async () => {
+    const wrapper = await mount()
+    const controls = wrapper.findAll('input, button')
+    expect(controls.map(c => c.element.tagName === 'INPUT' ? 'input' : c.attributes('type'))).toEqual(['input', 'button', 'submit'])
+    const toggle = controls[1]!
+    expect(toggle.text()).toBe('Agregar a la cola')
+    expect(toggle.attributes('aria-pressed')).toBe('false')
+    expect(toggle.classes()).not.toContain('btn-active')
+    expect(wrapper.text()).not.toContain('Modo cola')
+    wrapper.unmount()
+  })
+
+  it('pulsarlo emite update:batchMode sin enviar el formulario', async () => {
+    const wrapper = await mount()
+    await wrapper.get('input').setValue('https://letras.com/a/b')
+    await wrapper.get('button[type="button"]').trigger('click')
+    await flush()
+    expect(wrapper.emitted('update:batchMode')).toEqual([[true]])
+    expect(wrapper.emitted('submit')).toBeUndefined()
+    wrapper.unmount()
+  })
+
+  it('en modo cola: presionado, el envío dice «Agregar», la pista aparece y el envío sigue emitiendo el enlace', async () => {
+    const wrapper = await mount({ batchMode: true })
+    const toggle = wrapper.get('button[type="button"]')
+    expect(toggle.attributes('aria-pressed')).toBe('true')
+    expect(toggle.classes()).toContain('btn-active')
+    expect(wrapper.get('button[type="submit"]').text()).toBe('Agregar')
+    expect(wrapper.text()).toContain('Modo cola: cada enlace que pegues se agrega a la cola (hasta 3 canciones) para descargarlas en un solo .zip.')
+    await wrapper.get('input').setValue('https://www.letras.com/a/b/')
+    await wrapper.get('form').trigger('submit')
+    await flush()
+    expect(wrapper.emitted('submit')).toEqual([['https://letras.com/a/b']])
+    await toggle.trigger('click')
+    expect(wrapper.emitted('update:batchMode')).toEqual([[false]])
+    wrapper.unmount()
+  })
+
+  it('mientras busca solo se deshabilita el envío, no el interruptor', async () => {
+    const wrapper = await mount({ busy: true, batchMode: true })
+    expect(wrapper.get('button[type="submit"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.get('button[type="button"]').attributes('disabled')).toBeUndefined()
     wrapper.unmount()
   })
 })

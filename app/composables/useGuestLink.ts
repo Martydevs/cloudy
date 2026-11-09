@@ -1,11 +1,11 @@
-// Enlace público para invitados (`/enviar`): compartir si el navegador lo permite, si no copiar.
+// Enlace público para invitados (`/upload`): compartir si el navegador lo permite, si no copiar.
 export function useGuestLink() {
   const toast = useToast()
   const siteUrl = useRuntimeConfig().public.siteUrl
   const { copy, isSupported: canCopy } = useClipboard()
   const { share, isSupported: canShare } = useShare()
 
-  const link = computed(() => `${siteUrl || (import.meta.client ? window.location.origin : '')}/enviar`)
+  const link = computed(() => `${siteUrl || (import.meta.client ? window.location.origin : '')}/upload`)
 
   async function copyGuestLink() {
     if (canShare.value) {

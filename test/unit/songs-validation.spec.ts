@@ -10,6 +10,8 @@ import {
   SONG_FONT_COLOR,
   SONG_HISTORY_MAX_LIMIT,
   SONG_HISTORY_PAGE,
+  SONG_PRESENTATION_BATCH_MAX,
+  SONG_PRESENTATION_BATCH_TIMEOUT_MS,
   SONG_PRESENTATION_TIMEOUT_MS,
   SONG_RECENT_LIMIT,
   SONG_SERVICE_MESSAGES,
@@ -21,6 +23,7 @@ import {
   songCollectionItemInput,
   songCollectionRename,
   songHistoryQuery,
+  songPresentationBatchInput,
   songUrlInput,
 } from '../../shared/validation/songs'
 
@@ -38,6 +41,9 @@ describe('constantes', () => {
     expect(SONG_RECENT_LIMIT).toBe(12)
     expect(SONG_FONT_COLOR).toBe('FFFFFF')
     expect(SONG_PRESENTATION_TIMEOUT_MS).toBe(90_000)
+    expect(SONG_PRESENTATION_BATCH_MAX).toBe(3)
+    // Por encima de los 110 s de cloudy-api y los 120 s de Vercel: la respuesta real del servidor llega antes.
+    expect(SONG_PRESENTATION_BATCH_TIMEOUT_MS).toBe(125_000)
   })
 
   it('cada código de error tiene un texto en español', () => {
@@ -117,5 +123,34 @@ describe('songHistoryQuery', () => {
     expect(songHistoryQuery({ cursor: 'c'.repeat(500), exclude: UUID })).toMatchObject({ ok: true, data: { cursor: 'c'.repeat(500), exclude: UUID } })
     expect(songHistoryQuery({ cursor: 'c'.repeat(501) })).toMatchObject({ ok: false })
     expect(songHistoryQuery({ exclude: 'no' })).toMatchObject({ ok: false })
+  })
+})
+
+describe('songPresentationBatchInput', () => {
+  const UUID2 = '9b2c1f0e-1d2c-4e5f-8a9b-0c1d2e3f4a5b'
+  const UUID3 = 'c56a4180-65aa-42ec-a945-5fd21dec0538'
+  const UUID4 = '0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d'
+
+  it('acepta 1–3 uuids y quita los repetidos conservando el orden', () => {
+    expect(songPresentationBatchInput({ songIds: [UUID] })).toEqual({ ok: true, data: { songIds: [UUID] } })
+    expect(songPresentationBatchInput({ songIds: [UUID, UUID, UUID] })).toEqual({ ok: true, data: { songIds: [UUID] } })
+    expect(songPresentationBatchInput({ songIds: [UUID2, UUID, UUID2, UUID3] })).toEqual({ ok: true, data: { songIds: [UUID2, UUID, UUID3] } })
+  })
+
+  it('rechaza vacío, sin lista, un id sin forma y más de 3 distintos', () => {
+    expect(songPresentationBatchInput({ songIds: [] }).ok).toBe(false)
+    expect(songPresentationBatchInput({}).ok).toBe(false)
+    expect(songPresentationBatchInput({ songIds: 'x' }).ok).toBe(false)
+    expect(songPresentationBatchInput({ songIds: [UUID, 'x'] }).ok).toBe(false)
+    const four = songPresentationBatchInput({ songIds: [UUID, UUID2, UUID3, UUID4] })
+    expect(four.ok).toBe(false)
+    if (!four.ok) expect(JSON.stringify(four)).toContain('como máximo 3 presentaciones')
+  })
+
+  it('una lista mucho más larga que el tope se rechaza antes de mirar cada id, aunque sea un solo id repetido', () => {
+    expect(songPresentationBatchInput({ songIds: Array.from({ length: 12 }, () => UUID) })).toEqual({ ok: true, data: { songIds: [UUID] } })
+    const many = songPresentationBatchInput({ songIds: Array.from({ length: 13 }, () => UUID) })
+    expect(many.ok).toBe(false)
+    if (!many.ok) expect(JSON.stringify(many)).toContain('como máximo 3 presentaciones')
   })
 })

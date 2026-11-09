@@ -21,10 +21,11 @@ async function guestPage() {
   return pageFromIp(`203.0.113.${guestNo}`)
 }
 
-async function sendAsGuest(page: Page, name: string, files: string[]) {
-  await page.goto(`${E2E_URL}/enviar`)
+async function sendAsGuest(page: Page, name: string, files: string[], note = '') {
+  await page.goto(`${E2E_URL}/upload`)
   await waitForHydration(page)
   await page.getByLabel('Tu nombre').fill(name)
+  if (note) await page.getByLabel('Nota para el equipo (opcional)').fill(note)
   await page.getByLabel('Elegir archivos', { exact: true }).setInputFiles(files.map(fixture))
   await page.getByRole('button', { name: 'Enviar', exact: true }).click()
   await expect.poll(async () => {
@@ -126,7 +127,7 @@ describe('US3 · envíos de invitados', () => {
 
   it('enviar sin nombre muestra un error en línea', async () => {
     const guest = await guestPage()
-    await guest.goto(`${E2E_URL}/enviar`)
+    await guest.goto(`${E2E_URL}/upload`)
     await waitForHydration(guest)
     await guest.getByLabel('Elegir archivos', { exact: true }).setInputFiles([fixture('foto.jpg')])
     await guest.getByRole('button', { name: 'Enviar', exact: true }).click()
@@ -150,7 +151,7 @@ describe('US3 · envíos de invitados', () => {
     expect(sixth.headers.get('retry-after')).toMatch(/^\d+$/)
 
     const guest = await pageFromIp(ip)
-    await guest.goto(`${E2E_URL}/enviar`)
+    await guest.goto(`${E2E_URL}/upload`)
     await waitForHydration(guest)
     await guest.getByLabel('Tu nombre').fill('Spam')
     await guest.getByLabel('Elegir archivos', { exact: true }).setInputFiles([fixture('foto.jpg')])
@@ -160,60 +161,51 @@ describe('US3 · envíos de invitados', () => {
   })
 })
 
-// Feature 003 · US3 — en Solicitudes, cada envío muestra su origen y, si llegó por permiso, quién dio acceso.
-describe('US3 (feature 003) · origen de los envíos', () => {
-  it('a 360 px distingue "Por enlace" y "Por permiso", y aprobar el de permiso lo deja en la carpeta como invitado', async () => {
+// Envío de un solo paso en /upload: nombre, nota y archivos en un formulario, directo a la cola del equipo (sin pedir acceso).
+describe('US3 · envío de un solo paso en /upload', () => {
+  it('a 360 px el invitado envía nombre, nota y archivo; llega pendiente a Solicitudes y el equipo lo aprueba en una carpeta', async () => {
     const editor = await createPage(undefined, { viewport: viewports.phone })
-    const creds = await signedInAs(editor, 'editor', 'origin-editor')
-    const folderId = await seedFolder(`Origen ${runId()}`, await profileUserId(creds.email))
+    const creds = await signedInAs(editor, 'editor', 'one-step-editor')
+    const folderId = await seedFolder(`Un paso ${runId()}`, await profileUserId(creds.email))
 
-    const byLink = `Por enlace ${runId()}`
-    const linkGuest = await guestPage()
-    await sendAsGuest(linkGuest, byLink, ['imagen.png'])
-    await linkGuest.close()
+    const name = `Invitado de un paso ${runId()}`
+    const note = 'Fotos del ensayo del sábado'
+    const guest = await guestPage()
+    await guest.goto(`${E2E_URL}/upload`)
+    await waitForHydration(guest)
+    // No hay paso previo: el selector de archivos está desde que carga la página.
+    expect(await guest.getByRole('button', { name: 'Pedir acceso' }).count()).toBe(0)
+    await sendAsGuest(guest, name, ['imagen.png'], note)
+    await guest.close()
 
-    // El otro invitado pide acceso en /upload; el editor se lo da y el invitado envía.
-    const byPermission = `Por permiso ${runId()}`
-    const permitted = await guestPage()
-    await permitted.goto(`${E2E_URL}/upload`)
-    await waitForHydration(permitted)
-    await permitted.getByLabel('Tu nombre').fill(byPermission)
-    await permitted.getByRole('button', { name: 'Pedir acceso' }).click()
-    await expect.poll(async () => (await testSql()`SELECT id FROM guest_access_requests WHERE sender_name = ${byPermission}`).length).toBe(1)
-    const [request] = await testSql()`SELECT id FROM guest_access_requests WHERE sender_name = ${byPermission}`
-    expect((await editor.request.post(`${E2E_URL}/api/access-requests/${request!.id}/approve`)).status()).toBe(204)
-    await expect.poll(() => permitted.getByLabel('Elegir archivos', { exact: true }).count(), { timeout: 10_000 }).toBe(1)
-    await permitted.getByLabel('Elegir archivos', { exact: true }).setInputFiles([fixture('foto.jpg')])
-    await permitted.getByRole('button', { name: 'Enviar', exact: true }).click()
-    await expect.poll(() => permitted.getByText('¡Gracias! Recibimos tu envío').first().isVisible(), { timeout: 60_000 }).toBe(true)
-    await permitted.close()
+    expect(await testSql()`SELECT status, note FROM guest_submissions WHERE sender_name = ${name}`).toEqual([{ status: 'pending', note }])
 
     await editor.goto(`${E2E_URL}/solicitudes`)
     await waitForHydration(editor)
-    const linkCard = editor.getByRole('article', { name: `Envío de ${byLink}` })
-    const permissionCard = editor.getByRole('article', { name: `Envío de ${byPermission}` })
-    await expect.poll(() => permissionCard.isVisible()).toBe(true)
-    expect(await linkCard.getByText('Por enlace', { exact: true }).isVisible()).toBe(true)
-    expect(await permissionCard.getByText('Por permiso', { exact: true }).isVisible()).toBe(true)
-    expect(await permissionCard.getByText(`Acceso aprobado por ${creds.name}`).isVisible()).toBe(true)
-    expect(await linkCard.getByText('Acceso aprobado por').count()).toBe(0)
+    const card = editor.getByRole('article', { name: `Envío de ${name}` })
+    await expect.poll(() => card.isVisible()).toBe(true)
+    expect(await card.getByText(note).isVisible()).toBe(true)
+    expect(await card.getByText('Pendiente', { exact: true }).isVisible()).toBe(true)
+    // Ya no hay origen ni "Acceso aprobado por".
+    expect(await card.getByText(/Por (enlace|permiso)|Acceso aprobado por/).count()).toBe(0)
+    expect(await editor.getByRole('heading', { name: 'Solicitudes de acceso' }).count()).toBe(0)
     const overflow = await editor.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)
     expect(overflow).toBeLessThanOrEqual(0)
 
-    await permissionCard.getByRole('button', { name: 'Aprobar' }).click()
-    await editor.getByRole('radio', { name: new RegExp(`Origen ${runId()}`) }).click()
+    await card.getByRole('button', { name: 'Aprobar' }).click()
+    await editor.getByRole('radio', { name: new RegExp(`Un paso ${runId()}`) }).click()
     await editor.getByRole('button', { name: 'Aprobar aquí' }).click()
-    await expect.poll(() => permissionCard.count()).toBe(0)
+    await expect.poll(() => card.count()).toBe(0)
     expect(await testSql()`
-      SELECT f.origin, f.guest_name, f.folder_id FROM files f JOIN guest_submissions s ON s.id = f.submission_id WHERE s.sender_name = ${byPermission}
-    `).toEqual([{ origin: 'guest', guest_name: byPermission, folder_id: folderId }])
+      SELECT f.origin, f.guest_name, f.folder_id FROM files f JOIN guest_submissions s ON s.id = f.submission_id WHERE s.sender_name = ${name}
+    `).toEqual([{ origin: 'guest', guest_name: name, folder_id: folderId }])
     await editor.close()
 
     // Las lecturas de texto de estas imágenes corren en segundo plano contra el stub: se esperan aquí para que no
     // lleguen después del `resetStub()` de la prueba siguiente y le sumen llamadas.
     await expect.poll(async () => (await testSql()`
       SELECT count(*)::int AS n FROM guest_submission_files f JOIN guest_submissions s ON s.id = f.submission_id
-      WHERE s.sender_name IN (${byLink}, ${byPermission}) AND (f.text_status IS NULL OR f.text_status = 'reading')
+      WHERE s.sender_name = ${name} AND (f.text_status IS NULL OR f.text_status = 'reading')
     `)[0]!.n, { timeout: 30_000 }).toBe(0)
   })
 })
@@ -231,7 +223,7 @@ describe('US2 · texto de las imágenes de invitados', () => {
     // 9 · El invitado ve el aviso, recibe la confirmación y nunca ve el texto extraído (FR-016).
     const guest = await guestPage()
     const name = `Texto ${runId()}`
-    await guest.goto(`${E2E_URL}/enviar`)
+    await guest.goto(`${E2E_URL}/upload`)
     await waitForHydration(guest)
     expect(await guest.getByText('Leeremos automáticamente el texto de tus imágenes').isVisible()).toBe(true)
     const files = [note, 'nota.heic']

@@ -309,6 +309,8 @@ export interface CloudyStubCalls {
   formats: string[]
   /** Presentaciones pedidas (feature 006): título y color de letra recibidos. */
   pptx: { title: string, fontColor: string | null, html: string }[]
+  /** Lotes pedidos (`POST /v1/lyrics/pptx/batch`): las canciones de cada uno, en orden. */
+  pptxBatch: { title: string, fontColor: string | null, html: string }[][]
 }
 
 /** `asleep`: el stub responde 502 a todo, como Render mientras levanta la instancia. */

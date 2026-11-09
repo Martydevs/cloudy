@@ -16,6 +16,28 @@ export const SONG_RECENT_LIMIT = 12
 export const SONG_FONT_COLOR = 'FFFFFF'
 /** Plazo de una generación desde el navegador (arranque en frío del servicio incluido). */
 export const SONG_PRESENTATION_TIMEOUT_MS = 90_000
+/** Canciones por petición de `POST /api/songs/presentations`: el mismo tope que `MAX_LYRICS_BATCH` de cloudy-api. */
+export const SONG_PRESENTATION_BATCH_MAX = 3
+/**
+ * Plazo de un lote desde el navegador, por encima del servidor (cloudy-api con 110 s y Vercel cortando a los 120 s): así la
+ * respuesta real del servidor (`503 waking` o el `504` de Vercel) llega antes y este plazo es solo la red de seguridad de
+ * una conexión muerta.
+ */
+export const SONG_PRESENTATION_BATCH_TIMEOUT_MS = 125_000
+/** Nombre del `.zip` de un lote. */
+export const SONG_PRESENTATION_ZIP_NAME = 'canciones.zip'
+
+/** Por qué una canción de un lote no tiene presentación (`SongPresentationBatchItem.errorCode`). */
+export type SongPresentationItemError = 'not_found' | 'no_lyrics' | 'lyrics_too_long' | 'invalid'
+
+export const SONG_PRESENTATION_ITEM_ERRORS: readonly SongPresentationItemError[] = ['not_found', 'no_lyrics', 'lyrics_too_long', 'invalid']
+
+export const SONG_PRESENTATION_ITEM_MESSAGES: Record<SongPresentationItemError, string> = {
+  not_found: 'Esa canción ya no existe.',
+  no_lyrics: 'La letra guardada no tiene contenido. Vuelve a obtenerla.',
+  lyrics_too_long: 'Eso no parece una canción: la letra pasa de 300 líneas.',
+  invalid: 'El servicio de presentaciones no pudo leer esta letra.',
+}
 
 /** Códigos de error de `/api/songs/**` (`data.code`). */
 export type SongErrorCode =
@@ -67,4 +89,5 @@ export const SONG_SERVICE_MESSAGES = {
   noLyrics: 'La letra guardada no tiene contenido. Vuelve a obtenerla.',
   tooLong: SONG_ERROR_MESSAGES.lyrics_too_long,
   songNotFound: 'Esa canción ya no existe.',
+  batchFailed: 'No se pudo generar ninguna de las presentaciones.',
 } as const

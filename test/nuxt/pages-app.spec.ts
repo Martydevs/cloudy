@@ -50,7 +50,6 @@ const setMe = (changes: Partial<Me['profile']> = {}) => {
 const summary = (changes: Partial<DashboardSummary> = {}): DashboardSummary => ({
   recentFiles: [],
   pendingCount: 0,
-  openAccessRequests: 0,
   totalsByCategory: {
     image: { count: 3, bytes: 3072 }, audio: { count: 0, bytes: 0 }, video: { count: 0, bytes: 0 },
     presentation: { count: 0, bytes: 0 }, document: { count: 0, bytes: 0 },
@@ -121,22 +120,18 @@ describe('Inicio', () => {
     usePulse().cursor.value = '2026-10-14T10:00:00.000Z'
     await nextTick()
     expect(wrapper.get('.stat-value').text()).toBe('5')
-    // Bajar a 0 (se atendieron o caducaron) se ve: el resumen viejo no lo tapa.
+    // Bajar a 0 (se aprobaron o rechazaron) se ve: el resumen viejo no lo tapa.
     usePulse().pendingCount.value = 0
     await nextTick()
     expect(wrapper.get('.stat-value').text()).toBe('0')
 
-    // "Solicitudes por atender" suma envíos por revisar y solicitudes de acceso (feature 003).
-    usePulse().openAccessRequests.value = 4
-    await nextTick()
-    expect(wrapper.get('.stat-value').text()).toBe('4')
-    usePulse().openAccessRequests.value = 0
+    // "Solicitudes por atender" son solo los envíos por revisar (ya no hay solicitudes de acceso).
     usePulse().cursor.value = null
     clearNuxtData()
-    mockApi('GET', '/api/dashboard', summary({ pendingCount: 2, openAccessRequests: 3 }))
-    const summed = await mountSuspended(HomePage)
+    mockApi('GET', '/api/dashboard', summary({ pendingCount: 2 }))
+    const fromSummary = await mountSuspended(HomePage)
     await flush()
-    expect(summed.get('.stat-value').text()).toBe('5')
+    expect(fromSummary.get('.stat-value').text()).toBe('2')
 
     useMe().me.value = null
     clearNuxtData()
@@ -159,7 +154,7 @@ describe('Inicio', () => {
     await button(wrapper, 'Copiar enlace para invitados').trigger('click')
     await flush()
     expect(useToast().toasts.value.at(-1)?.message).toBe('Enlace para invitados copiado')
-    expect(await navigator.clipboard.readText()).toMatch(/\/enviar$/)
+    expect(await navigator.clipboard.readText()).toMatch(/\/upload$/)
   })
 })
 

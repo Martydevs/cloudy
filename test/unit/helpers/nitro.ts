@@ -7,7 +7,6 @@ import type { H3Event } from 'h3'
 import type { SQL } from 'drizzle-orm'
 import { PgDialect } from 'drizzle-orm/pg-core'
 import { vi } from 'vitest'
-import * as accessRequests from '../../../server/utils/access-requests'
 import * as activity from '../../../server/utils/activity'
 import * as auth from '../../../server/utils/auth'
 import * as background from '../../../server/utils/background'
@@ -59,7 +58,6 @@ export function installNitro(results: unknown[] = [], overrides: Record<string, 
   backgroundTasks.length = 0
   const globals: Record<string, unknown> = {
     ...h3,
-    ...accessRequests,
     ...activity,
     ...auth,
     ...background,

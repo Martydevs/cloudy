@@ -10,10 +10,9 @@ const isDesktop = useBreakpoints(breakpointsTailwind).greaterOrEqual('lg')
 // que flota abajo sobre la columna de contenido (barra de selección de YouTube).
 const sidebarWidth = computed(() => (collapsed.value && isDesktop.value ? '5rem' : '16rem'))
 
-const { pendingCount, pendingUsers, openAccessRequests } = usePulse()
+const { pendingCount, pendingUsers } = usePulse()
 usePulsePolling()
-// Solicitudes suma envíos por revisar y solicitudes de acceso abiertas (feature 003).
-const badges = computed(() => ({ '/solicitudes': pendingCount.value + openAccessRequests.value, '/usuarios': pendingUsers.value }))
+const badges = computed(() => ({ '/solicitudes': pendingCount.value, '/usuarios': pendingUsers.value }))
 
 const upload = useUploadDialog()
 // Bandeja de descargas de YouTube (feature 005): se monta, diferida, solo cuando hay trabajos.

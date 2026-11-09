@@ -7,7 +7,6 @@ import { mountSuspended } from '@nuxt/test-utils/runtime'
 import { nextTick } from 'vue'
 import type { Component } from 'vue'
 import type { DashboardSummary, Me } from '#shared/types/api'
-import AccessRequestList from '~/components/guests/AccessRequestList.vue'
 import ActividadPage from '~/pages/actividad.vue'
 import CancionesPage from '~/pages/canciones/index.vue'
 import FilesIndexPage from '~/pages/archivos/index.vue'
@@ -27,7 +26,6 @@ const setMe = (changes: Partial<Me['profile']> = {}) => {
 const emptySummary: DashboardSummary = {
   recentFiles: [],
   pendingCount: 0,
-  openAccessRequests: 0,
   totalsByCategory: {
     image: { count: 0, bytes: 0 }, audio: { count: 0, bytes: 0 }, video: { count: 0, bytes: 0 },
     presentation: { count: 0, bytes: 0 }, document: { count: 0, bytes: 0 },
@@ -73,14 +71,6 @@ const rows: Row[] = [
     emptyPayload: [],
     errorCopy: 'No pudimos cargar los envíos',
     emptyCopy: 'No hay envíos por revisar',
-  },
-  {
-    name: 'Solicitudes de acceso',
-    page: AccessRequestList,
-    endpoint: '/api/access-requests',
-    emptyPayload: [],
-    errorCopy: 'No pudimos cargar las solicitudes de acceso',
-    emptyCopy: 'Nadie está pidiendo acceso ahora',
   },
   {
     name: 'Papelera',
@@ -132,11 +122,9 @@ beforeEach(() => {
   // Usuarios y Actividad son de admin; el resto también se renderiza con ese rol.
   setMe({ role: 'admin' })
   mockApi('GET', '/api/me', () => useMe().me.value)
-  mockApi('GET', '/api/realtime/pulse', { cursor: '2026-10-14T10:00:00.000Z', pendingCount: 0, newSubmissions: [], pendingUsers: 0, openAccessRequests: 0, newAccessRequests: [] })
+  mockApi('GET', '/api/realtime/pulse', { cursor: '2026-10-14T10:00:00.000Z', pendingCount: 0, newSubmissions: [], pendingUsers: 0 })
   // El filtro por persona de /actividad: no es el endpoint bajo prueba.
   mockApi('GET', '/api/users', { items: [], total: 0 })
-  // La sección de solicitudes de acceso de /solicitudes (feature 003): tampoco es el endpoint bajo prueba.
-  mockApi('GET', '/api/access-requests', [])
   // /canciones: la vista que no se prueba responde con contenido, para que su skeleton o aviso no se confunda con el de la otra.
   mockApi('GET', '/api/youtube/health', { state: 'up' })
   mockApi('GET', '/api/songs/collections', {

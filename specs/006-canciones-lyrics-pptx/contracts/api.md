@@ -80,6 +80,34 @@ Errores (D9):
 
 El cliente **no reintenta** `422`; reintenta (manual) solo `503`, `504` (`FUNCTION_INVOCATION_TIMEOUT` de Vercel, D15) y red.
 
+## 4b. `POST /api/songs/presentations` (lote)
+
+Cuerpo `{ songIds: string[] }`: 1–`SONG_PRESENTATION_BATCH_MAX` (3, igual que `MAX_LYRICS_BATCH` de cloudy-api) uuids; los repetidos se quitan conservando el
+orden (`songPresentationBatchInput`), pero una lista de más de 12 elementos se rechaza antes de mirar cada id. Fuera de eso, `422` de validación.
+
+Flujo: leer las canciones → revisar cada una como § 4 (`not_found`, `no_lyrics`, `lyrics_too_long` por `lyricsWithinLimits` no van al servicio) → `createLyricsPptxBatch`
+con las válidas, en orden (una sola llamada; el servicio las genera de una en una) → responder el `.zip`.
+
+Éxito `200` (aunque alguna canción haya fallado), cuerpo binario, cabeceras:
+
+| Cabecera | Valor |
+|----------|-------|
+| `Content-Type` | `application/zip` |
+| `Content-Disposition` | `attachment; filename="canciones.zip"` |
+| `X-Song-Presentations` | `encodeURIComponent(JSON.stringify(SongPresentationBatchItem[]))`, una por id pedido y en ese orden |
+| `Cache-Control` | `no-store` |
+
+El `.zip` trae **solo** los `.pptx`: un `<título ASCII>.pptx` por canción lograda (los repetidos con ` (2)`, ` (3)`). El `manifest.json` del servicio se lee en el
+servidor y se quita (`withoutZipEntry`) antes de responder.
+`SongPresentationBatchItem = { songId, status: 'done' | 'failed', filename, slideCount, arrangedBy, errorCode }`; `errorCode` ∈
+`not_found | no_lyrics | lyrics_too_long | invalid` (textos en `SONG_PRESENTATION_ITEM_MESSAGES`).
+
+Errores: ninguna canción lograda → `422 { data: { code: 'presentations_failed', items: SongPresentationBatchItem[] } }`; los del servicio para todo el lote, como § 4
+(`502 misconfigured` / `invalid`, `503 waking` / `not_configured`). Transporte: `useSongPresentationBatch()` (`generate`, `redownload`, `release`), que no avisa; lo consume `useSongPresentationQueue()` (cola de `/canciones` y «Descargar en un .zip» de la barra de selección; contracts/ui.md);
+`pending` vive en `useState('songs-presentation-batch-pending')` y el `objectURL` del último `.zip` en el módulo (uno a lo sumo, compartido por todas las instancias). El plazo
+del navegador (`SONG_PRESENTATION_BATCH_TIMEOUT_MS = 125_000`) queda por encima del servidor para que su respuesta real (`503 waking`, `504`) llegue antes; al vencer, el texto es
+el de plazo y es reintentable.
+
 ## 5–6. Historial
 
 `GET /api/songs/history?limit&cursor&exclude` → `SongHistoryPage` (`limit` 1–48, 24 por defecto; `exclude` = canción actual en la ficha). Orden `(last_viewed_at DESC, id DESC)`, keyset con `encodeCursor/decodeCursor`;
@@ -121,6 +149,21 @@ export async function createLyricsPptx(input: { html: string; title: string }): 
 - `POST {cloudyApiUrl}/v1/lyrics/pptx`, `X-API-Key`, cuerpo `{ html, title, font_color: SONG_FONT_COLOR }` (`'FFFFFF'`, D12), plazo `CLOUDY_API_TIMEOUTS.pptx = 90_000`.
 - Lee los bytes con `arrayBuffer()` y las cabeceras `content-disposition`, `x-slide-count`, `x-lyrics-arranged-by` (valores desconocidos → `null`).
 - Errores y mapeo: [research D9](../research.md). `fail()` gana el caso `'pptx'` sin cambiar los existentes.
+
+```ts
+export interface LyricsBatchItem { index: number; status: 'done' | 'failed'; filename: string | null; slideCount: number | null; arrangedBy: 'llm' | 'fallback' | null; errorCode: SongPresentationItemError | null }
+export interface LyricsPptxBatch { zip: Uint8Array | null; items: LyricsBatchItem[] }
+export async function createLyricsPptxBatch(inputs: readonly { html: string; title: string }[]): Promise<LyricsPptxBatch>
+```
+
+- `POST {cloudyApiUrl}/v1/lyrics/pptx/batch`, cuerpo `{ items: [{ html, title, font_color: 'FFFFFF' }] }`, plazo `CLOUDY_API_TIMEOUTS.pptxBatch = 110_000` (bajo los 120 s de Vercel).
+  Ese presupuesto depende de que el servicio reparta con el LLM bajo un solo plazo de 45 s por lote (`LYRICS_BATCH_DEADLINE_SECONDS` en Render, después usa el reparto de respaldo):
+  arranque en frío (~50 s) + 45 s + 3 renders ≈ 100 s. Si ese plazo sube en Render hay que revisar los 110 s.
+- Lee el `manifest.json` del `.zip` con `readZipEntry` y lo quita con `withoutZipEntry` (`server/utils/zip.ts`, sin dependencias); `zip` es el archivo sin el manifest.
+- Los índices del manifest deben ser exactamente `0..n-1`, cada uno una vez (`coversEveryInput`), también en `422 all_items_failed`. Un cuerpo que no es zip, sin manifest,
+  con JSON roto, con índices que no cuadran o un zip que no se puede reescribir → `502 misconfigured` (despliegue desalineado, no se reintenta). Un cuerpo que se corta a
+  medio leer sigue siendo `503 waking` (red).
+- `422 all_items_failed` → `{ zip: null, items }` (no lanza). `422 batch_too_large` → `502 misconfigured` (el tope del servicio es menor que el nuestro). El resto, como `'pptx'`.
 
 ## Validadores y reglas compartidas
 

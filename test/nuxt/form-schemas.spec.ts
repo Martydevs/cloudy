@@ -17,7 +17,6 @@ import { SONG_URL_MESSAGES } from '#shared/constants/songs'
 import { parseLetrasUrl, songCollectionName } from '#shared/validation/songs'
 import { useFormSchema } from '~/utils/form-schema'
 import {
-  accessRequestSchema,
   changePasswordSchema,
   commentSchema,
   externalErrorsFrom,
@@ -157,10 +156,13 @@ const cases: Case[] = [
     samples: [{ text: 'Oremos' }, { text: '' }, { text: L(10_000) }, { text: L(10_001) }],
   },
   {
-    name: 'nombre del invitado',
-    validator: object({ name: senderName() }),
-    schema: accessRequestSchema,
-    samples: [{ name: 'Eva' }, { name: '  ' }, { name: pad(L(80)) }, { name: L(81) }],
+    name: 'envío del invitado',
+    validator: object({ name: senderName(), note: note() }),
+    schema: guestSubmissionSchema,
+    samples: [
+      { name: 'Eva', note: '' }, { name: '  ', note: '' }, { name: pad(L(80)), note: L(500) }, { name: L(81), note: '' },
+      { name: 'Eva', note: L(501) },
+    ],
   },
   {
     name: 'nombre de lista de YouTube',
@@ -284,10 +286,10 @@ describe('useFormSchema', () => {
     scope.stop()
   })
 
-  it('el nombre del invitado solo es obligatorio cuando no viene fijo de la solicitud aprobada', async () => {
-    expect(await schemaErrors({ name: '', note: '' }, guestSubmissionSchema(false))).toEqual({ name: 'Este campo es obligatorio' })
-    expect(await schemaErrors({ name: '', note: '' }, guestSubmissionSchema(true))).toEqual({})
-    expect(await schemaErrors({ name: 'Eva', note: 'x'.repeat(501) }, guestSubmissionSchema(true))).toEqual({ note: 'Debe tener como máximo 500 caracteres' })
+  it('el nombre del invitado siempre es obligatorio y la nota opcional (envío de un solo paso)', async () => {
+    expect(await schemaErrors({ name: '', note: '' }, guestSubmissionSchema)).toEqual({ name: 'Este campo es obligatorio' })
+    expect(await schemaErrors({ name: 'Eva', note: '' }, guestSubmissionSchema)).toEqual({})
+    expect(await schemaErrors({ name: 'Eva', note: 'x'.repeat(501) }, guestSubmissionSchema)).toEqual({ note: 'Debe tener como máximo 500 caracteres' })
   })
 })
 

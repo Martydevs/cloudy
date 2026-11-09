@@ -39,15 +39,11 @@ describe('GET /api/cron/cleanup', () => {
       [],
       // Ventanas de rate limit.
       [{ key: 'a' }, { key: 'b' }],
-      // Solicitudes de acceso terminadas o vencidas hace más de 24 h (feature 003).
-      [{ id: 'r1' }, { id: 'r2' }, { id: 'r3' }],
     ])
     const handler = await loadHandler('api/cron/cleanup.get.ts')
-    expect(await handler(authorized())).toEqual({ purgedTrash: 0, expiredSubmissions: 1, orphanUploads: 2, rateLimitRows: 2, accessRequests: 3, orphanVideos: 0, orphanSongs: 0 })
-    // Después vienen los pasos de videos y de canciones huérfanas.
-    const purge = sqlText(fake.calls.filter(c => c.method === 'where').at(-3)?.args[0])
-    expect(purge).toContain(`now() - interval '24 hours'`)
-    expect(purge).toContain('"guest_access_requests"."used_at"')
+    expect(await handler(authorized())).toEqual({ purgedTrash: 0, expiredSubmissions: 1, orphanUploads: 2, rateLimitRows: 2, orphanVideos: 0, orphanSongs: 0 })
+    // La limpieza ya no toca solicitudes de acceso (se retiraron).
+    expect(fake.calls.some(c => c.method === 'where' && sqlText(c.args[0]).includes('guest_access_requests'))).toBe(false)
     expect(fake.calls.find(c => c.method === 'set')?.args[0]).toEqual({ status: 'expired' })
     expect(s3.deleteMany.mock.calls.map(c => c[0])).toEqual([
       // La copia JPEG de una HEIC (feature 002): la columna y la clave derivada del id, aunque esté vacía.
@@ -56,13 +52,13 @@ describe('GET /api/cron/cleanup', () => {
       ['pre/guest/s2/b', 'pre/textsrc/g1.jpg'],
     ])
     // + el paso de videos huérfanos y el de canciones huérfanas (feature 006).
-    expect(fake.calls.filter(c => c.method === 'delete')).toHaveLength(8)
+    expect(fake.calls.filter(c => c.method === 'delete')).toHaveLength(7)
   })
 
   it('borra los videos de YouTube huérfanos en lotes y conserva los que tienen historial, lista o menos de 24 h', async () => {
     const batch = Array.from({ length: 500 }, (_, i) => ({ videoId: `v${String(i).padStart(10, '0')}` }))
-    // Papelera, envíos, subidas (equipo e invitados), envíos vacíos, rate limits y solicitudes: nada.
-    const fake = installNitro([{ rows: [] }, [], [], [], [], [], [], batch, [{ videoId: 'okShortVid1' }]])
+    // Papelera, envíos, subidas (equipo e invitados), envíos vacíos y rate limits: nada.
+    const fake = installNitro([{ rows: [] }, [], [], [], [], [], batch, [{ videoId: 'okShortVid1' }]])
     const handler = await loadHandler('api/cron/cleanup.get.ts')
     expect(await handler(authorized())).toMatchObject({ orphanVideos: 501 })
     const wheres = fake.calls.filter(c => c.method === 'where').map(c => sqlText(c.args[0]))
@@ -77,8 +73,8 @@ describe('GET /api/cron/cleanup', () => {
 
   it('borra las canciones huérfanas en lotes: sin historial, en ninguna colección y sin cambios en 30 días (feature 006)', async () => {
     const batch = Array.from({ length: 500 }, (_, i) => ({ id: `s${i}` }))
-    // Papelera, envíos, subidas, envíos vacíos, rate limits, solicitudes y videos: nada.
-    const fake = installNitro([{ rows: [] }, [], [], [], [], [], [], [], batch, [{ id: 'ultima' }]])
+    // Papelera, envíos, subidas, envíos vacíos, rate limits y videos: nada.
+    const fake = installNitro([{ rows: [] }, [], [], [], [], [], [], batch, [{ id: 'ultima' }]])
     const handler = await loadHandler('api/cron/cleanup.get.ts')
     expect(await handler(authorized())).toMatchObject({ orphanVideos: 0, orphanSongs: 501 })
     const orphan = fake.calls.filter(c => c.method === 'where').map(c => sqlText(c.args[0])).filter(text => text.includes('FROM songs s'))
@@ -90,9 +86,9 @@ describe('GET /api/cron/cleanup', () => {
   })
 
   it('sin nada que limpiar devuelve ceros', async () => {
-    installNitro([{ rows: [] }, [], [], [], [], [], []])
+    installNitro([{ rows: [] }, [], [], [], [], []])
     const handler = await loadHandler('api/cron/cleanup.get.ts')
-    expect(await handler(authorized())).toEqual({ purgedTrash: 0, expiredSubmissions: 0, orphanUploads: 0, rateLimitRows: 0, accessRequests: 0, orphanVideos: 0, orphanSongs: 0 })
+    expect(await handler(authorized())).toEqual({ purgedTrash: 0, expiredSubmissions: 0, orphanUploads: 0, rateLimitRows: 0, orphanVideos: 0, orphanSongs: 0 })
     expect(s3.deleteMany).not.toHaveBeenCalled()
   })
 

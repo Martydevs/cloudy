@@ -56,9 +56,14 @@ export function titleFromUrl(url: string): string {
   return words ? words[0]!.toUpperCase() + words.slice(1) : 'Canción'
 }
 
-/** ≤ 300 líneas y ≤ 500 000 caracteres de HTML (FR-035); si no, 422 `lyrics_too_long`. */
+/** ≤ 300 líneas y ≤ 500 000 caracteres de HTML (FR-035): la única regla, para rastrear y para generar, suelta o en lote. */
+export function lyricsWithinLimits(stanzas: string[][]): boolean {
+  return countLines(stanzas) <= LYRICS_MAX_LINES && lyricsToHtml(stanzas).length <= LYRICS_MAX_CHARS
+}
+
+/** Lanza 422 `lyrics_too_long` si la letra pasa de `lyricsWithinLimits`. */
 export function assertLyricsWithinLimits(stanzas: string[][]): void {
-  if (countLines(stanzas) > LYRICS_MAX_LINES || lyricsToHtml(stanzas).length > LYRICS_MAX_CHARS) throw songError('lyrics_too_long')
+  if (!lyricsWithinLimits(stanzas)) throw songError('lyrics_too_long')
 }
 
 /**

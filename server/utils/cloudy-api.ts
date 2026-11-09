@@ -12,15 +12,22 @@ import type {
   YoutubeVideoDetail,
 } from '#shared/types/api'
 import { isBlockReason, itemErrorMessage, YOUTUBE_SERVICE_MESSAGES as MSG } from '#shared/constants/youtube'
+import type { SongPresentationItemError } from '#shared/constants/songs'
 import { SONG_FONT_COLOR, SONG_SERVICE_MESSAGES } from '#shared/constants/songs'
 import { songError } from './songs'
+import { readZipEntry, withoutZipEntry } from './zip'
 
-/** Plazo por llamada (research D8): `createJob` sondea cada video antes de encolar. */
-export const CLOUDY_API_TIMEOUTS = { ping: 5_000, job: 10_000, probe: 20_000, create: 45_000, pptx: 90_000 } as const
+/**
+ * Plazo por llamada (research D8): `createJob` sondea cada video antes de encolar. `pptxBatch` genera hasta 3 canciones de
+ * una en una y queda por debajo de los 120 s de la función en Vercel. Ese margen depende de que el servicio reparta con el
+ * LLM bajo un solo plazo de 45 s para todo el lote (`LYRICS_BATCH_DEADLINE_SECONDS` en Render; después usa el reparto de
+ * respaldo): arranque en frío (~50 s) + 45 s + 3 renders ≈ 100 s. Si ese plazo sube en Render, hay que revisar este presupuesto.
+ */
+export const CLOUDY_API_TIMEOUTS = { ping: 5_000, job: 10_000, probe: 20_000, create: 45_000, pptx: 90_000, pptxBatch: 110_000 } as const
 /** Segundos que se sugieren al cliente cuando la cola del servicio está llena. */
 export const QUEUE_RETRY_AFTER = 30
 
-type Call = 'ping' | 'video' | 'job' | 'cancel' | 'create' | 'pptx'
+type Call = 'ping' | 'video' | 'job' | 'cancel' | 'create' | 'pptx' | 'pptxBatch'
 
 interface ServiceDetail {
   code?: unknown
@@ -82,7 +89,9 @@ async function fail(res: Response, call: Call, event?: H3Event): Promise<never> 
   console.warn(`[cloudy-api] ${call} → ${status}${code ? ` (${code})` : ''}`)
 
   // Presentaciones de Canciones (feature 006, research D9): errores con `data.code` y textos del servicio de presentaciones.
-  if (call === 'pptx') {
+  if (call === 'pptx' || call === 'pptxBatch') {
+    // Un tope `MAX_LYRICS_BATCH` en el servicio menor que el nuestro es un error de configuración, no del usuario.
+    if (status === 422 && code === 'batch_too_large') throw songError('misconfigured', SONG_SERVICE_MESSAGES.misconfigured)
     if (status === 422 && (code === 'no_lyrics' || code === 'lyrics_too_long')) {
       throw songError(code, code === 'no_lyrics' ? SONG_SERVICE_MESSAGES.noLyrics : SONG_SERVICE_MESSAGES.tooLong, 422)
     }
@@ -319,4 +328,118 @@ export async function createLyricsPptx({ html, title }: { html: string, title: s
     slideCount: res.headers.has('x-slide-count') && Number.isInteger(slides) && slides >= 0 ? slides : null,
     arrangedBy: arranged === 'llm' || arranged === 'fallback' ? arranged : null,
   }
+}
+
+// ---------------------------------------------------------------- lote de presentaciones (POST /v1/lyrics/pptx/batch)
+
+/** Resultado del servicio para la canción `index` del lote (el orden de `items` en la petición). */
+export interface LyricsBatchItem {
+  index: number
+  status: 'done' | 'failed'
+  filename: string | null
+  slideCount: number | null
+  arrangedBy: 'llm' | 'fallback' | null
+  errorCode: SongPresentationItemError | null
+}
+
+/** `zip` es `null` cuando ninguna canción se pudo generar (422 `all_items_failed`); `items` dice por qué. */
+export interface LyricsPptxBatch {
+  zip: Uint8Array | null
+  items: LyricsBatchItem[]
+}
+
+const MANIFEST = 'manifest.json'
+
+function toBatchItem(raw: Record<string, unknown>): LyricsBatchItem | null {
+  const index = num(raw.index)
+  if (index === null || !Number.isInteger(index) || index < 0) return null
+  const done = raw.status === 'done'
+  const error = raw.error && typeof raw.error === 'object' ? str((raw.error as { code?: unknown }).code) : null
+  const arranged = raw.arranged_by
+  return {
+    index,
+    status: done ? 'done' : 'failed',
+    filename: done ? str(raw.filename) : null,
+    slideCount: done ? num(raw.slide_count) : null,
+    arrangedBy: done && (arranged === 'llm' || arranged === 'fallback') ? arranged : null,
+    // El texto del servicio (en inglés) nunca llega al usuario: solo el código, y uno desconocido es `invalid`.
+    errorCode: done ? null : error === 'no_lyrics' || error === 'lyrics_too_long' ? error : 'invalid',
+  }
+}
+
+function toBatchItems(value: unknown): LyricsBatchItem[] {
+  if (!Array.isArray(value)) return []
+  return value.flatMap(item => toBatchItem((item ?? {}) as Record<string, unknown>) ?? [])
+}
+
+/** Un resultado por canción, con los índices `0..count-1` exactamente una vez: sin eso no se sabe cuál salió. */
+function coversEveryInput(items: LyricsBatchItem[], count: number): boolean {
+  const seen = new Set(items.map(item => item.index))
+  return items.length === count && seen.size === count && items.every(item => item.index < count)
+}
+
+/** Una respuesta que no sigue el contrato es un despliegue desalineado, no un fallo pasajero: no se ofrece reintentar. */
+function brokenBatch(what: string): never {
+  console.warn(`[cloudy-api] pptxBatch → ${what}`)
+  throw songError('misconfigured', SONG_SERVICE_MESSAGES.misconfigured)
+}
+
+/**
+ * Genera hasta `SONG_PRESENTATION_BATCH_MAX` presentaciones en una sola llamada. El servicio las hace de una en una y
+ * responde un `.zip` con un `.pptx` por canción lograda y un `manifest.json` con el resultado de cada una (éxito parcial).
+ * El manifest se lee aquí y se quita del `.zip` que se devuelve: la persona recibe solo los `.pptx`. Letra siempre en
+ * blanco (D12). Los fallos de todo el lote salen como errores de Canciones, igual que `createLyricsPptx`; una respuesta
+ * que no sigue el contrato (sin zip, sin manifest, índices que no cuadran) es `misconfigured`.
+ */
+export async function createLyricsPptxBatch(inputs: readonly { html: string, title: string }[]): Promise<LyricsPptxBatch> {
+  let res: Response
+  try {
+    res = await request('/v1/lyrics/pptx/batch', 'pptxBatch', {
+      method: 'POST',
+      body: { items: inputs.map(({ html, title }) => ({ html, title, font_color: SONG_FONT_COLOR })) },
+      timeoutMs: CLOUDY_API_TIMEOUTS.pptxBatch,
+      accept: 'application/zip, application/json',
+    })
+  }
+  catch (error) {
+    const state = (error as { data?: { state?: string } }).data?.state
+    if (state === 'notConfigured') throw songError('not_configured', SONG_SERVICE_MESSAGES.notConfigured)
+    throw songError('waking', SONG_SERVICE_MESSAGES.waking)
+  }
+
+  if (res.status === 422) {
+    // Ninguna canción se pudo generar: no es un fallo del lote sino de cada letra; el detalle trae cada una.
+    const detail = await readDetail(res.clone())
+    if (detail?.code === 'all_items_failed') {
+      console.warn('[cloudy-api] pptxBatch → 422 (all_items_failed)')
+      const items = toBatchItems((detail as { items?: unknown }).items)
+      if (!coversEveryInput(items, inputs.length)) return brokenBatch('all_items_failed items')
+      return { zip: null, items }
+    }
+  }
+  if (!res.ok) return fail(res, 'pptxBatch')
+
+  let zip: Uint8Array
+  try {
+    zip = new Uint8Array(await res.arrayBuffer())
+  }
+  catch (error) {
+    // Un cuerpo que se corta a medio leer es un fallo de red: sí vale reintentar.
+    console.warn(`[cloudy-api] pptxBatch → body (${codeOf(error)})`)
+    throw songError('waking', SONG_SERVICE_MESSAGES.waking)
+  }
+
+  const manifest = readZipEntry(zip, MANIFEST)
+  if (!manifest) return brokenBatch('manifest')
+  let items: LyricsBatchItem[]
+  try {
+    items = toBatchItems((JSON.parse(new TextDecoder().decode(manifest)) as { items?: unknown }).items)
+  }
+  catch {
+    return brokenBatch('manifest')
+  }
+  if (!coversEveryInput(items, inputs.length)) return brokenBatch('manifest items')
+  const clean = withoutZipEntry(zip, MANIFEST)
+  if (!clean) return brokenBatch('zip')
+  return { zip: clean, items }
 }

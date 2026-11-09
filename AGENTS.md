@@ -9,7 +9,8 @@ file. Keep this guide aligned with it whenever the constitution is amended.
 
 **Active feature**: `specs/006-canciones-lyrics-pptx/` (Canciones page: Letras.com lyrics crawled with the Apify actor `apify/rag-web-browser` through `apify-client`, then
 turned into `.pptx` slides by the external `cloudy-api` service; reuses the shape of `specs/005-youtube-downloads/`, whose YouTube page is the previous active feature, and builds on
-`specs/001-shared-media-drive/`, `specs/002-note-text-extraction/` and `specs/003-guest-upload-access-code/`). Read `spec.md` (what), `plan.md` + `research.md`
+`specs/001-shared-media-drive/`, `specs/002-note-text-extraction/` and `specs/003-guest-upload-access-code/`; feature 003's access-approval step was later removed, see the
+amendment at the top of its `spec.md`). Read `spec.md` (what), `plan.md` + `research.md`
 (how), `data-model.md` and `contracts/` (interfaces) before changing related code.
 
 ## Stack
@@ -81,11 +82,13 @@ fetching uses Nuxt `useFetch`, not VueUse.
 **I. Performance** — Mobile 4G budgets: LCP ≤ 2.5 s, INP ≤ 200 ms, CLS ≤ 0.1, initial JS ≤ 250 KB
 gzip per route. Index every filtered/sorted column; no N+1 queries; cursor pagination. **Never stream
 file binaries through server functions** (Vercel body limit ~4.5 MB): browsers upload/download
-directly with presigned URLs. The one bounded exception is the lyrics `.pptx` of feature 006 (see Known gotchas). Lazy-load thumbnails and non-critical components at the component level (`Lazy*` behind `v-if` for UI that only appears after an action or a later state, e.g. `LazyItemDialogs`, `LazyGuestUploadForm`).
-Guest access (feature 003): the guest's browser holds two `httpOnly` cookies, `cloudy-guest-access` (random token;
-only its SHA-256 is stored) and `cloudy-guest-device` (per-browser rate-limit key). Limits: 3 new requests per
-30 min per browser, 30 per network (`hashSender(ip)`), and `ACCESS_SUBMIT_LIMIT` creations per approved request
-(`shared/constants/access.ts`). Closing a send (`complete`) allows 60 per hour per network, in line with the request limit, since many guests share one Wi-Fi. `/upload` polls `GET /api/public/access/current` every 5 s like the team pulse; the team pulse cursor overlaps by `PULSE_OVERLAP_MS` and the client announces each id once.
+directly with presigned URLs. The one bounded exception is the lyrics `.pptx` of feature 006 (see Known gotchas). Lazy-load thumbnails and non-critical components at the component level (`Lazy*` behind `v-if` for UI that only appears after an action or a later state, e.g. `LazyItemDialogs`).
+Guest upload (feature 003, one step): at `/upload` the guest fills name + optional note + files in one form
+(`GuestUploadForm` → `POST /api/public/submissions`, then `POST /api/public/submissions/:id/complete`) and the
+submission lands straight in the team's queue; the only approval is staff approving/rejecting the files. No guest
+cookies, no access request. Limits: 5 submissions per hour per network (`guest:<hashSender(ip)>`); closing a send
+(`complete`) allows 60 per hour per network, since many guests share one Wi-Fi. The team pulse cursor overlaps by
+`PULSE_OVERLAP_MS` and the client announces each id once.
 
 **II. Functional & effective** — Deliver user stories as independent, shippable slices. YAGNI. Failed
 flows must leave no orphans or half-written rows and must tell the user what to do next.
@@ -159,7 +162,7 @@ files: set the same names per environment in the project settings.
 `NUXT_CLOUDY_API_URL` + `NUXT_CLOUDY_API_KEY` (YouTube download and lyrics presentation service; empty = the pages answer "not configured"; e2e point the URL
 at `test/e2e/setup/cloudy-api-stub.ts`), `NUXT_APIFY_API_KEY` (lyrics crawling; empty = "not configured") + `NUXT_APIFY_BASE_URL` (empty = Apify;
 e2e → `test/e2e/setup/apify-stub.ts`), `CRON_SECRET`, `NUXT_RATE_LIMIT_SALT`. `NUXT_NEON_JWKS_URL` is present but intentionally unused in v1. There is no Neon Realtime
-config: "realtime" is client polling (`/api/realtime/pulse`, `/api/public/access/current`).
+config: "realtime" is client polling (`/api/realtime/pulse`).
 Never print or commit their values.
 
 ## Known gotchas
@@ -188,8 +191,8 @@ Never print or commit their values.
   `zod/mini` keeps the Regle + zod code small.
 - The Neon auth client also normalizes `USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL` (sign-up, 422) to `validation_failed` and
   `INVALID_PASSWORD` (change password, 400) to `invalid_credentials`; `useAuthClient` maps both back to Better Auth's codes.
-- `useFetch` shares its data by key and `refresh()` runs the *first* instance's options: state every instance must see (the guest
-  clock skew in `useGuestAccess`) lives in `useState`, not in a local ref.
+- `useFetch` shares its data by key and `refresh()` runs the *first* instance's options: state every instance must see
+  lives in `useState`, not in a local ref.
 - Nitro's `event.waitUntil` is not wired on Vercel Node: background work uses `waitUntil` from
   `@vercel/functions`, only through `server/utils/background.ts`.
 - `heic-to` only works in the browser: load it with a dynamic `import()` (`app/utils/heic-copy.ts`).
@@ -198,8 +201,9 @@ Never print or commit their values.
   `server/utils/image-text.ts`; `test/unit/architecture.spec.ts` enforces it.
 - `scripts/storage-setup*` accepts an optional `CORS_EXTRA_ORIGINS` (comma-separated `https://` origins, or
   `http://localhost:*`) to add a preview alias without dropping the site domain.
-- Routes (feature 003): guests ask for access at `/upload` (public); the team's queue is `/solicitudes` (the old
-  `/pendientes` 301-redirects there via `routeRules`). `/enviar` (open link) still works.
+- Routes (feature 003): guests send files at `/upload` (public, one step); the old `/enviar` link 301-redirects there via
+  `routeRules`. The team's queue is `/solicitudes` (the old `/pendientes` 301-redirects there too). The dashboard's
+  "Copiar enlace para invitados" copies `/upload`.
 - `Permissions-Policy` opens only `camera=(self)` (guest camera, feature 003); everything else stays `()`.
   `getUserMedia` needs a secure context: from a phone in dev use an HTTPS tunnel. `test/e2e/camera.spec.ts` uses
   Chromium's `--use-fake-ui-for-media-stream` / `--use-fake-device-for-media-stream` and forces `(pointer: coarse)`.
@@ -235,9 +239,12 @@ Never print or commit their values.
   The daily cleanup deletes songs out of the history, in no collection and unchanged for 30 days. E2E run against the Apify stub (scenario slugs
   `sin-letra`, `muy-larga`, `fallo-del-run`, `sin-credito`, `redirige`, `con-tildes`; `letrasUrl(slug)`) and the `cloudy-api` stub's
   `POST /v1/lyrics/pptx` (titles containing `vacia`, `demasiado larga`, `respaldo`).
-- `guest_access_requests.submission_id` is written **after** the submission row is inserted, in the same
-  `db.batch` (the FK is not deferrable). Access-request expiry uses Postgres `now()`, but `created_at` is stamped
-  with the server clock, like the pulse cursor: with Postgres' clock a skew of seconds would drop the live toast.
+- `guest_submissions.completed_at` is stamped with the server clock, like the pulse cursor: with Postgres' `now()` a
+  skew of seconds would drop the live toast.
+- The guest access-request layer was removed (migration `drizzle/0008_*`: drops `guest_access_requests`,
+  `guest_submissions.origin` / `access_granted_by` and their enums). The `access.approve` / `access.reject` values stay
+  in the `activity_action` enum (Postgres cannot drop enum values and old `activity_log` rows use them), and their labels
+  stay in `app/utils/activity-labels.ts`.
 
 ## Workflow
 

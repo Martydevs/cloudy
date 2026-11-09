@@ -2,6 +2,7 @@
 import type { FileCategory } from '../constants/files'
 import type { Role } from '../permissions'
 import type { YoutubeBlockReason, YoutubeFormat } from '../constants/youtube'
+import type { SongPresentationItemError } from '../constants/songs'
 
 export type UserStatus = 'pending' | 'active' | 'disabled' | 'removed'
 export type FileOrigin = 'team' | 'guest'
@@ -111,9 +112,6 @@ export interface SubmissionFile {
   text: ImageText | null
 }
 
-/** `link` = página abierta `/enviar`; `permission` = `/upload` con acceso aprobado (feature 003). */
-export type SubmissionOrigin = 'link' | 'permission'
-
 export interface Submission {
   id: string
   senderName: string
@@ -122,28 +120,6 @@ export interface Submission {
   createdAt: string
   expiresAt: string
   files: SubmissionFile[]
-  origin: SubmissionOrigin
-  /** Quién aprobó el acceso (solo `permission`); `null` si el perfil ya no existe. */
-  accessGrantedBy: { name: string } | null
-}
-
-/** `expired` = la solicitud caducó sin que nadie la atendiera; `accessExpired` = el acceso aprobado venció sin usarse. */
-export type AccessState = 'none' | 'waiting' | 'approved' | 'rejected' | 'expired' | 'accessExpired' | 'used'
-
-/** Lo que ve el invitado: nunca nombres del equipo (FR-013). */
-export interface GuestAccess {
-  state: AccessState
-  senderName: string | null
-  /** Fin de la espera (`waiting`) o del acceso (`approved`). */
-  expiresAt: string | null
-}
-
-/** Solicitud abierta, tal como la ve el equipo. */
-export interface AccessRequest {
-  id: string
-  senderName: string
-  createdAt: string
-  expiresAt: string
 }
 
 export interface Comment {
@@ -174,15 +150,11 @@ export interface Pulse {
   newSubmissions: { id: string, senderName: string, fileCount: number, createdAt: string }[]
   /** Cuentas por aprobar; solo el admin recibe el valor real (los demás, 0). */
   pendingUsers: number
-  /** Solicitudes de acceso abiertas y vigentes (feature 003). */
-  openAccessRequests: number
-  newAccessRequests: { id: string, senderName: string, createdAt: string }[]
 }
 
 export interface DashboardSummary {
   recentFiles: FileItem[]
   pendingCount: number
-  openAccessRequests: number
   totalsByCategory: Record<FileCategory, { count: number, bytes: number }>
   storage: { activeBytes: number, trashBytes: number }
 }
@@ -334,3 +306,16 @@ export interface SongCollectionItem extends Song { addedAt: string, addedBy: Son
 export interface SongCollectionDetail extends SongCollection { items: SongCollectionItem[] }
 
 export interface SongPresentationMeta { slideCount: number | null, arrangedBy: 'llm' | 'fallback' | null, filename: string }
+
+/**
+ * Una canción de `POST /api/songs/presentations`, en el orden pedido. `done` → `filename` es su entrada en el `.zip`;
+ * `failed` → `errorCode` dice por qué (los textos están en `SONG_PRESENTATION_ITEM_MESSAGES`).
+ */
+export interface SongPresentationBatchItem {
+  songId: string
+  status: 'done' | 'failed'
+  filename: string | null
+  slideCount: number | null
+  arrangedBy: 'llm' | 'fallback' | null
+  errorCode: SongPresentationItemError | null
+}

@@ -1,4 +1,4 @@
-// Fase 1 del envío abierto de un invitado (FR-016, FR-020): límite por IP y creación del envío con URLs firmadas.
+// Fase 1 del envío de un invitado desde /upload (FR-016, FR-020): límite por IP y creación del envío con URLs firmadas.
 import { getRequestIP } from 'h3'
 import { submissionInput } from '#shared/validation/submissions'
 import type { GuestSubmissionTicket } from '../../../utils/guest-submissions'
@@ -8,7 +8,7 @@ export default defineEventHandler(async (event): Promise<GuestSubmissionTicket> 
   await hitRateLimit(event, `guest:${hashSender(ip)}`, { limit: 5, windowSec: 3600 })
 
   const input = await readGuestSubmission(event, submissionInput)
-  const ticket = await createGuestSubmission(event, input, { origin: 'link' })
+  const ticket = await createGuestSubmission(event, input)
   setResponseStatus(event, 201)
   return ticket
 })

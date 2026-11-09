@@ -4,9 +4,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createEvent } from 'h3'
 import { IncomingMessage, ServerResponse } from 'node:http'
 import { Socket } from 'node:net'
-import { cancelJob, CLOUDY_API_TIMEOUTS, createJob, createLyricsPptx, getJob, pingService, probeVideo, queuedJob } from '../../server/utils/cloudy-api'
+import { cancelJob, CLOUDY_API_TIMEOUTS, createJob, createLyricsPptx, createLyricsPptxBatch, getJob, pingService, probeVideo, queuedJob } from '../../server/utils/cloudy-api'
 import { ITEM_ERROR_MESSAGES } from '../../shared/constants/youtube'
+import { readZipEntry } from '../../server/utils/zip'
 import { expectStatus } from './helpers/nitro'
+import { makeZip } from './helpers/zip'
 
 const KEY = 'clave-super-secreta-123'
 const URL_BASE = 'https://cloudy-api.test'
@@ -295,7 +297,7 @@ describe('plazos', () => {
     await probeVideo('okShortVid1')
     await createJob(['okShortVid1'], 'mp3')
     expect(timeout.mock.calls.map(c => c[0])).toEqual([5_000, 10_000, 10_000, 20_000, 45_000])
-    expect(CLOUDY_API_TIMEOUTS).toEqual({ ping: 5_000, job: 10_000, probe: 20_000, create: 45_000, pptx: 90_000 })
+    expect(CLOUDY_API_TIMEOUTS).toEqual({ ping: 5_000, job: 10_000, probe: 20_000, create: 45_000, pptx: 90_000, pptxBatch: 110_000 })
   })
 })
 
@@ -397,6 +399,121 @@ describe('createLyricsPptx', () => {
     const error = await expectStatus(createLyricsPptx(input), 503)
     expect(error.data).toEqual({ code: 'not_configured' })
     expect(error.message).toBe('El servicio de presentaciones no está configurado. Avisa a un administrador.')
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+})
+
+// Lote de presentaciones (POST /v1/lyrics/pptx/batch): un .zip con un .pptx por canción lograda y manifest.json; el manifest
+// se lee aquí y no viaja a la persona.
+describe('createLyricsPptxBatch', () => {
+  const inputs = [
+    { html: '<p>a</p>', title: 'Uno' },
+    { html: '<p>b</p>', title: 'Dos' },
+  ]
+  const done = (index: number, filename: string, extra: Record<string, unknown> = {}) =>
+    ({ index, status: 'done', filename, title: filename, arranged_by: 'llm', slide_count: 3, error: null, ...extra })
+  const failedItem = (index: number, code: string) =>
+    ({ index, status: 'failed', filename: null, title: null, arranged_by: null, slide_count: null, error: { code, message: 'english' } })
+  const zipOf = (items: unknown[], extra: Record<string, Uint8Array> = {}) =>
+    makeZip({ ...extra, 'manifest.json': JSON.stringify({ items }) })
+  const ok = (zip: Uint8Array) => new Response(zip, { status: 200, headers: { 'content-type': 'application/zip' } })
+
+  it('POST /v1/lyrics/pptx/batch con X-API-Key, cada letra en blanco y plazo de 110 s; devuelve el zip sin manifest y cada resultado', async () => {
+    const timeout = vi.spyOn(AbortSignal, 'timeout')
+    const zip = zipOf([done(0, 'Uno.pptx'), failedItem(1, 'no_lyrics')], { 'Uno.pptx': new Uint8Array([0x50, 0x4B]) })
+    fetchMock.mockResolvedValue(ok(zip))
+    const result = await createLyricsPptxBatch(inputs)
+    const [url, init] = lastCall()
+    expect(url).toBe(`${URL_BASE}/v1/lyrics/pptx/batch`)
+    expect(init?.method).toBe('POST')
+    expect(headersOf(init)['X-API-Key']).toBe(KEY)
+    expect(JSON.parse(String(init?.body))).toEqual({
+      items: [
+        { html: '<p>a</p>', title: 'Uno', font_color: 'FFFFFF' },
+        { html: '<p>b</p>', title: 'Dos', font_color: 'FFFFFF' },
+      ],
+    })
+    expect(timeout).toHaveBeenCalledWith(110_000)
+    expect(readZipEntry(result.zip!, 'manifest.json')).toBeNull()
+    expect([...readZipEntry(result.zip!, 'Uno.pptx')!]).toEqual([0x50, 0x4B])
+    expect([...result.zip!]).toEqual([...makeZip({ 'Uno.pptx': new Uint8Array([0x50, 0x4B]) })])
+    expect(result.items).toEqual([
+      { index: 0, status: 'done', filename: 'Uno.pptx', slideCount: 3, arrangedBy: 'llm', errorCode: null },
+      { index: 1, status: 'failed', filename: null, slideCount: null, arrangedBy: null, errorCode: 'no_lyrics' },
+    ])
+  })
+
+  it('valores desconocidos del manifest: reparto → null, código de error → invalid; entradas sin índice se ignoran', async () => {
+    fetchMock.mockResolvedValue(ok(zipOf([done(0, 'Uno.pptx', { arranged_by: 'magia', slide_count: 'x' }), failedItem(1, 'raro'), { status: 'done' }])))
+    const { items } = await createLyricsPptxBatch(inputs)
+    expect(items).toEqual([
+      { index: 0, status: 'done', filename: 'Uno.pptx', slideCount: null, arrangedBy: null, errorCode: null },
+      { index: 1, status: 'failed', filename: null, slideCount: null, arrangedBy: null, errorCode: 'invalid' },
+    ])
+  })
+
+  it('422 all_items_failed → sin zip y con el resultado de cada canción (no es un error del lote)', async () => {
+    fetchMock.mockResolvedValue(json(422, { detail: { code: 'all_items_failed', message: 'x', items: [failedItem(0, 'no_lyrics'), failedItem(1, 'lyrics_too_long')] } }))
+    const result = await createLyricsPptxBatch(inputs)
+    expect(result.zip).toBeNull()
+    expect(result.items.map(i => i.errorCode)).toEqual(['no_lyrics', 'lyrics_too_long'])
+  })
+
+  it('422 all_items_failed con índices que no cubren cada canción → 502 misconfigured', async () => {
+    fetchMock.mockResolvedValue(json(422, { detail: { code: 'all_items_failed', message: 'x', items: [failedItem(0, 'no_lyrics'), failedItem(0, 'no_lyrics')] } }))
+    const error = await expectStatus(createLyricsPptxBatch(inputs), 502)
+    expect(error.data).toEqual({ code: 'misconfigured' })
+  })
+
+  it.each([
+    ['batch_too_large', { detail: { code: 'batch_too_large', message: 'At most 1' } }, 502, 'misconfigured'],
+    ['lista de validación', { detail: [{ loc: ['body'], msg: 'x' }] }, 502, 'invalid'],
+  ] as const)('422 %s → %i %s', async (_, body, status, code) => {
+    fetchMock.mockResolvedValue(json(422, body))
+    const error = await expectStatus(createLyricsPptxBatch(inputs), status)
+    expect(error.data).toEqual({ code })
+  })
+
+  it.each([
+    ['401', () => Promise.resolve(json(401, {})), 502, 'misconfigured'],
+    ['503', () => Promise.resolve(new Response('down', { status: 503 })), 503, 'waking'],
+    ['red', () => Promise.reject(new TypeError('fetch failed')), 503, 'waking'],
+  ] as const)('%s → %i %s, sin filtrar la clave', async (_, response, status, code) => {
+    fetchMock.mockImplementation(response as () => Promise<Response>)
+    const error = await expectStatus(createLyricsPptxBatch(inputs), status)
+    expect(error.data).toEqual({ code })
+    expectNoKeyLeak(error)
+  })
+
+  // Una respuesta que no sigue el contrato es un despliegue desalineado: `misconfigured` (502, sin Reintentar), no `waking`.
+  it.each([
+    ['sin manifest', makeZip({ 'Uno.pptx': 'x' })],
+    ['manifest que no es JSON', makeZip({ 'manifest.json': '{nope' })],
+    ['manifest con menos canciones', zipOf([done(0, 'Uno.pptx')])],
+    ['manifest con más canciones', zipOf([done(0, 'Uno.pptx'), done(1, 'Dos.pptx'), done(2, 'Tres.pptx')])],
+    ['índice repetido', zipOf([done(0, 'Uno.pptx'), done(0, 'Uno (2).pptx')])],
+    ['índice fuera del lote (hueco en 0..n-1)', zipOf([done(0, 'Uno.pptx'), done(2, 'Tres.pptx')])],
+    ['cuerpo que no es zip', new Uint8Array([1, 2, 3])],
+  ])('%s → 502 misconfigured', async (_, zip) => {
+    fetchMock.mockResolvedValue(ok(zip))
+    const error = await expectStatus(createLyricsPptxBatch(inputs), 502)
+    expect(error.data).toEqual({ code: 'misconfigured' })
+    expect(error.message).toBe('El servicio de presentaciones no está bien configurado. Avisa a un administrador.')
+    expectNoKeyLeak(error)
+  })
+
+  it('un cuerpo que se corta al leerlo → 503 waking', async () => {
+    const res = ok(zipOf([]))
+    vi.spyOn(res, 'arrayBuffer').mockRejectedValue(Object.assign(new Error('terminated'), { name: 'TypeError' }))
+    fetchMock.mockResolvedValue(res)
+    const error = await expectStatus(createLyricsPptxBatch(inputs), 503)
+    expect(error.data).toEqual({ code: 'waking' })
+  })
+
+  it('sin URL o sin clave → 503 not_configured sin llamar a fetch', async () => {
+    config = { cloudyApiUrl: '', cloudyApiKey: KEY }
+    const error = await expectStatus(createLyricsPptxBatch(inputs), 503)
+    expect(error.data).toEqual({ code: 'not_configured' })
     expect(fetchMock).not.toHaveBeenCalled()
   })
 })
