@@ -296,12 +296,14 @@ describe('Usuarios · selección múltiple', () => {
     await all.setValue(true)
     expect(bar(wrapper)!.get('[role="status"]').text()).toBe('3 seleccionados')
     expect([allState().checked, allState().indeterminate]).toEqual([true, false])
-    expect(wrapper.element.className).toContain('pb-40')
+    // Regresión: con `pb-40` la barra (tres acciones apiladas en teléfono, ~208 px) tapaba 24 px de la última cuenta.
+    expect(wrapper.element.classList).toContain('pb-56')
+    expect(wrapper.element.classList).toContain('sm:pb-24')
 
     await all.setValue(false)
     await flush()
     expect(bar(wrapper)).toBeUndefined()
-    expect(wrapper.element.className).not.toContain('pb-40')
+    expect(wrapper.element.classList).not.toContain('pb-56')
   })
 
   it('Desactivar manda la selección en una petición, sin preguntar si son cuentas ajenas, avisa y limpia la selección', async () => {

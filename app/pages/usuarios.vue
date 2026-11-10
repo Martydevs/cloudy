@@ -62,8 +62,10 @@ const summary = computed(() => {
 </script>
 
 <template>
-  <div class="flex flex-col gap-4" :class="{ 'pb-40 sm:pb-24': selectedUsers.length > 0 }">
-    <!-- Con algo marcado, el relleno de abajo deja sitio para que la barra de selección no tape contenido. -->
+  <div class="flex flex-col gap-4" :class="{ 'pb-56 sm:pb-24': selectedUsers.length > 0 }">
+    <!-- Con algo marcado, el relleno de abajo deja sitio para que la barra de selección no tape contenido. En teléfono la
+         barra apila sus tres acciones (unos 208 px): `pb-56` y no el `pb-40` de Archivos, que dejaba 24 px de la última
+         cuenta debajo. Desde `sm` las acciones caben en una fila (unos 102 px). -->
     <header class="flex flex-col gap-1">
       <h1 class="text-2xl font-semibold">Usuarios</h1>
       <p class="text-base-content/70">Aprueba cuentas nuevas, asigna roles y retira el acceso cuando haga falta.</p>

@@ -4,7 +4,8 @@
 // respeta el área segura inferior, se apoya encima de las dos bandejas que flotan en cualquier página del panel (descargas
 // de YouTube, `--youtube-tray-h`, y presentaciones de Canciones, `--song-tray-h`, que va sobre la primera) y, desde `md`,
 // es una tarjeta entre el menú lateral (`--app-sidebar-w`) y la esquina de las bandejas. El contenido se acomoda al ancho
-// de la barra (container queries), no al de la pantalla. La página que la muestra deja `pb-40 sm:pb-24` para que no tape contenido.
+// de la barra (container queries), no al de la pantalla. La página que la muestra deja relleno abajo para que no tape contenido: `pb-40 sm:pb-24` en Archivos y
+// `pb-56 sm:pb-24` en Usuarios, cuya barra apila tres acciones en teléfono.
 defineProps<{ count: number }>()
 const emit = defineEmits<{ clear: [] }>()
 </script>

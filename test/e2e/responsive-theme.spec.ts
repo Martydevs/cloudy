@@ -546,6 +546,14 @@ describe('US9 · recorrido de rutas (T151)', () => {
         await page.getByRole('list', { name: 'Usuarios' }).getByRole('checkbox').first().check()
         const bar = page.getByRole('region', { name: 'Selección' })
         await expect.poll(() => bar.getByText('1 seleccionado').isVisible(), { message: theme }).toBe(true)
+        // Regresión: con `pb-40` la barra (tres acciones apiladas) tapaba el final de la última cuenta aun con todo desplazado.
+        const hidden = await page.evaluate(() => {
+          window.scrollTo(0, document.documentElement.scrollHeight)
+          const cards = [...document.querySelectorAll('ul[aria-label="Usuarios"] > li')]
+          const last = cards.at(-1)!.getBoundingClientRect().bottom
+          return Math.max(0, Math.round(last - document.querySelector('[aria-label="Selección"]')!.getBoundingClientRect().top))
+        })
+        expect(hidden, `${theme}: la barra tapa el final de la última cuenta`).toBe(0)
         await bar.getByRole('button', { name: 'Cambiar rol' }).click()
         const menu = bar.getByRole('menu', { name: 'Rol para las cuentas seleccionadas' })
         await expect.poll(() => menu.isVisible(), { message: theme }).toBe(true)
