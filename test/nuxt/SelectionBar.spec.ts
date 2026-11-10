@@ -32,12 +32,13 @@ describe('SelectionBar (base de las barras de selección)', () => {
     expect(wrapper.emitted('clear')).toHaveLength(1)
   })
 
-  it('es fija, se apoya encima de la bandeja de YouTube y sus botones conservan el tamaño táctil', async () => {
+  it('es fija, se apoya encima de las bandejas de YouTube y de Canciones y sus botones conservan el tamaño táctil', async () => {
     const wrapper = await mountSuspended(SelectionBar, { props: { count: 2 } })
     const classes = wrapper.get('[role="region"]').classes().join(' ')
     expect(classes).toContain('fixed')
     expect(classes).toContain('inset-x-0')
-    expect(classes).toMatch(/bottom-\[[^\]]*--youtube-tray-h/)
+    // Regresión: solo sumaba la bandeja de YouTube y la de presentaciones (z-40) la tapaba en teléfono.
+    expect(classes).toContain('bottom-[calc(var(--youtube-tray-h,0px)+var(--song-tray-h,0px))]')
     // Nunca `btn-sm`/`btn-xs` como tamaño base (objetivos táctiles de 44 px).
     for (const control of wrapper.findAll('button')) expect(control.classes().join(' ')).not.toMatch(/\bbtn-(sm|xs)\b/)
   })

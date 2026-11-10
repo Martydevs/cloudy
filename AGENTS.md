@@ -241,8 +241,11 @@ Never print or commit their values.
 - Multi-select (Archivos, Usuarios): selection is a `string[]` of ids (`v-model:selected` on `FileGrid`/`FileList`; a local ref in
   `usuarios.vue`) that is pruned to what is on screen and cleared when the folder, search, type filter or page changes. Checkboxes
   are always visible inside a `size-11` label with an `aria-label` naming the item. The fixed bar is `ui/SelectionBar.vue` (count in
-  `role="status"`, "Limpiar", safe-area padding, sits above the YouTube tray); `FilesSelectionBar` and `UsersSelectionBar` only add
-  their actions, and the page gets `pb-40 sm:pb-24` while something is selected. Bulk endpoints never fail the whole request for one
+  `role="status"`, "Limpiar", safe-area padding); `FilesSelectionBar` and `UsersSelectionBar` only add their actions. Every selection
+  bar (this one, `YoutubeSelectionBar`, `SongSelectionBar`) sits above **both** trays, which can be open on any dashboard page:
+  `bottom-[calc(var(--youtube-tray-h,0px)+var(--song-tray-h,0px))]` below `md` (the Canciones tray stacks on the YouTube one, `z-40`
+  over the bar's `z-30`), then `md:bottom-4 md:right-[26rem]` beside them; write the full class literal (Tailwind only sees whole names).
+  The page gets `pb-40 sm:pb-24` while something is selected. Bulk endpoints never fail the whole request for one
   item: `POST /api/items/trash` (editor; ≤ 100 ids; one `db.batch`; `{ trashed, skipped }`) reuses `trashFileOps`/`trashFolderOps`
   from the single `DELETE`s, and `POST /api/users/batch` (admin; ≤ 20 ids; `disable` | `remove` | `role`) runs `adminLock()` plus one
   `guardedProfileUpdate` per account in order, so the last-admin guard sees earlier changes of the same batch; it answers

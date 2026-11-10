@@ -390,6 +390,12 @@ describe('YoutubeSelectionBar', () => {
     expect(bar.classes()).toEqual(expect.arrayContaining(docked))
     downloads.value = before
   })
+
+  it('en pantallas angostas se apoya encima de las dos bandejas: la de descargas y la de presentaciones de Canciones', async () => {
+    // Regresión: solo sumaba `--youtube-tray-h` y la bandeja de presentaciones (z-40, apilada sobre la de descargas) la tapaba.
+    const bar = await mountSuspended(YoutubeSelectionBar, { props: { count: 1 } })
+    expect(bar.classes()).toContain('bottom-[calc(var(--youtube-tray-h,0px)+var(--song-tray-h,0px))]')
+  })
 })
 
 describe('useYoutubePlaylists', () => {

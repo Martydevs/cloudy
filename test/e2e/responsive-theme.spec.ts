@@ -575,6 +575,67 @@ describe('US9 · recorrido de rutas (T151)', () => {
       }
     })
 
+    // Regresión: la barra solo se apoyaba sobre la bandeja de YouTube y la de presentaciones (z-40) la tapaba hasta `md`.
+    it('Archivos con una presentación de Canciones abierta: la bandeja no tapa la barra de selección (360, 700 y 1280 px)', async () => {
+      const { page } = await pool.get('phone')
+      const { songId } = await seeded()
+      // La bandeja vive en el estado de la app (no sobrevive a una recarga): se abre generando una presentación y se
+      // llega a Archivos por el menú, sin recargar.
+      await page.goto(`${E2E_URL}/canciones/${songId}`)
+      await waitForHydration(page)
+      const generate = page.getByRole('button', { name: 'Generar presentación' })
+      await expect.poll(() => generate.isEnabled()).toBe(true)
+      const download = page.waitForEvent('download')
+      await generate.click()
+      await download
+      const tray = page.locator('section').filter({ has: page.getByRole('list', { name: 'Presentaciones de canciones' }) })
+      await expect.poll(() => tray.isVisible()).toBe(true)
+
+      await page.getByRole('button', { name: 'Abrir menú' }).click()
+      await page.getByRole('navigation', { name: 'Secciones' }).getByRole('link', { name: 'Archivos' }).click()
+      await page.waitForURL(url => url.pathname === '/archivos')
+      await page.getByLabel(`Seleccionar la carpeta Recorrido ${runId()}`).check()
+      const bar = page.getByRole('region', { name: 'Selección' })
+      await expect.poll(() => bar.isVisible()).toBe(true)
+      expect(await tray.isVisible(), 'la bandeja de presentaciones se cerró al navegar').toBe(true)
+
+      const trash = bar.getByRole('button', { name: 'Enviar a la papelera' })
+      try {
+        for (const width of [360, 700, 1280]) {
+          await page.setViewportSize({ width, height: viewports.phone.height })
+          // Las bandejas vuelven a medir su alto al cambiar el ancho: se espera a que la barra quede libre.
+          await expect.poll(async () => {
+            const [barBox, trayBox] = await Promise.all([bar.boundingBox(), tray.boundingBox()])
+            return Boolean(barBox && trayBox && !overlaps(barBox, trayBox))
+          }, { message: `${width} px: la bandeja de presentaciones tapa la barra de selección` }).toBe(true)
+          const layout = await trash.evaluate((el) => {
+            const rect = el.getBoundingClientRect()
+            const short: string[] = []
+            for (const control of document.querySelectorAll('[aria-label="Selección"] button')) {
+              const box = control.getBoundingClientRect()
+              if (box.width > 0 && box.height > 0 && box.height < 44) short.push(control.textContent?.trim() ?? '')
+            }
+            return {
+              // Lo que se pulsa en el centro del botón es el botón: no hay otra capa encima.
+              onTop: el.contains(document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2)),
+              overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+              short,
+            }
+          })
+          expect(layout.onTop, `${width} px: «Enviar a la papelera» queda debajo de otra capa`).toBe(true)
+          expect(layout.overflow, `${width} px: scroll horizontal`).toBeLessThanOrEqual(0)
+          expect(layout.short, `${width} px: objetivos de menos de 44 px`).toEqual([])
+        }
+      }
+      finally {
+        await page.setViewportSize(viewports.phone)
+      }
+
+      await bar.getByRole('button', { name: 'Limpiar' }).click()
+      await tray.getByRole('button', { name: /^Descartar / }).click()
+      await expect.poll(() => tray.count()).toBe(0)
+    })
+
     it('/perfil: el avatar va arriba y centrado en teléfono, y a la derecha de los datos en escritorio', async () => {
       for (const viewport of VIEWPORTS) {
         const { page } = await pool.get(viewport)

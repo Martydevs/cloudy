@@ -5,8 +5,9 @@
 // Desde `md` es una tarjeta abajo que siempre deja libre la esquina de la bandeja (anclada abajo a la derecha, `w-96`):
 // va entre el menú lateral (`--app-sidebar-w`) y esa esquina, esté o no la bandeja a la vista, así no cambia de ancho ni
 // de sitio cuando la bandeja aparece o la persona la cierra. En pantallas más angostas no caben lado a lado: ocupa todo
-// el ancho y se apoya encima de la bandeja (`--youtube-tray-h`). El contenido se acomoda al ancho de la barra (container
-// queries `@…`), no al de la pantalla: si es angosta, los botones pasan a ocupar todo el ancho, uno debajo del otro.
+// el ancho y se apoya encima de las bandejas (`--youtube-tray-h` y, si hay presentaciones de Canciones abiertas, que se apilan
+// sobre la de descargas, también `--song-tray-h`). El contenido se acomoda al ancho de la barra (container queries `@…`), no
+// al de la pantalla: si es angosta, los botones pasan a ocupar todo el ancho, uno debajo del otro.
 import type { YoutubeFormat } from '#shared/types/api'
 import { YOUTUBE_DRIVE_FORMATS } from '#shared/constants/youtube'
 import type { YoutubeDriveFormat } from '#shared/constants/youtube'
@@ -22,7 +23,7 @@ const files = computed(() => filesFor(props.count))
 
 <template>
   <div
-    class="@container fixed inset-x-0 bottom-[var(--youtube-tray-h,0px)] z-30 border-t border-base-300 bg-base-100 px-4 pt-3 shadow-2xl md:bottom-4 md:left-4 md:right-[26rem] md:mx-auto md:max-w-3xl md:rounded-box md:border lg:left-[calc(var(--app-sidebar-w,16rem)+1rem)]"
+    class="@container fixed inset-x-0 bottom-[calc(var(--youtube-tray-h,0px)+var(--song-tray-h,0px))] z-30 border-t border-base-300 bg-base-100 px-4 pt-3 shadow-2xl md:bottom-4 md:left-4 md:right-[26rem] md:mx-auto md:max-w-3xl md:rounded-box md:border lg:left-[calc(var(--app-sidebar-w,16rem)+1rem)]"
     :style="{ paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom))' }"
     role="region"
     aria-label="Selección"
