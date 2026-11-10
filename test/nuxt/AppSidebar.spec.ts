@@ -347,4 +347,27 @@ describe('AppSidebar · menú de cuenta', () => {
     expect(menu()).toBeNull()
     wrapper.unmount()
   })
+
+  it('el avatar es decorativo en los dos estados: el botón conserva su nombre y, sin nombre de la persona, muestra «?»', async () => {
+    setRole('editor')
+    const wrapper = await mountSuspended(AppSidebar, { props: { collapsed: false } })
+    const avatar = () => wrapper.get('button[aria-label="Menú de usuario"] span.rounded-full')
+    // Expandida: círculo pequeño junto al nombre y el correo, fuera del árbol de accesibilidad.
+    expect(avatar().text()).toBe('A')
+    expect(avatar().attributes('aria-hidden')).toBe('true')
+    expect(avatar().classes()).toEqual(expect.arrayContaining(['size-9', 'bg-neutral', 'text-neutral-content']))
+
+    // Contraída: el mismo avatar llena el botón redondo.
+    await wrapper.setProps({ collapsed: true })
+    expect(avatar().attributes('aria-hidden')).toBe('true')
+    expect(avatar().classes()).toContain('size-full')
+    expect(wrapper.get('button[aria-label="Menú de usuario"]').text()).toBe('A')
+
+    useState<Me | null>('me').value = {
+      user: { id: 'u1', email: 'a@x.org', name: '' },
+      profile: { userId: 'u1', email: 'a@x.org', name: '   ', role: 'editor', status: 'active', createdAt: '2026-10-14T00:00:00Z' },
+    }
+    await nextTick()
+    expect(avatar().text()).toBe('?')
+  })
 })

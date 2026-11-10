@@ -535,6 +535,83 @@ describe('US9 · recorrido de rutas (T151)', () => {
       }
     })
 
+    it('Usuarios a 360 px: la barra de selección y su menú de roles no generan scroll horizontal ni objetivos pequeños', async () => {
+      const { page } = await pool.get('phone')
+      for (const theme of THEMES) {
+        await page.context().addCookies([{ name: 'cloudy-theme', value: theme, url: E2E_URL }])
+        await page.goto(`${E2E_URL}/usuarios`)
+        await waitForHydration(page)
+        await expect.poll(() => page.locator('[aria-busy="true"]').count(), { message: theme }).toBe(0)
+        // En teléfono la lista son tarjetas: se marca la casilla de la primera. Nada se cambia: al final, «Limpiar».
+        await page.getByRole('list', { name: 'Usuarios' }).getByRole('checkbox').first().check()
+        const bar = page.getByRole('region', { name: 'Selección' })
+        await expect.poll(() => bar.getByText('1 seleccionado').isVisible(), { message: theme }).toBe(true)
+        await bar.getByRole('button', { name: 'Cambiar rol' }).click()
+        const menu = bar.getByRole('menu', { name: 'Rol para las cuentas seleccionadas' })
+        await expect.poll(() => menu.isVisible(), { message: theme }).toBe(true)
+
+        const layout = await page.evaluate(() => {
+          const short: string[] = []
+          for (const el of document.querySelectorAll('[aria-label="Selección"] button')) {
+            const rect = el.getBoundingClientRect()
+            if (rect.width > 0 && rect.height > 0 && rect.height < 44) short.push(el.getAttribute('aria-label') ?? el.textContent?.trim() ?? '')
+          }
+          const rect = document.querySelector('[aria-label="Selección"] [role="menu"]')!.getBoundingClientRect()
+          return {
+            overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+            short,
+            menuInside: rect.left >= 0 && rect.right <= window.innerWidth && rect.top >= 0 && rect.bottom <= window.innerHeight,
+          }
+        })
+        expect(layout.overflow, `${theme}: scroll horizontal`).toBeLessThanOrEqual(0)
+        expect(layout.short, `${theme}: objetivos de menos de 44 px`).toEqual([])
+        expect(layout.menuInside, `${theme}: el menú de roles se sale de la pantalla`).toBe(true)
+
+        // Esc cierra el menú sin elegir un rol; «Limpiar» quita la barra.
+        await page.keyboard.press('Escape')
+        await expect.poll(() => menu.count(), { message: theme }).toBe(0)
+        await bar.getByRole('button', { name: 'Limpiar' }).click()
+        await expect.poll(() => bar.count(), { message: theme }).toBe(0)
+      }
+    })
+
+    it('/perfil: el avatar va arriba y centrado en teléfono, y a la derecha de los datos en escritorio', async () => {
+      for (const viewport of VIEWPORTS) {
+        const { page } = await pool.get(viewport)
+        await page.goto(`${E2E_URL}/perfil`)
+        await waitForHydration(page)
+        const card = page.locator('section[aria-labelledby="cuenta-title"]')
+        await expect.poll(() => card.isVisible(), { message: viewport }).toBe(true)
+        const avatar = card.locator('span[aria-hidden="true"].rounded-full')
+        const [cardBox, avatarBox, titleBox] = await Promise.all([
+          card.boundingBox(),
+          avatar.boundingBox(),
+          card.getByRole('heading', { name: 'Cuenta', exact: true }).boundingBox(),
+        ])
+        if (!cardBox || !avatarBox || !titleBox) throw new Error(`${viewport}: la tarjeta «Cuenta» no se pudo medir`)
+
+        // Un círculo de 80 px con la inicial, dentro de la tarjeta.
+        expect([Math.round(avatarBox.width), Math.round(avatarBox.height)], viewport).toEqual([80, 80])
+        expect((await avatar.innerText()).trim(), viewport).toMatch(/^\S$/)
+        expect(avatarBox.x, viewport).toBeGreaterThanOrEqual(cardBox.x)
+        expect(avatarBox.x + avatarBox.width, viewport).toBeLessThanOrEqual(cardBox.x + cardBox.width)
+
+        const cardCenter = cardBox.x + cardBox.width / 2
+        const avatarCenter = avatarBox.x + avatarBox.width / 2
+        if (viewport === 'phone') {
+          // Arriba del título y centrado en el ancho de la tarjeta.
+          expect(avatarBox.y + avatarBox.height, viewport).toBeLessThanOrEqual(titleBox.y)
+          expect(Math.abs(avatarCenter - cardCenter), viewport).toBeLessThanOrEqual(2)
+        }
+        else {
+          // A la derecha de los datos y al lado de ellos, no encima como en teléfono.
+          expect(avatarBox.x, viewport).toBeGreaterThan(titleBox.x)
+          expect(avatarCenter, viewport).toBeGreaterThan(cardCenter)
+          expect(avatarBox.y + avatarBox.height, viewport).toBeGreaterThan(titleBox.y)
+        }
+      }
+    })
+
     it('el aviso «Comentario publicado» no tapa el botón «Comentar»', async () => {
       for (const viewport of VIEWPORTS) {
         const { page } = await pool.get(viewport)

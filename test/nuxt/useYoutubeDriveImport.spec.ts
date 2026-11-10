@@ -396,6 +396,59 @@ describe('useYoutubeDriveImport · motores (v2 principal, v1 de respaldo)', () =
     })
     expect((await run()).of('okShortVid1')!.message).toContain('tardó demasiado')
   })
+
+  it('cancelar mientras se repite en v1 libera ese trabajo en su motor, sin avisar de error ni subir nada', async () => {
+    const { v2Deletes } = v2FailsInside()
+    const v1Polls = track('GET', JOB_V1, () => job({ jobId: JOB_V1, engine: 'v1', status: 'running', progress: 40 }))
+    const v1Deletes = track('DELETE', JOB_V1, () => null)
+    const driveImport = useYoutubeDriveImport()
+    const started = driveImport.start(VIDEO, 'mp3')
+    // Ya se sondea el trabajo de v1: el de v2 falló por el motor y se soltó.
+    await vi.waitFor(() => expect(v1Polls.length).toBeGreaterThan(0), { timeout: 5000 })
+    await vi.waitFor(() => expect(v2Deletes).toEqual(['v2']))
+    expect(driveImport.of('okShortVid1')?.stage).toBe('preparing')
+
+    driveImport.cancel('okShortVid1')
+    await started
+    expect(driveImport.of('okShortVid1')).toBeNull()
+    await vi.waitFor(() => expect(v1Deletes).toEqual(['v1']))
+    expect(jobPosts()).toHaveLength(2)
+    expect(useToast().toasts.value.filter(t => t.type === 'error')).toEqual([])
+    expect(useToast().toasts.value.at(-1)).toMatchObject({ type: 'info', message: 'Guardado cancelado' })
+    expect(posts('/api/uploads')).toHaveLength(0)
+  })
+
+  it.each([
+    ['expira', { status: 'expired' as const }],
+    ['falla sin decir por qué', { status: 'failed' as const, items: [] }],
+  ])('un trabajo de v2 que %s no se repite en v1: avisa con el mensaje general y lo libera', async (_, ended) => {
+    mockApi('POST', '/api/youtube/jobs', job())
+    track('GET', JOB, () => job(ended))
+    const deletes = track('DELETE', JOB, () => null)
+    const { of } = await run()
+    expect(jobPosts()).toEqual([{ videoIds: ['okShortVid1'], format: 'mp3' }])
+    expect(of('okShortVid1')).toMatchObject({ stage: 'error', message: messages.youtube.drive.jobFailed })
+    expect(useToast().toasts.value.at(-1)).toMatchObject({ type: 'error', message: messages.youtube.drive.jobFailed })
+    await vi.waitFor(() => expect(deletes).toEqual(['v2']))
+    expect(posts('/api/uploads')).toHaveLength(0)
+  })
+
+  it('si al repetir en v1 el servicio está ocupado (429), lo dice y no sube nada', async () => {
+    let creates = 0
+    mockApi('POST', '/api/youtube/jobs', event => (++creates === 1 ? job() : failWith(429, { retryAfter: 30 })(event)))
+    track('GET', JOB, () => job({ status: 'failed', items: [failedItem()] }))
+    const v2Deletes = track('DELETE', JOB, () => null)
+    const { of } = await run()
+    expect(jobPosts()).toEqual([
+      { videoIds: ['okShortVid1'], format: 'mp3' },
+      { videoIds: ['okShortVid1'], format: 'mp3', engine: 'v1' },
+    ])
+    expect(of('okShortVid1')?.stage).toBe('error')
+    expect(of('okShortVid1')!.message).toContain(messages.youtube.service.busy)
+    // El trabajo de v2 se soltó una sola vez, antes de repetir.
+    await vi.waitFor(() => expect(v2Deletes).toEqual(['v2']))
+    expect(posts('/api/uploads')).toHaveLength(0)
+  })
 })
 
 describe('useYoutubeDriveImport · cancelar y no quedarse colgado', () => {

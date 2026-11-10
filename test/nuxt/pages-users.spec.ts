@@ -8,7 +8,7 @@ import type { ActivityEntry, Me, Profile } from '#shared/types/api'
 import ActividadPage from '~/pages/actividad.vue'
 import UsuariosPage from '~/pages/usuarios.vue'
 import { activityDetail, activityIcon, activityLabel } from '~/utils/activity-labels'
-import type { Queryable } from './helpers/api'
+import type { Queryable, QueryableWithGet } from './helpers/api'
 import { buttonsWithText, calls, failWith, flush, mockApi, resetCalls } from './helpers/api'
 
 const { navigateToMock } = vi.hoisted(() => ({ navigateToMock: vi.fn() }))
@@ -450,6 +450,83 @@ describe('Usuarios · selección múltiple', () => {
     expect(wrapper.text()).toContain('Persona 2')
     expect(bar(wrapper)).toBeUndefined()
     expect((wrapper.get('table input[aria-label="Seleccionar a Persona 2"]').element as HTMLInputElement).checked).toBe(false)
+  })
+
+  it('una cuenta marcada que ya no está en la lista al recargar sale de la selección', async () => {
+    const wrapper = await mountWithSelection(['Luis', 'Eva'])
+    expect(bar(wrapper)!.get('[role="status"]').text()).toBe('2 seleccionados')
+
+    // Otra persona eliminó a Eva; la lista se recarga tras un cambio en la fila de Luis.
+    mockApi('GET', '/api/users', { items: [me.profile, { ...luis, role: 'admin' }], total: 2 })
+    mockApi('PATCH', '/api/users/u2', { ...luis, role: 'admin' })
+    await select(wrapper, 'Rol de Luis').setValue('admin')
+    await flush(10)
+    expect(wrapper.get('table').text()).not.toContain('Eva')
+    expect(bar(wrapper)!.get('[role="status"]').text()).toBe('1 seleccionado')
+    expect((wrapper.get('table input[aria-label="Seleccionar a Luis"]').element as HTMLInputElement).checked).toBe(true)
+
+    // Lo que se envía después es solo lo que sigue a la vista.
+    await buttonsWithText(bar(wrapper)!, 'Desactivar')[0]!.trigger('click')
+    await flush(10)
+    expect(batchPosts().map(c => c.body)).toEqual([{ ids: ['u2'], action: 'disable' }])
+  })
+
+  it('la casilla de la tarjeta (teléfono) marca la misma selección; la fila marcada se resalta y la pendiente conserva su aviso', async () => {
+    const pau = user({ userId: 'u4', email: 'pau@iglesia.org', name: 'Pau' })
+    mockApi('GET', '/api/users', { items: [pau, me.profile, luis], total: 3 })
+    const wrapper = await mountSuspended(UsuariosPage, { route: '/usuarios' })
+    await flush()
+    const cards = wrapper.get('ul[aria-label="Usuarios"]')
+    const table = wrapper.get('table')
+    const rowOf = (name: string) => table.findAll('tbody tr').find(row => row.text().includes(name))!
+    const checked = (scope: QueryableWithGet, name: string) =>
+      (scope.get(`input[aria-label="Seleccionar a ${name}"]`).element as HTMLInputElement).checked
+
+    await cards.get('input[aria-label="Seleccionar a Luis"]').setValue(true)
+    await cards.get('input[aria-label="Seleccionar a Pau"]').setValue(true)
+    await vi.waitFor(() => expect(bar(wrapper)).toBeDefined())
+    expect(bar(wrapper)!.get('[role="status"]').text()).toBe('2 seleccionados')
+    // La tabla (escritorio) refleja lo marcado en las tarjetas.
+    expect([checked(table, 'Luis'), checked(table, 'Pau'), checked(table, 'Ana')]).toEqual([true, true, false])
+    expect(rowOf('Luis').classes()).toContain('bg-primary/10')
+    expect(rowOf('Ana').classes()).not.toContain('bg-primary/10')
+    // Una cuenta pendiente marcada conserva su fondo de aviso (no se mezclan los dos).
+    expect(rowOf('Pau').classes()).toContain('bg-warning/10')
+    expect(rowOf('Pau').classes()).not.toContain('bg-primary/10')
+
+    // Y al revés: desmarcar en la tabla desmarca la tarjeta.
+    await table.get('input[aria-label="Seleccionar a Luis"]').setValue(false)
+    expect(checked(cards, 'Luis')).toBe(false)
+    expect(rowOf('Luis').classes()).not.toContain('bg-primary/10')
+    expect(bar(wrapper)!.get('[role="status"]').text()).toBe('1 seleccionado')
+  })
+
+  it('con el cambio en curso las acciones de la barra se deshabilitan y un segundo clic no manda otra petición', async () => {
+    let release: ((value: unknown) => void) | undefined
+    mockApi('POST', '/api/users/batch', () => new Promise((resolve) => {
+      release = resolve
+    }))
+    const wrapper = await mountWithSelection(['Luis', 'Eva'])
+    const action = (text: string) => buttonsWithText(bar(wrapper)!, text)[0]!
+    const disabled = () => ['Desactivar', 'Cambiar rol', 'Eliminar'].map(text => action(text).attributes('disabled') !== undefined)
+    expect(disabled()).toEqual([false, false, false])
+
+    await action('Desactivar').trigger('click')
+    await vi.waitFor(() => expect(release).toBeDefined())
+    await flush()
+    expect(disabled()).toEqual([true, true, true])
+    expect(action('Limpiar').attributes('disabled')).toBeUndefined()
+
+    await action('Desactivar').trigger('click')
+    await action('Eliminar').trigger('click')
+    await flush()
+    expect(useConfirm().options.value).toBeNull()
+    expect(batchPosts()).toHaveLength(1)
+
+    release!({ updated: ['u2', 'u3'], skipped: [] })
+    await flush(10)
+    expect(toast()).toMatchObject({ type: 'success', message: '2 cuentas actualizadas.' })
+    expect(bar(wrapper)).toBeUndefined()
   })
 })
 

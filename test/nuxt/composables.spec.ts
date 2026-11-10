@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mockNuxtImport, mountSuspended } from '@nuxt/test-utils/runtime'
 import { defineComponent, h } from 'vue'
-import type { FileItem, FolderItem, Me } from '#shared/types/api'
+import type { FileItem, FolderItem, Me, Profile } from '#shared/types/api'
 import { baseName } from '~/composables/useItemActions'
 import { calls, failWith, flush, mockApi, resetCalls } from './helpers/api'
 
@@ -155,6 +155,215 @@ describe('useItemActions', () => {
     expect(baseName(file, 'file')).toBe('foto')
     expect(baseName({ ...file, name: 'raro' }, 'file')).toBe('raro')
     expect(baseName(folder, 'folder')).toBe('Domingo')
+  })
+
+  // ---- selección múltiple de Archivos: una confirmación, una petición y un aviso para todo lo marcado.
+  const trashPosts = () => calls.filter(c => c.method === 'POST' && c.url === '/api/items/trash')
+
+  it('trashMany: sin nada marcado no pregunta ni envía; con selección confirma una vez y manda todo en una petición', async () => {
+    const changed = vi.fn()
+    const actions = useItemActions(changed)
+    const confirm = useConfirm()
+    mockApi('POST', '/api/items/trash', { trashed: 2, skipped: [] })
+
+    expect(await actions.trashMany({ files: [], folders: [] })).toBe(false)
+    expect(confirm.options.value).toBeNull()
+    expect(trashPosts()).toHaveLength(0)
+
+    const pending = actions.trashMany({ files: [], folders: [folder, { ...folder, id: 'd2', name: 'Ensayo' }] })
+    await flush()
+    expect(confirm.options.value).toEqual({
+      title: '¿Enviar 2 elementos a la papelera?',
+      message: 'Las carpetas se envían con todo su contenido. Puedes recuperarlos desde Papelera.',
+      confirmLabel: 'Enviar a la papelera',
+      danger: true,
+    })
+    // Hasta confirmar no se envía nada.
+    expect(trashPosts()).toHaveLength(0)
+    confirm.accept()
+    expect(await pending).toBe(true)
+    expect(trashPosts().map(c => c.body)).toEqual([{ fileIds: [], folderIds: ['d1', 'd2'] }])
+    expect(useToast().toasts.value.at(-1)).toMatchObject({ type: 'success', message: 'Se enviaron 2 elementos a la papelera' })
+    expect(actions.busy.value).toBe(false)
+    // Quien llama decide qué recargar con el `true`: aquí no se avisa elemento por elemento.
+    expect(changed).not.toHaveBeenCalled()
+  })
+
+  it('trashMany: true si la lista cambió (aunque nada fuera a la papelera); false si se canceló o la petición falló', async () => {
+    const actions = useItemActions(vi.fn())
+    const confirm = useConfirm()
+    const selection = { files: [file], folders: [folder] }
+
+    // Otra persona ya había quitado todo: no es un error, pero la lista hay que recargarla.
+    mockApi('POST', '/api/items/trash', { trashed: 0, skipped: ['f1', 'd1'] })
+    const none = actions.trashMany(selection)
+    await flush()
+    expect(confirm.options.value?.message).toBe('La carpeta se envía con todo su contenido. Puedes recuperarlos desde Papelera.')
+    confirm.accept()
+    expect(await none).toBe(true)
+    expect(trashPosts().at(-1)!.body).toEqual({ fileIds: ['f1'], folderIds: ['d1'] })
+    expect(useToast().toasts.value.at(-1)).toMatchObject({ type: 'info', message: 'Esos elementos ya no estaban disponibles. Actualizamos la lista.' })
+
+    const canceled = actions.trashMany(selection)
+    await flush()
+    confirm.cancel()
+    expect(await canceled).toBe(false)
+    expect(trashPosts()).toHaveLength(1)
+
+    mockApi('POST', '/api/items/trash', failWith(500))
+    const failed = actions.trashMany(selection)
+    await flush()
+    confirm.accept()
+    expect(await failed).toBe(false)
+    expect(trashPosts()).toHaveLength(2)
+    expect(useToast().toasts.value.at(-1)).toMatchObject({ type: 'error', message: 'No pudimos enviar la selección a la papelera. Inténtalo de nuevo.' })
+    expect(actions.busy.value).toBe(false)
+  })
+
+  it('trashMany: con el envío en curso marca busy e ignora otra llamada (doble clic)', async () => {
+    let release: ((value: unknown) => void) | undefined
+    mockApi('POST', '/api/items/trash', () => new Promise((resolve) => {
+      release = resolve
+    }))
+    const actions = useItemActions(vi.fn())
+    const confirm = useConfirm()
+
+    const first = actions.trashMany({ files: [file], folders: [] })
+    await flush()
+    confirm.accept()
+    await vi.waitFor(() => expect(release).toBeDefined())
+    expect(actions.busy.value).toBe(true)
+
+    expect(await actions.trashMany({ files: [file], folders: [] })).toBe(false)
+    // Ni una segunda confirmación ni una segunda petición.
+    expect(confirm.options.value).toBeNull()
+    expect(trashPosts()).toHaveLength(1)
+
+    release!({ trashed: 1, skipped: [] })
+    expect(await first).toBe(true)
+    expect(actions.busy.value).toBe(false)
+    expect(useToast().toasts.value.at(-1)?.message).toBe('Se envió 1 elemento a la papelera')
+  })
+})
+
+// Selección múltiple de Usuarios: `bulk` desactiva, elimina o cambia el rol de varias cuentas en una petición.
+describe('useUserAdmin · bulk', () => {
+  const account = (userId: string, changes: Partial<Profile> = {}): Profile => ({
+    userId, email: `${userId}@x.org`, name: `Persona ${userId}`, role: 'editor', status: 'active', createdAt: '', ...changes,
+  })
+  const batchPosts = () => calls.filter(c => c.method === 'POST' && c.url === '/api/users/batch')
+  const meRequests = () => calls.filter(c => c.url === '/api/me')
+  const lastToast = () => useToast().toasts.value.at(-1)
+  let previous: Me | null = null
+
+  beforeEach(() => {
+    previous = useMe().me.value
+    useMe().me.value = { ...me, profile: { ...me.profile, role: 'admin' } }
+    mockApi('POST', '/api/users/batch', { updated: ['u2'], skipped: [] })
+  })
+
+  afterEach(() => {
+    useMe().me.value = previous
+  })
+
+  it('sin cuentas no hace nada; cada acción manda solo lo suyo, sin preguntar si son cuentas ajenas', async () => {
+    const changed = vi.fn()
+    const admin = useUserAdmin(changed)
+    expect(await admin.bulk('disable', [])).toBe(false)
+    expect(batchPosts()).toHaveLength(0)
+    expect(changed).not.toHaveBeenCalled()
+
+    expect(await admin.bulk('disable', [account('u2'), account('u3')])).toBe(true)
+    expect(await admin.bulk('role', [account('u2')], 'admin')).toBe(true)
+    // Un rol que llegue con otra acción no viaja en la petición.
+    expect(await admin.bulk('disable', [account('u2')], 'admin')).toBe(true)
+    expect(batchPosts().map(c => c.body)).toEqual([
+      { ids: ['u2', 'u3'], action: 'disable' },
+      { ids: ['u2'], action: 'role', role: 'admin' },
+      { ids: ['u2'], action: 'disable' },
+    ])
+    expect(useConfirm().options.value).toBeNull()
+    // Cada cambio recarga la lista de quien llama.
+    expect(changed).toHaveBeenCalledTimes(3)
+    // La propia cuenta no cambió: ni se vuelve a pedir el perfil ni se navega.
+    expect(meRequests()).toHaveLength(0)
+    expect(navigateToMock).not.toHaveBeenCalled()
+    expect(admin.bulkBusy.value).toBe(false)
+  })
+
+  it('eliminar una sola cuenta confirma en singular; cancelar no envía nada y aceptar la elimina', async () => {
+    const admin = useUserAdmin(vi.fn())
+    const confirm = useConfirm()
+
+    const canceled = admin.bulk('remove', [account('u2')])
+    await flush()
+    expect(confirm.options.value).toEqual({
+      title: '¿Eliminar 1 cuenta?',
+      message: 'Perderá el acceso a Cloudy. Sus archivos y su historial se conservan.',
+      confirmLabel: 'Eliminar cuenta',
+      danger: true,
+    })
+    confirm.cancel()
+    expect(await canceled).toBe(false)
+    expect(batchPosts()).toHaveLength(0)
+
+    const accepted = admin.bulk('remove', [account('u2')])
+    await flush()
+    confirm.accept()
+    expect(await accepted).toBe(true)
+    expect(batchPosts().map(c => c.body)).toEqual([{ ids: ['u2'], action: 'remove' }])
+    expect(lastToast()).toMatchObject({ type: 'success', message: '1 cuenta actualizada.' })
+  })
+
+  it('si ninguna cuenta cambió el aviso es informativo y dice por qué, en plural', async () => {
+    mockApi('POST', '/api/users/batch', { updated: [], skipped: [{ id: 'u2', reason: 'not_found' }, { id: 'u3', reason: 'unchanged' }] })
+    const admin = useUserAdmin(vi.fn())
+    expect(await admin.bulk('disable', [account('u2'), account('u3')])).toBe(true)
+    expect(lastToast()).toMatchObject({ type: 'info', message: '0 cuentas actualizadas. 2 ya estaban así o ya no existen.' })
+
+    mockApi('POST', '/api/users/batch', { updated: ['u4'], skipped: [{ id: 'u2', reason: 'last_admin' }, { id: 'u3', reason: 'last_admin' }] })
+    expect(await admin.bulk('role', [account('u2'), account('u3'), account('u4')], 'editor')).toBe(true)
+    expect(lastToast()).toMatchObject({
+      type: 'success',
+      message: '1 cuenta actualizada. 2 no se cambiaron: debe existir al menos un administrador activo.',
+    })
+  })
+
+  it('cambiar el rol no pregunta aunque la propia cuenta esté en la selección; si cambió, se vuelve a pedir el perfil', async () => {
+    mockApi('POST', '/api/users/batch', { updated: ['u1'], skipped: [] })
+    mockApi('GET', '/api/me', { ...me, profile: { ...me.profile, role: 'editor' } })
+    const admin = useUserAdmin(vi.fn())
+    expect(await admin.bulk('role', [account('u1', { role: 'admin' }), account('u2')], 'editor')).toBe(true)
+    expect(useConfirm().options.value).toBeNull()
+    expect(batchPosts().map(c => c.body)).toEqual([{ ids: ['u1', 'u2'], action: 'role', role: 'editor' }])
+    expect(meRequests()).toHaveLength(1)
+    expect(useMe().me.value?.profile.role).toBe('editor')
+  })
+
+  it('con un cambio en curso marca bulkBusy e ignora otra llamada; un fallo avisa y lo libera', async () => {
+    let release: ((value: unknown) => void) | undefined
+    mockApi('POST', '/api/users/batch', () => new Promise((resolve) => {
+      release = resolve
+    }))
+    const admin = useUserAdmin(vi.fn())
+    const first = admin.bulk('disable', [account('u2')])
+    await vi.waitFor(() => expect(release).toBeDefined())
+    expect(admin.bulkBusy.value).toBe(true)
+    expect(await admin.bulk('disable', [account('u3')])).toBe(false)
+    expect(batchPosts()).toHaveLength(1)
+
+    release!({ updated: ['u2'], skipped: [] })
+    expect(await first).toBe(true)
+    expect(admin.bulkBusy.value).toBe(false)
+
+    mockApi('POST', '/api/users/batch', failWith(500))
+    const changed = vi.fn()
+    const failing = useUserAdmin(changed)
+    expect(await failing.bulk('disable', [account('u2')])).toBe(false)
+    expect(lastToast()).toMatchObject({ type: 'error', message: 'No pudimos cambiar las cuentas seleccionadas. Inténtalo de nuevo.' })
+    expect(failing.bulkBusy.value).toBe(false)
+    // Sin cambio no hay nada que recargar.
+    expect(changed).not.toHaveBeenCalled()
   })
 })
 

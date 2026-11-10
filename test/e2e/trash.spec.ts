@@ -261,6 +261,86 @@ describe('US7 · papelera', () => {
     await phone.close()
   })
 
+  it('selección múltiple desde la búsqueda: una carpeta y un archivo de adentro van juntos, y el archivo queda como elemento propio de la papelera', async () => {
+    const page = await editorPage(viewports.desktop)
+    const owner = await userId('trash-editor')
+    const word = `busca${tag}`
+    const folderName = `${word} carpeta`
+    const [inside, sibling] = [`${word}-dentro.jpg`, `${word}-hermano.jpg`]
+    const folderId = await seedFolder(folderName, owner)
+    const insideId = await seedFile(inside, owner, folderId)
+    await seedFile(sibling, owner, folderId)
+
+    // La búsqueda muestra a la vez la carpeta y lo que tiene dentro: se marcan la carpeta y uno de sus archivos.
+    await open(page, `/archivos?q=${word}`)
+    await expect.poll(() => page.getByRole('heading', { name: `Resultados para «${word}»`, level: 1 }).isVisible()).toBe(true)
+    await page.getByLabel(`Seleccionar la carpeta ${folderName}`, { exact: true }).check()
+    await page.getByLabel(`Seleccionar ${inside}`, { exact: true }).check()
+    const bar = page.getByRole('region', { name: 'Selección' })
+    await expect.poll(() => bar.getByText('2 seleccionados').isVisible()).toBe(true)
+
+    await bar.getByRole('button', { name: 'Enviar a la papelera' }).click()
+    const dialog = page.getByRole('dialog', { name: '¿Enviar 2 elementos a la papelera?' })
+    await expect.poll(() => dialog.isVisible()).toBe(true)
+    expect(await dialog.textContent()).toContain('La carpeta se envía con todo su contenido.')
+    await dialog.getByRole('button', { name: 'Enviar a la papelera' }).click()
+    await expect.poll(() => page.getByText('Se enviaron 2 elementos a la papelera').isVisible()).toBe(true)
+    await expect.poll(() => bar.count()).toBe(0)
+
+    // El archivo marcado es su propia raíz (se puede restaurar por separado); el que no se marcó va con la carpeta.
+    const stored = await sql.query('SELECT name, trash_root_id FROM files WHERE name = ANY($1::text[])', [[inside, sibling]])
+    const rootOf = Object.fromEntries(stored.map(row => [row.name as string, row.trash_root_id as string]))
+    expect(rootOf[inside]).toBe(insideId)
+    expect(rootOf[sibling]).toBe(folderId)
+
+    await open(page, '/papelera')
+    for (const name of [inside, folderName]) await expect.poll(() => trashRow(page, name).count()).toBe(1)
+    expect(await trashRow(page, sibling).count()).toBe(0)
+    expect(await trashRow(page, inside).textContent()).toContain(`Ubicación original: /${folderName}`)
+
+    // Una actividad por elemento marcado, ninguna por lo que arrastró la carpeta.
+    const logged = await sql.query(
+      'SELECT action, target_label FROM activity_log WHERE target_label = ANY($1::text[])',
+      [[inside, sibling, folderName]],
+    )
+    expect(logged.map(row => `${row.action}:${row.target_label}`).sort()).toEqual([`file.trash:${inside}`, `folder.trash:${folderName}`].sort())
+    await page.close()
+  })
+
+  it('selección múltiple: lo que otra persona ya envió a la papelera se salta, el aviso lo dice y no se registra dos veces', async () => {
+    const page = await editorPage(viewports.desktop)
+    const owner = await userId('trash-editor')
+    const folderName = `Dos manos ${tag}`
+    const [mine, theirs] = [`mio-${tag}.jpg`, `ajeno-${tag}.jpg`]
+    const folderId = await seedFolder(folderName, owner)
+    await seedFile(mine, owner, folderId)
+    const theirsId = await seedFile(theirs, owner, folderId)
+
+    await openFolder(page, folderId, folderName)
+    await page.getByLabel(`Seleccionar ${mine}`, { exact: true }).check()
+    await page.getByLabel(`Seleccionar ${theirs}`, { exact: true }).check()
+    const bar = page.getByRole('region', { name: 'Selección' })
+    await expect.poll(() => bar.getByText('2 seleccionados').isVisible()).toBe(true)
+
+    // Mientras la página sigue mostrando los dos, otra persona envía uno a la papelera.
+    await sql`UPDATE files SET deleted_at = now(), deleted_by = ${owner}, trash_root_id = id WHERE id = ${theirsId}`
+
+    await bar.getByRole('button', { name: 'Enviar a la papelera' }).click()
+    await page.getByRole('dialog', { name: '¿Enviar 2 elementos a la papelera?' }).getByRole('button', { name: 'Enviar a la papelera' }).click()
+    await expect.poll(() => page.getByText('Se envió 1 elemento a la papelera. 1 ya no estaba disponible.').isVisible()).toBe(true)
+
+    // La lista se recarga sin ninguno de los dos y la selección se limpia.
+    await expect.poll(() => bar.count()).toBe(0)
+    await expect.poll(() => page.getByRole('link', { name: `Abrir ${mine}` }).count()).toBe(0)
+    expect(await page.getByRole('link', { name: `Abrir ${theirs}` }).count()).toBe(0)
+    const logged = await sql.query(
+      'SELECT target_label FROM activity_log WHERE action = $1 AND target_label = ANY($2::text[])',
+      ['file.trash', [mine, theirs]],
+    )
+    expect(logged.map(row => row.target_label)).toEqual([mine])
+    await page.close()
+  })
+
   it('"Vaciar papelera" solo lo ve y lo puede usar el admin; la página no se desborda a 360 px', async () => {
     const editor = await editorPage(viewports.phone)
     const owner = await userId('trash-editor')

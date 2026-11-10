@@ -246,6 +246,8 @@ describe('US1 · pegar un enlace, ver y descargar', () => {
 describe('motores · v2 principal, v1 de respaldo', () => {
   const tray = (page: Page) => page.getByRole('region', { name: /Descargas/ })
   const trayRows = (page: Page) => page.getByRole('list', { name: 'Trabajos de descarga' }).locator('> li')
+  /** Texto de la bandeja sin el título del video (los de estos escenarios nombran el motor): ahí no debe aparecer el motor. */
+  const trayTextWithout = async (page: Page, title: string) => (await tray(page).innerText()).replaceAll(title, '')
 
   async function downloadMp3(page: Page) {
     const download = page.waitForEvent('download')
@@ -271,7 +273,7 @@ describe('motores · v2 principal, v1 de respaldo', () => {
     // El motor no se muestra: una sola fila, lista, sin avisos de fallo.
     expect(await trayRows(page).count()).toBe(1)
     expect(await tray(page).getByText('No se pudo descargar').count()).toBe(0)
-    expect(await page.getByText(/\bv[12]\b/).count()).toBe(0)
+    expect(await trayTextWithout(page, 'Bloqueado solo en v2')).not.toMatch(/\bv[12]\b/)
     await page.close()
   })
 
@@ -349,6 +351,44 @@ describe('motores · v2 principal, v1 de respaldo', () => {
     expect(file.url()).toMatch(/\/v1\/jobs\/[0-9a-f]{32}\/file\?/)
     await expect.poll(() => page.getByRole('button', { name: 'Guardar archivo' }).isVisible()).toBe(true)
     expect((await cloudyStubCalls()).jobsCreated).toEqual({ v1: 1, v2: 0 })
+    await page.close()
+  })
+
+  it('una selección con un video que falla dentro de v2: se entrega el .zip del resto y una segunda fila lo trae de v1', async () => {
+    await resetCloudyStub()
+    const page = await editorPage()
+    const viewer = await profileUserId(email('yt-editor'))
+    await seedYoutubeVideo(viewer, 'lowResVid01', 'Video en baja calidad')
+    await seedYoutubeVideo(viewer, 'v2ItemFail1', 'Falla dentro de v2')
+    await page.goto(`${E2E_URL}/youtube`)
+    await waitForHydration(page)
+    // Los dos archivos llegan solos, uno tras otro: se anotan en vez de esperar cada uno por separado.
+    const files: { name: string, url: string }[] = []
+    page.on('download', download => files.push({ name: download.suggestedFilename(), url: download.url() }))
+
+    await page.getByLabel('Seleccionar Video en baja calidad', { exact: true }).check()
+    await page.getByLabel('Seleccionar Falla dentro de v2', { exact: true }).check()
+    const bar = page.getByRole('region', { name: 'Selección' })
+    await expect.poll(() => bar.getByText('2 seleccionados').isVisible()).toBe(true)
+    await bar.getByRole('button', { name: 'Descargar selección' }).click()
+    await page.getByRole('menuitemradio', { name: 'Audio MP3' }).click()
+
+    await expect.poll(() => files.length, { timeout: 30_000 }).toBe(2)
+    // Primero el lote de v2 con lo que salió bien; después, el video que falló, ya desde v1.
+    expect(files[0]!.name).toMatch(/^cloudy-batch-[0-9a-f]{8}\.zip$/)
+    expect(files[0]!.url).toMatch(/\/v2\/jobs\/[0-9a-f]{32}\/file\?/)
+    expect(files[1]!.name).toMatch(/Falla dentro de v2.*\.mp3$/)
+    expect(files[1]!.url).toMatch(/\/v1\/jobs\/[0-9a-f]{32}\/file\?/)
+
+    const calls = await cloudyStubCalls()
+    expect(calls.createAttempts).toEqual(['v2', 'v1'])
+    expect(calls.jobsCreated).toEqual({ v1: 1, v2: 1 })
+    expect(calls.formats).toEqual(['mp3', 'mp3'])
+    // Dos filas terminadas en la bandeja y ninguna descarga fallida; el motor no se muestra.
+    await expect.poll(() => page.getByRole('button', { name: 'Guardar archivo' }).count()).toBe(2)
+    expect(await trayRows(page).count()).toBe(2)
+    expect(await tray(page).getByText('No se pudo descargar').count()).toBe(0)
+    expect(await trayTextWithout(page, 'Falla dentro de v2')).not.toMatch(/\bv[12]\b/)
     await page.close()
   })
 })

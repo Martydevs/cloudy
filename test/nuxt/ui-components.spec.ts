@@ -14,6 +14,7 @@ import FileList from '~/components/files/FileList.vue'
 import FilePreview from '~/components/files/FilePreview.vue'
 import FolderCard from '~/components/files/FolderCard.vue'
 import SkeletonList from '~/components/ui/SkeletonList.vue'
+import type { Queryable } from './helpers/api'
 
 const file = (changes: Partial<FileItem> = {}): FileItem => ({
   id: 'f1',
@@ -340,6 +341,129 @@ describe('tarjetas y listas de archivos', () => {
     await rows[0]!.findAll('[role="menuitem"]').find(o => o.text() === 'Renombrar')!.trigger('click')
     expect(wrapper.emitted('fileAction')![0]![0]).toBe('move')
     expect(wrapper.emitted('folderAction')![0]![0]).toBe('rename')
+  })
+
+  // ---- selección múltiple (Archivos): casillas en tarjetas y filas, y `v-model:selected` en la cuadrícula y la lista.
+  const isChecked = (box: { element: Element }) => (box.element as HTMLInputElement).checked
+  const checkedLabels = (wrapper: Queryable) =>
+    wrapper.findAll('input[type="checkbox"]').filter(isChecked).map(box => box.attributes('aria-label'))
+
+  it('FileCard: sin `selectable` no hay casilla; con él, una casilla con nombre y área táctil que emite toggle', async () => {
+    const plain = await mountSuspended(FileCard, { props: { file: file({ origin: 'guest', uploadedBy: null, guestName: 'Luis' }) } })
+    expect(plain.find('input[type="checkbox"]').exists()).toBe(false)
+    expect(plain.get('article').classes()).toContain('border-base-300')
+    expect(plain.findAll('.badge').find(b => b.text() === 'invitado')!.classes()).toContain('left-3')
+
+    const card = await mountSuspended(FileCard, { props: { file: file({ origin: 'guest', uploadedBy: null, guestName: 'Luis' }), selectable: true } })
+    const box = card.get('input[type="checkbox"]')
+    expect(box.attributes('aria-label')).toBe('Seleccionar foto.jpg')
+    expect(isChecked(box)).toBe(false)
+    // La etiqueta es el objetivo táctil (44 px) y no depende del hover.
+    const label = box.element.parentElement!
+    expect(label.tagName).toBe('LABEL')
+    expect(label.className).toContain('size-11')
+    expect(label.className).not.toMatch(/hover:|group-hover/)
+    // La insignia «invitado» se corre para no quedar debajo de la casilla.
+    const badge = card.findAll('.badge').find(b => b.text() === 'invitado')!
+    expect(badge.classes()).toContain('left-14')
+    expect(badge.classes()).not.toContain('left-3')
+
+    await box.setValue(true)
+    expect(card.emitted('toggle')).toEqual([['f1']])
+    // Marcar no abre el archivo ni dispara una acción del menú.
+    expect(card.emitted('action')).toBeUndefined()
+
+    await card.setProps({ selected: true })
+    expect(isChecked(card.get('input[type="checkbox"]'))).toBe(true)
+    expect(card.get('article').classes()).toContain('border-primary')
+    expect(card.get('article').classes()).not.toContain('border-base-300')
+  })
+
+  it('FolderCard: la casilla nombra la carpeta, refleja `selected` y emite toggle con su id', async () => {
+    expect((await mountSuspended(FolderCard, { props: { folder } })).find('input[type="checkbox"]').exists()).toBe(false)
+
+    const card = await mountSuspended(FolderCard, { props: { folder, selectable: true, selected: true } })
+    const box = card.get('input[type="checkbox"]')
+    expect(box.attributes('aria-label')).toBe('Seleccionar la carpeta Domingo')
+    expect(isChecked(box)).toBe(true)
+    expect(box.element.parentElement!.className).toContain('size-11')
+    expect(card.get('article').classes()).toContain('border-primary')
+    // El enlace de la carpeta sigue ahí: la casilla no lo reemplaza.
+    expect(card.get('a').attributes('aria-label')).toBe('Abrir carpeta Domingo')
+
+    await box.setValue(false)
+    expect(card.emitted('toggle')).toEqual([['d1']])
+    await card.setProps({ selected: false })
+    expect(card.get('article').classes()).toContain('border-base-300')
+    expect(card.get('article').classes()).not.toContain('border-primary')
+  })
+
+  it('FileGrid: sin `selectable` no hay casillas; con él, `v-model:selected` agrega y quita carpetas y archivos', async () => {
+    const items = [file(), file({ id: 'f2', name: 'b.mp3', hasThumbnail: false, category: 'audio' })]
+    const plain = await mountSuspended(FileGrid, { props: { folders: [folder], items } })
+    expect(plain.findAll('input[type="checkbox"]')).toHaveLength(0)
+
+    const wrapper = await mountSuspended(FileGrid, { props: { folders: [folder], items, selectable: true } })
+    const box = (label: string) => wrapper.get(`input[aria-label="${label}"]`)
+    expect(wrapper.findAll('input[type="checkbox"]').map(b => b.attributes('aria-label'))).toEqual([
+      'Seleccionar la carpeta Domingo', 'Seleccionar foto.jpg', 'Seleccionar b.mp3',
+    ])
+    expect(checkedLabels(wrapper)).toEqual([])
+
+    await box('Seleccionar b.mp3').setValue(true)
+    await box('Seleccionar la carpeta Domingo').setValue(true)
+    expect(wrapper.emitted('update:selected')!.at(-1)).toEqual([['f2', 'd1']])
+    expect(checkedLabels(wrapper)).toEqual(['Seleccionar la carpeta Domingo', 'Seleccionar b.mp3'])
+
+    await box('Seleccionar b.mp3').setValue(false)
+    expect(wrapper.emitted('update:selected')!.at(-1)).toEqual([['d1']])
+    expect(checkedLabels(wrapper)).toEqual(['Seleccionar la carpeta Domingo'])
+    // Marcar no dispara acciones de los menús.
+    expect(wrapper.emitted('fileAction')).toBeUndefined()
+    expect(wrapper.emitted('folderAction')).toBeUndefined()
+  })
+
+  it('FileGrid: lo que llega en `selected` marca sus tarjetas', async () => {
+    const items = [file(), file({ id: 'f2', name: 'b.mp3', hasThumbnail: false, category: 'audio' })]
+    const wrapper = await mountSuspended(FileGrid, { props: { folders: [folder], items, selectable: true, selected: ['f1'] } })
+    expect(checkedLabels(wrapper)).toEqual(['Seleccionar foto.jpg'])
+    await wrapper.setProps({ selected: ['d1', 'f2'] })
+    expect(checkedLabels(wrapper)).toEqual(['Seleccionar la carpeta Domingo', 'Seleccionar b.mp3'])
+    await wrapper.setProps({ selected: [] })
+    expect(checkedLabels(wrapper)).toEqual([])
+  })
+
+  it('FileList: una casilla por fila con nombre y área táctil; `v-model:selected` agrega, quita y resalta la fila', async () => {
+    const items = [file(), file({ id: 'f2', name: 'b.mp3', hasThumbnail: false, category: 'audio' })]
+    const plain = await mountSuspended(FileList, { props: { folders: [folder], items } })
+    expect(plain.findAll('input[type="checkbox"]')).toHaveLength(0)
+
+    const wrapper = await mountSuspended(FileList, { props: { folders: [folder], items, selectable: true } })
+    const box = (label: string) => wrapper.get(`input[aria-label="${label}"]`)
+    const highlighted = () => wrapper.findAll('li').map(row => row.classes().includes('bg-primary/10'))
+    expect(wrapper.findAll('input[type="checkbox"]').map(b => b.attributes('aria-label'))).toEqual([
+      'Seleccionar la carpeta Domingo', 'Seleccionar foto.jpg', 'Seleccionar b.mp3',
+    ])
+    for (const input of wrapper.findAll('input[type="checkbox"]')) {
+      expect(input.element.parentElement!.tagName).toBe('LABEL')
+      expect(input.element.parentElement!.className).toContain('size-11')
+    }
+    expect(highlighted()).toEqual([false, false, false])
+
+    await box('Seleccionar la carpeta Domingo').setValue(true)
+    await box('Seleccionar foto.jpg').setValue(true)
+    expect(wrapper.emitted('update:selected')!.at(-1)).toEqual([['d1', 'f1']])
+    expect(checkedLabels(wrapper)).toEqual(['Seleccionar la carpeta Domingo', 'Seleccionar foto.jpg'])
+    expect(highlighted()).toEqual([true, true, false])
+
+    // Desmarcar quita solo ese elemento.
+    await box('Seleccionar la carpeta Domingo').setValue(false)
+    expect(wrapper.emitted('update:selected')!.at(-1)).toEqual([['f1']])
+    expect(checkedLabels(wrapper)).toEqual(['Seleccionar foto.jpg'])
+    expect(highlighted()).toEqual([false, true, false])
+    await box('Seleccionar foto.jpg').setValue(false)
+    expect(wrapper.emitted('update:selected')!.at(-1)).toEqual([[]])
+    expect(highlighted()).toEqual([false, false, false])
   })
 
   it('Breadcrumbs enlaza los ancestros y marca la carpeta actual', async () => {

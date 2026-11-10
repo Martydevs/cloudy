@@ -462,6 +462,44 @@ describe('v2 principal, v1 de respaldo', () => {
     expect((await expectStatus(getJob(JOB, engine), 404)).data).toEqual({ code: 'expired' })
     expect(fetchMock).toHaveBeenCalledTimes(5)
   })
+
+  it('probeVideo: bloqueado en los dos motores → 502 engines_failed con la causa (lo que muestra la ficha)', async () => {
+    fetchMock.mockResolvedValueOnce(botCheck()).mockResolvedValueOnce(botCheck())
+    const error = await expectStatus(probeVideo('okShortVid1'), 502)
+    expect(error.data).toEqual({
+      code: 'engines_failed',
+      cause: 'botCheck',
+      attempts: [{ engine: 'v2', status: 502, code: 'bot_check' }, { engine: 'v1', status: 502, code: 'bot_check' }],
+    })
+    expect(error.message).toBe(YOUTUBE_SERVICE_MESSAGES.botCheck)
+    expect(urls()).toEqual([`${URL_BASE}/v2/videos/okShortVid1`, `${URL_BASE}/v1/videos/okShortVid1`])
+    expect(logs()).toEqual(['[cloudy-api] video v2 → 502 (bot_check); fallback v1', '[cloudy-api] video v1 → 502 (bot_check)'])
+    expect(JSON.stringify(error)).not.toMatch(/Sign in|cloudy-api\.test/)
+    expectNoKeyLeak(error)
+  })
+
+  it('probeVideo: v2 falla por el motor y v1 dice que el video es privado → 404 con ese motivo, no «los motores fallaron»', async () => {
+    fetchMock.mockResolvedValueOnce(botCheck()).mockResolvedValueOnce(json(422, { detail: { code: 'private', message: 'Private video. Sign in' } }))
+    const error = await expectStatus(probeVideo('privateVid1'), 404)
+    expect(error.data).toEqual({ code: 'private' })
+    expect(error.message).toBe('No encontramos ese video. Revisa el enlace.')
+    expect(urls()).toEqual([`${URL_BASE}/v2/videos/privateVid1`, `${URL_BASE}/v1/videos/privateVid1`])
+  })
+
+  it('createJob: v1 acepta pero no devuelve el id del trabajo → 503 waking, sin inventar un trabajo', async () => {
+    fetchMock.mockResolvedValueOnce(botCheck()).mockResolvedValueOnce(json(202, { status: 'queued' }))
+    const error = await expectStatus(create(), 503)
+    expect(error.data).toEqual({ state: 'waking' })
+    expect(urls()).toEqual([`${URL_BASE}/v2/jobs`, `${URL_BASE}/v1/jobs`])
+  })
+
+  it('las presentaciones de Canciones solo existen en /v1: un 5xx no prueba otro motor y su registro no lleva motor', async () => {
+    fetchMock.mockResolvedValue(json(502, { detail: { code: 'bot_check', message: 'x' } }))
+    const error = await expectStatus(createLyricsPptx({ html: '<p>a</p>', title: 'Canción' }), 503)
+    expect(error.data).toEqual({ code: 'waking' })
+    expect(urls()).toEqual([`${URL_BASE}/v1/lyrics/pptx`])
+    expect(logs()).toEqual(['[cloudy-api] pptx → 502 (bot_check)'])
+  })
 })
 
 describe('configuración', () => {

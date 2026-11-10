@@ -434,6 +434,128 @@ describe('FileExplorer · selección múltiple', () => {
     await flush(10)
     expect(bar(wrapper)!.get('[role="status"]').text()).toBe('1 seleccionado')
   })
+
+  it('una administradora tiene las mismas casillas que un editor', async () => {
+    signIn('admin')
+    const wrapper = await mountSuspended(FileExplorer, { props: { folderId: null } })
+    await flush()
+    expect(wrapper.findAll('input[type="checkbox"]').map(box => box.attributes('aria-label'))).toEqual([
+      'Seleccionar la carpeta Domingo', 'Seleccionar foto.jpg', 'Seleccionar audio.mp3',
+    ])
+  })
+
+  it('con el envío en curso el botón se deshabilita y un segundo clic no manda otra petición', async () => {
+    let release: ((value: unknown) => void) | undefined
+    mockApi('POST', '/api/items/trash', () => new Promise((resolve) => {
+      release = resolve
+    }))
+    const wrapper = await mountWithSelection(['foto.jpg'])
+    const send = () => buttons(wrapper, 'Enviar a la papelera')[0]!
+    expect(send().attributes('disabled')).toBeUndefined()
+
+    await send().trigger('click')
+    await flush()
+    useConfirm().accept()
+    await vi.waitFor(() => expect(release).toBeDefined())
+    await flush()
+    expect(send().attributes('disabled')).toBeDefined()
+    expect(send().find('.loading').exists()).toBe(true)
+
+    await send().trigger('click')
+    await flush()
+    expect(useConfirm().options.value).toBeNull()
+    expect(trashPosts()).toHaveLength(1)
+
+    mockApi('GET', '/api/folders/root/children', children({ files: [audio()] }))
+    release!({ trashed: 1, skipped: [] })
+    await flush(10)
+    expect(bar(wrapper)).toBeUndefined()
+    expect(wrapper.find('a[aria-label="Abrir foto.jpg"]').exists()).toBe(false)
+  })
+
+  it('un archivo de «Cargar más» se puede marcar junto con los de la primera página y sale de la vista en cuanto va a la papelera', async () => {
+    const F3 = '22222222-3333-4444-8555-666666666666'
+    let trashed = false
+    mockApi('GET', '/api/folders/root/children', (event) => {
+      // Tras el envío la recarga queda pendiente: lo que se vea es lo que el explorador quitó en local.
+      if (trashed) return new Promise(() => {})
+      return getQuery(event).cursor === 'c1'
+        ? children({ folders: [], files: [file({ id: F3, name: 'b.jpg' })], nextCursor: null })
+        : children({ nextCursor: 'c1' })
+    })
+    mockApi('POST', '/api/items/trash', () => {
+      trashed = true
+      return { trashed: 2, skipped: [] }
+    })
+    const wrapper = await mountWithSelection(['foto.jpg'])
+
+    // Cargar otra página no pierde lo ya marcado.
+    await buttons(wrapper, 'Cargar más')[0]!.trigger('click')
+    await flush()
+    expect(bar(wrapper)!.get('[role="status"]').text()).toBe('1 seleccionado')
+    await checkbox(wrapper, 'b.jpg').setValue(true)
+    expect(bar(wrapper)!.get('[role="status"]').text()).toBe('2 seleccionados')
+
+    await buttons(wrapper, 'Enviar a la papelera')[0]!.trigger('click')
+    await flush()
+    useConfirm().accept()
+    await flush(10)
+    expect(trashPosts().map(c => c.body)).toEqual([{ fileIds: [F1, F3], folderIds: [] }])
+    expect(bar(wrapper)).toBeUndefined()
+    expect(wrapper.find('a[aria-label="Abrir b.jpg"]').exists()).toBe(false)
+  })
+
+  // Va al final: cambia la ruta (filtro y búsqueda) y la deja como estaba para lo que siga.
+  it('cambiar el filtro de tipo, buscar o entrar a otra carpeta empieza una selección nueva, aunque el elemento siga a la vista', async () => {
+    mockApi('GET', '/api/files/search', { folders: [], files: [file({ path: [] })], nextCursor: null })
+    mockApi('GET', `/api/folders/${D1}/children`, children({
+      folder,
+      breadcrumbs: [{ id: null, name: 'Archivos' }, { id: D1, name: 'Domingo' }],
+      folders: [],
+      files: [file({ folderId: D1 })],
+    }))
+    const wrapper = await mountSuspended(FileExplorer, { props: { folderId: null }, route: '/archivos' })
+    await flush()
+    const select = async () => {
+      await checkbox(wrapper, 'foto.jpg').setValue(true)
+      await vi.waitFor(() => expect(bar(wrapper)).toBeDefined())
+    }
+    const stillSelected = () => (checkbox(wrapper, 'foto.jpg').element as HTMLInputElement).checked
+
+    try {
+      await select()
+      await buttons(wrapper, 'Audio')[0]!.trigger('click')
+      await flush(10)
+      expect(useRoute().query.type).toBe('audio')
+      expect(bar(wrapper)).toBeUndefined()
+      expect(stillSelected()).toBe(false)
+
+      await select()
+      await useRouter().replace('/archivos?q=foto')
+      await flush(10)
+      expect(wrapper.get('h1').text()).toBe('Resultados para «foto»')
+      expect(bar(wrapper)).toBeUndefined()
+      expect(stillSelected()).toBe(false)
+
+      // Salir de la búsqueda también.
+      await select()
+      await useRouter().replace('/archivos')
+      await flush(10)
+      expect(wrapper.get('h1').text()).toBe('Archivos')
+      expect(bar(wrapper)).toBeUndefined()
+      expect(stillSelected()).toBe(false)
+
+      await select()
+      await wrapper.setProps({ folderId: D1 })
+      await flush(10)
+      expect(wrapper.get('h1').text()).toBe('Domingo')
+      expect(bar(wrapper)).toBeUndefined()
+      expect(stillSelected()).toBe(false)
+    }
+    finally {
+      await useRouter().replace('/archivos')
+    }
+  })
 })
 
 describe('páginas de archivos', () => {

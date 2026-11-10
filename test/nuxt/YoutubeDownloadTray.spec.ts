@@ -114,6 +114,23 @@ describe('YoutubeDownloadTray', () => {
     expect(button(wrapper, 'Preparar de nuevo')).toBeDefined()
   })
 
+  it('si los videos de un lote fallaron por causas distintas, la fila lo dice en general y cada video muestra la suya', async () => {
+    const general = 'Ningún video se pudo descargar. Revisa el motivo de cada uno.'
+    const blocked = 'YouTube bloqueó la descarga con su verificación anti-robots. Intenta de nuevo en unos minutos.'
+    const hidden = 'Este video es privado.'
+    const items = [
+      item({ status: 'failed', progress: 0, error: { code: 'bot_check', message: blocked } }),
+      item({ videoId: 'privateVid1', title: 'Privado', status: 'failed', progress: 0, error: { code: 'private', message: hidden } }),
+    ]
+    setRows([row({ videoIds: ['okShortVid1', 'privateVid1'], status: 'failed', message: general, job: job({ status: 'failed', items }) })])
+    const wrapper = await mountSuspended(YoutubeDownloadTray)
+    await flush()
+    // Cada texto aparece una sola vez: el general en la fila y cada causa junto a su video.
+    for (const text of [general, blocked, hidden]) expect(wrapper.text().split(text), text).toHaveLength(2)
+    // El motivo es hijo directo de la fila del video (el ícono de «falló» también es rojo, pero va dentro de su línea).
+    expect(wrapper.findAll('li li > .text-error').map(el => el.text())).toEqual([blocked, hidden])
+  })
+
   it('en pausa: el motivo y Reintentar; rechazado: cada video con su motivo y sin Preparar de nuevo', async () => {
     mockApi('POST', '/api/youtube/jobs', job({ status: 'queued' }))
     setRows([
