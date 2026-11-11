@@ -4,7 +4,7 @@ Cloudy is the internal media drive for a Christian church's multimedia & audio p
 members (admins and editors) upload, organize, preview, comment on and recover media files. Guests
 send material from a public page into an approval queue that the team reviews live.
 
-**Governance**: `.specify/memory/constitution.md` (v1.1.1) is the source of truth and overrides this
+**Governance**: `.specify/memory/constitution.md` (v1.2.0) is the source of truth and overrides this
 file. Keep this guide aligned with it whenever the constitution is amended.
 
 **Active feature**: `specs/007-peticiones-imagenes/` (Peticiones page: approved guest prayer-request images shown as selectable cards, corrected with the feature-002 text editor and
@@ -84,7 +84,7 @@ fetching uses Nuxt `useFetch`, not VueUse.
 **I. Performance** — Mobile 4G budgets: LCP ≤ 2.5 s, INP ≤ 200 ms, CLS ≤ 0.1, initial JS ≤ 250 KB
 gzip per route. Index every filtered/sorted column; no N+1 queries; cursor pagination. **Never stream
 file binaries through server functions** (Vercel body limit ~4.5 MB): browsers upload/download
-directly with presigned URLs. The bounded exceptions are the lyrics `.pptx` of feature 006 and the generated prayer-request image of feature 007 (see Known gotchas). Lazy-load thumbnails and non-critical components at the component level (`Lazy*` behind `v-if` for UI that only appears after an action or a later state, e.g. `LazyItemDialogs`).
+directly with presigned URLs. The bounded exceptions are the lyrics `.pptx` of feature 006 and the generated prayer-request image of feature 007 (see Known gotchas). Lazy-load images and non-critical components at the component level (a thumbnail is optional: an image without one loads only near the viewport, inside a fixed-size box) (`Lazy*` behind `v-if` for UI that only appears after an action or a later state, e.g. `LazyItemDialogs`).
 Guest upload (feature 003, one step): at `/upload` the guest fills name + optional note + files in one form
 (`GuestUploadForm` → `POST /api/public/submissions`, then `POST /api/public/submissions/:id/complete`) and the
 submission lands straight in the team's queue; the only approval is staff approving/rejecting the files. No guest

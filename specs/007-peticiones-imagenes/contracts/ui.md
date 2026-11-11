@@ -36,7 +36,7 @@ Se nombran por archivo (`components: [{ pathPrefix: false }]`). Cada uno tiene u
 | `PrayerSelectionDialog` *(Lazy)* | `items` → `remove`, `close` | `dialog.modal.modal-bottom sm:modal-middle`: lista compacta de elegidas (incluidas las que el filtro oculta) con quitar |
 | `PrayerTextDialog` *(Lazy)* | `request` → `change`, `close` | `dialog.modal`: foto grande + `ImageTextPanel` **editable** (`/api/files/<id>/text`); reenvía `change` |
 | `PrayerResults` *(Lazy)* | — (usa `usePrayerImages`) | Encabezado «Imágenes generadas» + **Descartar todas**; rejilla de `PrayerResultCard`; región `aria-live="polite"` con los cambios de estado |
-| `PrayerResultCard` | `item` → `download`, `regenerate`, `cancel`, `dismiss`, `preview` | Esqueleto `aspect-[1152/928]` + `progress` mientras `queued/running`; `<img>` al estar lista; acciones por estado; error en español |
+| `PrayerResultCard` | `item` → `download`, `regenerate`, `cancel`, `dismiss`, `preview` | Esqueleto `aspect-[1376/768]` + `progress` mientras `queued/running`; `<img>` al estar lista; acciones por estado; error en español |
 | `PrayerImagePreview` *(Lazy)* | `url`, `title` → `close` | `dialog` con la imagen a tamaño completo |
 
 **Reutilizados sin cambios**: `EmptyState`, `ErrorState`, `ConfirmDialog` (vía `useConfirm`), `SkeletonList`, `ActionMenu`, `ImageTextPanel` (gana el evento `change`), `ImageTextEditor`.
@@ -89,7 +89,7 @@ leído de vuelta con el mismo asistente) pero genera con **concurrencia 2**, no 
 | Rejilla filtrada | igual | `EmptyState` «No hay peticiones con esos filtros» + **Quitar filtros** | igual | igual |
 | Más páginas | `PrayerCardSkeleton ×3` en el sentinela | aviso de fin | `ErrorState` compacto «No pudimos cargar más peticiones» + **Reintentar** (conserva lo cargado) | — |
 | Transcripción de la tarjeta | texto en `skeleton` + «Leyendo texto…» (`reading`/`pending`) | «No se reconoció texto» / «Sin texto» + **Escribir transcripción** | «No se pudo leer» + **Corregir texto** | texto + insignias |
-| Imagen generada | `skeleton aspect-[1152/928]` + `progress` | — | mensaje por `errorCode` + **Reintentar** (si aplica) | `<img>` + **Descargar** |
+| Imagen generada | `skeleton aspect-[1376/768]` + `progress` | — | mensaje por `errorCode` + **Reintentar** (si aplica) | `<img>` + **Descargar** |
 
 ## Interacciones clave
 

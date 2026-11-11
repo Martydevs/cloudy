@@ -72,7 +72,7 @@ cualquier estado final → fuera de la bandeja (Descartar). Como máximo 2 eleme
 
 ### Plantilla
 
-Archivo estático `server/assets/peticiones/plantilla.jpg` (1152×928 JPEG, 733 KB) servido como *server asset* de Nitro
+Archivo estático `server/assets/peticiones/plantilla.jpg` (1376×768 JPEG, 702 KB) servido como *server asset* de Nitro
 (`assets:peticiones`). No es una entidad de base de datos ni de bucket.
 
 ## Cambios de esquema (migración `0009`)

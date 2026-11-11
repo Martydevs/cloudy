@@ -32,9 +32,11 @@ credenciales (igual que con la lectura de texto de imágenes y con las demás in
 - **Petición**: una imagen enviada por un invitado cuyo envío ya fue **aprobado** y que tiene (o puede tener) una
   **transcripción**; es la unidad de una tarjeta y equivale a **un párrafo** en la imagen generada.
 - **Transcripción**: el texto leído de la imagen por la IA (feature 002), que el equipo puede corregir.
-- **Plantilla**: la imagen base del diseño de «Peticiones de oración del día», con un espacio de cuerpo vacío e
-  indicado donde va el texto.
+- **Plantilla**: la imagen base del diseño de «Peticiones de oración del día», con un espacio de cuerpo vacío
+  donde va el texto (el área abierta bajo el título).
 - **Imagen de peticiones**: el resultado: la plantilla con el cuerpo relleno con hasta 4 peticiones.
+- **Bandeja de resultados**: la sección «Imágenes generadas» de la propia página de Peticiones (no una bandeja fija del
+  layout como las de YouTube y Canciones), donde aparecen, se descargan y se reintentan las imágenes.
 - **Selección**: el conjunto de tarjetas elegidas para generar.
 
 ## Clarifications
@@ -160,7 +162,7 @@ descargarlas con un nombre que incluya la fecha y el número de imagen.
 ### User Story 3 - Corregir la transcripción antes de generar (Priority: P3)
 
 Algunas transcripciones salen con marcas como `[ilegible]` porque la letra a mano no se entendió, o sin texto. En la
-tarjeta, el texto de la transcripción es **editable**: la persona pulsa **Editar**, ve la foto original junto al campo
+tarjeta, el texto de la transcripción es **editable**: la persona pulsa **Corregir texto**, ve la foto original junto al campo
 de texto, reemplaza la marca por lo que ella lee (o escribe la transcripción completa si no había), y guarda. La
 tarjeta muestra el texto corregido con la insignia **Editada**, y las marcas de ilegible que sigan en el texto se
 resaltan con una advertencia para que no se pasen por alto.
@@ -168,13 +170,13 @@ resaltan con una advertencia para que no se pasen por alto.
 **Why this priority**: sin corrección, una marca `[ilegible]` terminaría impresa en la imagen proyectada; es lo que
 vuelve confiable la generación (US2), pero la generación ya funciona con las transcripciones buenas.
 
-**Independent Test**: en una tarjeta con `[ilegible]` en su texto, pulsar **Editar**, sustituir la marca por una palabra,
+**Independent Test**: en una tarjeta con `[ilegible]` en su texto, pulsar **Corregir texto**, sustituir la marca por una palabra,
 guardar, y comprobar que la tarjeta muestra el texto nuevo con la insignia **Editada** y sin advertencia; recargar la
 página y comprobar que el texto corregido se conserva.
 
 **Acceptance Scenarios**:
 
-1. **Given** una tarjeta con transcripción, **When** la persona pulsa **Editar**, **Then** el texto pasa a un campo
+1. **Given** una tarjeta con transcripción, **When** la persona pulsa **Corregir texto**, **Then** el texto pasa a un campo
    editable con su contador de caracteres, y la foto original sigue visible (o se abre en grande) para consultarla
    mientras se corrige; **Guardar** y **Cancelar** son alcanzables con teclado y con el pulgar.
 2. **Given** una transcripción con `[ilegible]`, `[unlegible]`, `[illegible]` o una marca entre corchetes parecida,
@@ -245,7 +247,9 @@ el filtro y comprobar que el contador de la barra no cambia.
 - **Dos personas del equipo editan la misma transcripción**: gana el último guardado; el texto que cada persona ve se
   actualiza al recargar.
 - **Una imagen aprobada deja de estar disponible mientras su tarjeta está elegida** (por ejemplo, se envía a la
-  papelera o se elimina): la tarjeta deja de aparecer en la rejilla y se retira de la selección con un aviso.
+  papelera o se elimina): la tarjeta desaparece de la rejilla al recargar o volver a la página; si ya estaba elegida,
+  se detecta al pulsar **Generar imágenes** (el servidor responde que ya no está disponible), se retira de la
+  selección con un aviso y esa imagen no se genera.
 - **Una petición elegida cambia de texto mientras otra imagen está generándose**: cada imagen usa el texto vigente
   en el momento en que **empieza** a generarse; una vez iniciada, no cambia.
 - **Imagen enviada sin vista previa posible o ya eliminada**: la tarjeta muestra un marcador con el nombre del archivo
@@ -299,7 +303,7 @@ el filtro y comprobar que el contador de la barra no cambia.
 
 **Edición de la transcripción**
 
-- **FR-013**: Cada tarjeta con transcripción MUST ofrecer **Editar**, con campo de texto, contador y límite de
+- **FR-013**: Cada tarjeta con transcripción MUST ofrecer **Corregir texto**, con campo de texto, contador y límite de
   caracteres igual al de la lectura de imágenes (10 000), validación en español, **Guardar** y **Cancelar**; una
   imagen sin texto MUST ofrecer **Escribir transcripción** con el mismo campo.
 - **FR-014**: Al guardar, el texto corregido MUST reemplazar la transcripción de esa imagen para todo el equipo y en
@@ -359,7 +363,8 @@ el filtro y comprobar que el contador de la barra no cambia.
   teclado con foco visible, respetar la preferencia de movimiento reducido y funcionar en 360 px sin desplazamiento
   horizontal con objetivos táctiles de al menos 44 px.
 - **FR-033**: La acción **Generar imágenes** y la edición de transcripciones MUST estar limitadas por tasa para
-  proteger el crédito del proveedor, informando con un mensaje accionable cuando se alcance el límite.
+  proteger el crédito del proveedor, informando con un mensaje accionable cuando se alcance el límite. Valores
+  iniciales por persona: 60 imágenes por hora (cada reintento y cada **Generar de nuevo** cuenta) y 120 ediciones por hora.
 
 ### Key Entities *(include if feature involves data)*
 
@@ -370,7 +375,7 @@ el filtro y comprobar que el contador de la barra no cambia.
   lista, sin texto, fallida, no disponible), marca de **Editada** y fecha de edición; hasta 10 000 caracteres.
 - **Selección**: conjunto de peticiones elegidas durante la visita a la página; vive solo en el navegador de la persona
   y no se guarda.
-- **Plantilla**: imagen base única de «Peticiones de oración del día», con el espacio del cuerpo vacío e indicado; la
+- **Plantilla**: imagen base única de «Peticiones de oración del día», con el espacio del cuerpo vacío (el área abierta bajo el título); la
   administra el equipo técnico y no se elige desde la página.
 - **Grupo / Imagen de peticiones**: conjunto de hasta 4 peticiones en orden cronológico y la imagen resultante de
   rellenar con ellas la plantilla; existe solo en la bandeja de resultados hasta que se descarga o se cierra la página.
@@ -409,7 +414,7 @@ el filtro y comprobar que el contador de la barra no cambia.
 - **Servicio de imágenes**: el proveedor es OpenRouter, el único usado en el proyecto, con un modelo de generación de
   imágenes configurado como preajuste propio (que lleva el *system prompt* de esta función); es distinto del preajuste
   de lectura de texto de la feature 002. Sin credenciales o sin plantilla, la función responde «no disponible».
-- **Plantilla**: una sola, entregada por el equipo de diseño con el espacio del cuerpo ya indicado; elegir entre
+- **Plantilla**: una sola, entregada por el equipo de diseño con el espacio del cuerpo vacío bajo el título (hoy `server/assets/peticiones/plantilla.jpg`, paisaje de plastilina de 1376×768); elegir entre
   varias plantillas o subir una desde la página queda fuera de alcance.
 - **Orden de las peticiones en la imagen**: cronológico ascendente de aprobación (la más antigua primero), el orden en
   que el equipo las fue aprobando; elegir otro orden dentro de la imagen queda fuera de alcance de v1.

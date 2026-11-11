@@ -1,4 +1,19 @@
 <!--
+Sync Impact Report (1.2.0, 2026-11-11)
+- Version change: 1.1.1 → 1.2.0 (MINOR: one obligation of Principle I is relaxed; no principle added or removed)
+- Modified principles: I. Rendimiento medible: thumbnails are no longer mandatory. The rule "Imágenes con miniatura,
+  `loading="lazy"` y dimensiones declaradas" becomes: lazy loading and declared dimensions are mandatory; a thumbnail
+  is used when one exists, and an image without one MUST be loaded on demand (only when it nears the viewport) with
+  a fixed-size box so it cannot shift the layout.
+- Reason: guest photos (feature 003) are stored without thumbnails (3–5 MB each) and feature 007 (Peticiones) lists
+  them in a grid. Generating thumbnails needs a new dependency (`sharp`) or changing the guest upload flow; the
+  mitigation (pages of 12, `src` set only when the card enters the viewport, fixed `aspect-[4/3]` box) is enough.
+- Added/removed sections: none
+- Templates checked: ✅ plan/spec/tasks templates need no change
+- Follow-up: AGENTS.md updated (version). specs/007-peticiones-imagenes needs no Complexity Tracking row for this.
+  Earlier feature docs keep their thumbnail mentions as historical records. No migration plan needed: the change only
+  loosens an obligation and no existing feature depended on it.
+
 Sync Impact Report (1.1.1, 2026-10-31)
 - Version change: 1.1.0 → 1.1.1 (PATCH: correction of the stack list, no change in obligations)
 - Modified sections: Restricciones técnicas y de plataforma → Stack: `@nuxt/image` is removed.
@@ -74,8 +89,10 @@ cumplir estos presupuestos, salvo que su plan justifique una excepción:
   filtrar u ordenar MUST tener índice, y quedan prohibidas las consultas N+1.
 - Los archivos binarios grandes MUST NOT pasar por funciones del servidor: se suben y descargan
   directamente contra el almacenamiento mediante URLs firmadas.
-- Imágenes con miniatura, `loading="lazy"` y dimensiones declaradas; la primera vista se
-  renderiza con SSR.
+- Imágenes con carga diferida (`loading="lazy"` o equivalente) y dimensiones declaradas; la
+  miniatura es opcional: se usa cuando existe, y una imagen sin miniatura MUST cargarse solo al
+  acercarse al viewport, dentro de una caja de tamaño fijo que evite saltos de diseño (CLS). La
+  primera vista se renderiza con SSR.
 
 **Razón**: el equipo usa la app en domingo, desde el celular, con conexiones de iglesia; la
 lentitud es la principal causa de abandono de una herramienta interna.
@@ -221,4 +238,4 @@ se sienta confiable.
   operativa para agentes y personas vive en `AGENTS.md`, que MUST mantenerse alineado con esta
   constitución.
 
-**Version**: 1.1.1 | **Ratified**: 2026-10-14 | **Last Amended**: 2026-10-31
+**Version**: 1.2.0 | **Ratified**: 2026-10-14 | **Last Amended**: 2026-11-11

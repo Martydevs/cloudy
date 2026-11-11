@@ -1,14 +1,14 @@
 # Implementation Plan: Página Peticiones — peticiones de oración a imágenes para proyectar
 
-**Branch**: `007-peticiones-imagenes` (la rama no se creó: no hay hook `before_specify`; se crea al implementar) | **Date**: 2026-11-07 | **Spec**: [spec.md](./spec.md)
+**Branch**: `007-peticiones-imagenes` | **Date**: 2026-11-07 | **Spec**: [spec.md](./spec.md)
 
-**Input**: Feature specification from `specs/007-peticiones-imagenes/spec.md` · Modelo: `@preset/pray-requests-image-generation` (OpenRouter, cliente existente) · Plantilla: `google-gemini-nano-banana-2.1-generated.jpg`
+**Input**: Feature specification from `specs/007-peticiones-imagenes/spec.md` · Modelo: `@preset/pray-requests-image-generation` (OpenRouter, cliente existente) · Plantilla: `server/assets/peticiones/plantilla.jpg` (1376×768)
 
 ## Summary
 
 El equipo abre **Peticiones**, ve como tarjetas en rejilla las imágenes de invitados **ya aprobadas** (foto, transcripción, quién y cuándo), elige varias, corrige las transcripciones con
 `[ilegible]` y genera imágenes de «Peticiones de oración del día»: cada imagen lleva hasta 4 peticiones (la quinta abre la segunda imagen) sobre una plantilla, con un modelo de
-generación de imágenes que solo rellena el pizarrón vacío. Hay búsqueda sin tildes, filtro por fecha de aprobación, orden y desplazamiento infinito.
+generación de imágenes que solo rellena el espacio vacío bajo el título. Hay búsqueda sin tildes, filtro por fecha de aprobación, orden y desplazamiento infinito.
 
 **Enfoque técnico**:
 
@@ -46,7 +46,7 @@ generación de imágenes que solo rellena el pizarrón vacío. Hay búsqueda sin
 
 - **Neon Postgres**: migración `0009` con **2 índices**, sin tablas ni enums ([data-model.md](./data-model.md)).
 - **Bucket**: sin cambios. Las imágenes generadas **no se guardan** (FR-026); solo viaja el binario de respuesta.
-- **Activos del despliegue**: `server/assets/peticiones/plantilla.jpg` (733 KB) vía `nitro.serverAssets`.
+- **Activos del despliegue**: `server/assets/peticiones/plantilla.jpg` (702 KB) vía `nitro.serverAssets`.
 
 **Testing**: Vitest `unit` / `nuxt` / `e2e`. Unitarias de `shared/prayers`, prompt, `generate` (AI SDK simulado), `prayer-requests`, `prayer-images` y `architecture.spec`; de componente para
 tarjeta, barra de filtros, barra de selección, resultado, composables y página; e2e `peticiones.spec.ts` contra el stub de OpenRouter (nueva respuesta con `message.images`) y rutas
@@ -74,7 +74,7 @@ búsqueda/filtro/orden < 1 s (SC-006) y < 2 s con 5 000 elementos.
 
 | Principio | Evaluación | Estado |
 |-----------|------------|--------|
-| **I. Rendimiento medible** | Páginas de 12 con keyset e índices `(status, reviewed_at, id)` y `files(submission_id)`; sin N+1 (una consulta con `JOIN`); JS diferido (`Lazy*` con `v-if`: resultados, diálogos, vista ampliada); fotos con `src` solo al entrar al viewport, caja de proporción fija (CLS) y `decoding="async"`; la primera vista se renderiza con SSR (`useApiFetch` + `lazy`). **Binarios**: la imagen generada pasa por la función → excepción acotada y justificada (Complexity Tracking). La búsqueda de texto no tiene índice (ver Complexity Tracking) | ✅ con 2 excepciones registradas |
+| **I. Rendimiento medible** | Páginas de 12 con keyset e índices `(status, reviewed_at, id)` y `files(submission_id)`; sin N+1 (una consulta con `JOIN`); JS diferido (`Lazy*` con `v-if`: resultados, diálogos, vista ampliada); fotos con `src` solo al entrar al viewport, caja de proporción fija (CLS) y `decoding="async"` (sin miniatura: opcional según el Principio I v1.2.0); la primera vista se renderiza con SSR (`useApiFetch` + `lazy`). **Binarios**: la imagen generada pasa por la función → excepción acotada y justificada (Complexity Tracking). La búsqueda de texto no tiene índice (ver Complexity Tracking) | ✅ con 2 excepciones registradas |
 | **II. Funcional y efectivo** | 4 historias independientes (US1 ver/elegir, US2 generar, US3 corregir, US4 buscar/filtrar). YAGNI: sin tabla nueva, sin guardar imágenes, sin elegir plantilla ni orden. Reutiliza el editor de transcripciones, `useConfirm`, `download-blob`, la cola de Canciones (forma) y VueUse antes de escribir código. **Sin dependencias ni servicios nuevos** (mismo OpenRouter y mismo cliente). Fallos sin huérfanos: no se guarda nada; un `409` retira peticiones no disponibles | ✅ |
 | **III. Mobile first** | Base 1 columna, `sm:`/`xl:`/`2xl:` solo amplían; 360 px sin scroll horizontal; objetivos ≥ 44 px (`btn`, casilla con etiqueta estirada); nada depende de `hover`; barra de selección al alcance del pulgar con área segura; verificación a 360 y ≥ 1280 px | ✅ |
 | **IV. Calidad de código** | `<script setup lang="ts">`, componentes de una responsabilidad y composables (`usePrayerFilters/Requests/Selection/Images`, `usePrayerLeaveGuard`); reglas compartidas una sola vez en `shared/` (`prayers.ts`, `validation/prayers.ts`, `constants/prayers.ts`); endpoints validan entrada y rol en servidor; IA solo por `server/ai/` → `server/utils/prayer-images.ts`; SQL solo en `server/utils/prayer-requests.ts`; sin `any`, sin `v-html`, sin código muerto; `architecture.spec` actualizado | ✅ |
@@ -141,7 +141,7 @@ server/
 ├── ai/index.ts                             # CAMBIO · exporta generatePrayerImage, resolvePrayerImageModel
 ├── utils/prayer-requests.ts                # NUEVO · SQL del listado y de la elegibilidad
 ├── utils/prayer-images.ts                  # NUEVO · aplicación: plantilla + elegibilidad + IA + errores HTTP
-├── assets/peticiones/plantilla.jpg         # NUEVO · plantilla (copiada de la ruta entregada)
+├── assets/peticiones/plantilla.jpg         # NUEVO · plantilla (JPEG de 1376×768)
 └── db/schema.ts                            # CAMBIO · 2 índices
 drizzle/0009_*.sql                          # NUEVO · migración generada con drizzle-kit
 nuxt.config.ts                              # CAMBIO · nitro.serverAssets
@@ -167,4 +167,4 @@ componentes se llama `prayers/` (como `songs/`, `youtube/`) y los componentes se
 | **Cambio a `ImageTextPanel`**: evento `change` | La página necesita enterarse del texto guardado para actualizar la tarjeta y la selección | Releer el listado tras cerrar el diálogo pierde la posición del scroll infinito y retrasa la tarjeta |
 | **Cambio a `PATCH /api/files/:id/text`**: límite de tasa | FR-033 (proteger el crédito y los abusos de edición) | Dejarlo sin límite incumple el requisito; es una línea con `hitRateLimit` existente |
 | **Actualizar `architecture.spec.ts`** para permitir un segundo importador de `#server/ai` (`server/utils/prayer-images.ts`) | La regla de la feature 002 nombra un solo archivo; esta función es otro caso de uso de IA con su propia capa de aplicación | Meter la llamada en `image-text.ts` mezcla dos casos de uso; importar `#server/ai` desde el endpoint rompe la regla |
-| **Activo binario en el repositorio** (`plantilla.jpg`, 733 KB) | La plantilla debe existir idéntica en cada entorno y es parte del producto | Un bucket o una variable de entorno agregan configuración por entorno para un archivo que cambia casi nunca |
+| **Activo binario en el repositorio** (`plantilla.jpg`, 702 KB) | La plantilla debe existir idéntica en cada entorno y es parte del producto | Un bucket o una variable de entorno agregan configuración por entorno para un archivo que cambia casi nunca |

@@ -13,7 +13,7 @@
 | `files.submission_id` es FK sin índice | Se agrega junto con el índice de `(status, reviewed_at, id)` (D4). |
 | Los archivos de invitados **no tienen miniatura** (`withThumbnail: false`) | La tarjeta carga la imagen original de forma estrictamente diferida (D9). |
 | `server/utils/image-text.ts` es hoy el único importador de `#server/ai` (`architecture.spec.ts`) | Se agrega un segundo módulo de aplicación y se actualiza la prueba (D2). |
-| La plantilla entregada (`google-gemini-nano-banana-2.1-generated.jpg`, 1152×928, 733 KB) es un salón con pizarrón verde y el título «Peticiones de oración» ya dibujado | El «espacio vacío del cuerpo» es el pizarrón bajo el título; el prompt lo nombra así (D1). |
+| La plantilla entregada (`server/assets/peticiones/plantilla.jpg`, 1376×768, 702 KB) es un paisaje de plastilina (cielo azul, colinas, camino, árboles a los lados, sol y nubes) con el título «Peticiones de oración» ya dibujado arriba. No trae un recuadro ni marca que indique dónde va el texto | El «espacio vacío del cuerpo» es el área abierta de cielo y colinas bajo el título, entre los árboles; como no está marcada, el *system prompt* del preajuste y el prompt de usuario deben nombrarla (D1, D13). |
 | `useSongPresentations` ya resolvió una cola con cancelación, `AbortController`, `objectURL` y `pump` | Se copia la forma, no el código (D8). |
 
 ## D1 — Cómo se pide la imagen a OpenRouter
@@ -78,7 +78,7 @@
   `nitro.serverAssets: [{ baseName: 'peticiones', dir: './server/assets/peticiones' }]`; se lee con
   `useStorage('assets:peticiones').getItemRaw('plantilla.jpg')`. No se guarda en el bucket ni se sube desde la página.
 - **Rationale**: es un archivo estático de diseño que debe existir en cada entorno (dev, test, Vercel) sin configurar nada; los
-  *server assets* de Nitro se empaquetan con la función en el preset `vercel`. 733 KB caben holgados en la función. Sin plantilla
+  *server assets* de Nitro se empaquetan con la función en el preset `vercel`. 702 KB caben holgados en la función. Sin plantilla
   la función responde «no disponible» (503 `not_configured`), nunca llama al modelo.
 - **Alternatives**: `public/` (hay que descargarla por HTTP desde la propia función); bucket (otro objeto que configurar por
   entorno); variable de entorno con ruta (rompe en Vercel). **Cambiar la plantilla** = reemplazar el archivo y desplegar.
@@ -100,7 +100,7 @@
 ## D7 — Marca de ilegible (función pura)
 
 - **Decision**: `shared/prayers.ts` exporta `hasIllegibleMark(text)` y `splitIllegible(text)` con
-  `/\[[^\]\n]*legible[^\]\n]*\]/giu` (cubre `[ilegible]`, `[unlegible]`, `[illegible]`, `[texto ilegible]`). Las tarjetas pintan
+  `/\[[^\]\n]*l[eé]gible[^\]\n]*\]/giu` (cubre `[ilegible]`, `[ilegíble]`, `[unlegible]`, `[illegible]`, `[texto ilegible]`, `[ILÉGIBLE]`; ignora mayúsculas y la tilde de la `e`, sin cambiar las posiciones del texto para que `splitIllegible` reconstruya el original). Las tarjetas pintan
   los trozos con `<mark>`-like (daisyUI `badge badge-warning badge-soft` + icono, sin `text-warning` sobre `base-100` claro) y **no**
   usan `v-html`.
 - **Rationale**: FR-015 pide detección por patrón; un solo lugar la usa el cliente (resaltado, advertencia de la confirmación) y
@@ -128,7 +128,7 @@
   `object-cover`), `decoding="async"` y `fetchpriority="low"`. La foto grande se abre en el diálogo diferido o en una pestaña.
 - **Rationale**: las fotos de invitados llegan sin miniatura (3–5 MB típicas): con 12 por página y carga estrictamente diferida el
   costo se paga por lo que se ve. Generar miniaturas en servidor exigiría `sharp` (dependencia nueva) y quedaría como mejora
-  futura registrada en el plan. La caja fija evita CLS.
+  futura; la miniatura es opcional según el Principio I (v1.2.0). La caja fija evita CLS.
 - **Alternatives**: `loading="lazy"` nativo (el navegador adelanta la carga hasta ~1250–2500 px, demasiado en 4G); miniaturas en el
   envío del invitado (cambia la feature 003).
 
@@ -173,11 +173,11 @@
 ## D13 — Prompt y contenido literal
 
 - **Decision**: `buildPrayerPrompt(paragraphs)` arma el mensaje de usuario con una instrucción corta (rellenar **solo** el espacio
-  vacío del pizarrón, un párrafo por petición en el orden dado, texto literal sin corregir ni traducir ni añadir) y cada petición en
+  vacío bajo el título «Peticiones de oración», un párrafo por petición en el orden dado, texto literal sin corregir ni traducir ni añadir) y cada petición en
   una etiqueta `<peticion n="1">…</peticion>`; `<` y `>` del texto se sustituyen por `‹` y `›` para que nada cierre una etiqueta.
   No se manda nombre, nota ni IP (FR-022): la entrada de la función es `string[]` de 1 a 4 textos.
-- **Rationale**: FR-020/021. El *system prompt* detallado (estilo de tiza, no tocar personajes ni título, ajustar tamaño de letra a
-  4 párrafos) vive en el preajuste de OpenRouter, que el equipo edita sin desplegar.
+- **Rationale**: FR-020/021. El *system prompt* detallado (letra legible con el estilo de plastilina de la plantilla y buen contraste sobre cielo y colinas, no tocar árboles, sol, nubes ni título, ajustar tamaño de letra a
+  4 párrafos sin tapar el camino ni los árboles) vive en el preajuste de OpenRouter, que el equipo edita sin desplegar.
 - **Alternatives**: escapar con entidades HTML (el modelo podría dibujar `&lt;`); JSON (más ruido y el modelo lo copia literal).
 
 ## D14 — Estado, mensajes y accesibilidad

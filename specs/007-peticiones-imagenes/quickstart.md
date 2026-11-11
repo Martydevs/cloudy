@@ -8,7 +8,7 @@ Guía de ejecución y validación. El detalle de interfaces está en [contracts/
 - `bun install` (sin dependencias nuevas).
 - `.env.development` con `NUXT_OPENROUTER_APIKEY` (solo para el *smoke* de § 5; sin clave la página responde «no disponible» y no llama a nadie).
 - El preajuste `@preset/pray-requests-image-generation` creado en OpenRouter con un modelo de generación de imágenes y su *system prompt*.
-- La plantilla copiada a `server/assets/peticiones/plantilla.jpg` (origen: `/mnt/c/Users/workpc/Pictures/google-gemini-nano-banana-2.1-generated.jpg`) y declarada en
+- La plantilla en `server/assets/peticiones/plantilla.jpg` (JPEG de 1376×768, 702 KB) y declarada en
   `nitro.serverAssets` (`baseName: 'peticiones'`).
 - Migración `0009` generada con `bun run db:generate` y aplicada con `bun run db:migrate` (**dos `CREATE INDEX`, no destructivos; se aplican a la rama de desarrollo solo con el visto bueno de la persona**; luego `db:migrate:test` para los e2e).
 
@@ -58,7 +58,7 @@ Usa la skill `agent-browser`; revisa estados de carga/vacío/error, foco con tec
 ## 5. *Smoke* real contra OpenRouter (cuesta crédito; solo con permiso)
 
 1. `bun run dev` con la clave real; elige 1 petición y genera.
-2. Verifica que **el modelo devuelve imagen** (`result.files`) con el preajuste y `modalities: ['image','text']`, que el texto del pizarrón coincide con la transcripción y que el diseño de la plantilla (título, personajes) no cambió.
+2. Verifica que **el modelo devuelve imagen** (`result.files`) con el preajuste y `modalities: ['image','text']`, que el texto bajo el título coincide con la transcripción y que el diseño de la plantilla (título, árboles, sol, nubes y camino) no cambió.
 3. Anota el **tamaño en bytes** de la imagen: debe ser < 4 000 000 (`PRAYER_IMAGE_MAX_BYTES`). Repite 3 veces; si pasa de 4 MB de forma sistemática, ver research D12.
 4. Con 5 peticiones, comprueba que cada imagen lleva como máximo 4 párrafos y que la quinta abre la segunda imagen (SC-002/SC-003). SC-002 se mide revisando 20 imágenes.
 5. Repite en un **preview de Vercel** (límite de respuesta de 4,5 MB, plazo de 120 s, plantilla empaquetada como *server asset*).
