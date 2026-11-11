@@ -52,7 +52,10 @@ function toggleAll() {
 }
 
 async function bulk(action: UserBatchAction, role?: Role) {
-  if (await admin.bulk(action, selectedUsers.value, role)) selected.value = []
+  const acted = new Set(selectedUsers.value.map(user => user.userId))
+  // `admin.bulk` espera a que la lista se recargue. Si en ese rato se marcó otra cuenta, sigue marcada: solo salen de la
+  // selección las que ya se atendieron (con `= []` se borraba también lo marcado mientras tanto).
+  if (await admin.bulk(action, selectedUsers.value, role)) selected.value = selected.value.filter(id => !acted.has(id))
 }
 
 const summary = computed(() => {

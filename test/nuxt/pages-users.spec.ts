@@ -319,6 +319,27 @@ describe('Usuarios · selección múltiple', () => {
     expect(wrapper.get('table').text()).toContain('Desactivado')
   })
 
+  it('lo que se marca mientras la lista se recarga tras un cambio en lote sigue marcado (regresión)', async () => {
+    const wrapper = await mountWithSelection(['Luis'])
+    // La recarga queda en vilo: el aviso ya salió, pero `admin.bulk` aún no devuelve el control a la página.
+    let finishReload!: () => void
+    mockApi('GET', '/api/users', () => new Promise((resolve) => {
+      finishReload = () => resolve({ items: [me.profile, { ...luis, status: 'disabled' }, eva], total: 3 })
+    }))
+    mockApi('POST', '/api/users/batch', { updated: ['u2'], skipped: [] })
+    await buttonsWithText(bar(wrapper)!, 'Desactivar')[0]!.trigger('click')
+    await flush(10)
+    expect(toast()).toMatchObject({ type: 'success', message: '1 cuenta actualizada.' })
+
+    await wrapper.get('table input[aria-label="Seleccionar a Eva"]').setValue(true)
+    finishReload()
+    await flush(10)
+    // Luis ya se atendió y sale de la selección; Eva, marcada durante la recarga, se conserva.
+    expect(bar(wrapper)!.get('[role="status"]').text()).toBe('1 seleccionado')
+    expect((wrapper.get('table input[aria-label="Seleccionar a Eva"]').element as HTMLInputElement).checked).toBe(true)
+    expect((wrapper.get('table input[aria-label="Seleccionar a Luis"]').element as HTMLInputElement).checked).toBe(false)
+  })
+
   it('Cambiar rol abre un menú con los roles y aplica el elegido a la selección', async () => {
     const wrapper = await mountWithSelection(['Luis', 'Eva'])
     const trigger = buttonsWithText(bar(wrapper)!, 'Cambiar rol')[0]!
