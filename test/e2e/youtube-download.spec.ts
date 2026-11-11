@@ -294,8 +294,9 @@ describe('motores · v2 principal, v1 de respaldo', () => {
     await waitForHydration(page)
     await page.getByRole('button', { name: 'Acciones de Bloqueado en los dos' }).click()
     await page.getByRole('menuitem', { name: 'Descargar audio MP3' }).click()
-    await expect.poll(() => tray(page).getByText(message).isVisible(), { timeout: 15_000 }).toBe(true)
-    expect(await tray(page).getByText('No se pudo descargar').isVisible()).toBe(true)
+    // Las filas, no toda la bandeja: su región `sr-only` anuncia lo mismo y duplicaría la coincidencia.
+    await expect.poll(() => trayRows(page).getByText(message).isVisible(), { timeout: 15_000 }).toBe(true)
+    expect(await trayRows(page).getByText('No se pudo descargar').isVisible()).toBe(true)
     const calls = await cloudyStubCalls()
     expect(calls.createAttempts).toEqual(['v2', 'v1'])
     expect(calls.jobsCreated).toEqual({ v1: 0, v2: 0 })
@@ -329,8 +330,8 @@ describe('motores · v2 principal, v1 de respaldo', () => {
     await expect.poll(() => page.getByRole('heading', { name: 'Falla dentro de los dos' }).isVisible()).toBe(true)
     await page.getByRole('button', { name: 'Descargar' }).click()
     await page.getByRole('menuitemradio', { name: 'Audio MP3' }).click()
-    await expect.poll(() => tray(page).getByText('No se pudo descargar').isVisible(), { timeout: 20_000 }).toBe(true)
-    expect(await tray(page).getByText('YouTube bloqueó la descarga con su verificación anti-robots. Intenta de nuevo en unos minutos.').count()).toBe(1)
+    await expect.poll(() => trayRows(page).getByText('No se pudo descargar').isVisible(), { timeout: 20_000 }).toBe(true)
+    expect(await trayRows(page).getByText('YouTube bloqueó la descarga con su verificación anti-robots. Intenta de nuevo en unos minutos.').count()).toBe(1)
     expect(await page.getByRole('button', { name: 'Preparar de nuevo' }).isVisible()).toBe(true)
     // Un intento por motor y nada más: v1 no vuelve a v2.
     const calls = await cloudyStubCalls()

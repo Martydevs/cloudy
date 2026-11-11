@@ -23,6 +23,10 @@ const service = useYoutubeService()
 const { data: video, error, pending, refresh } = useApiFetch<YoutubeVideoDetail>(() => `/api/youtube/videos/${videoId.value}`, {
   server: false,
   lazy: true,
+  // ofetch repite un GET una vez ante 408/409/425/429/500/502/503/504. Aquí el 502 es `engines_failed`: cada sonda ya
+  // probó los dos motores, así que repetirla al instante golpea otra vez a un servicio que acaba de fallar dos veces
+  // (el usuario reintenta con el botón). El resto, en especial el 503 del servicio dormido, conserva su reintento.
+  retryStatusCodes: [408, 409, 425, 429, 500, 503, 504],
 })
 useHead({ title: () => `${video.value?.title ?? 'Video'} · YouTube · Cloudy` })
 
