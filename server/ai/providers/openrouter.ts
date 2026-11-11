@@ -5,7 +5,7 @@ import type { LanguageModel } from 'ai'
 import type { RuntimeConfig } from 'nuxt/schema'
 
 export const OPENROUTER_VISION_MODEL = '@preset/image-content-extraction'
-export const OPENROUTER_PRAY_REQUESTS_MODEL = '@preset/@preset/pray-requests-image-generation'
+export const OPENROUTER_PRAY_REQUESTS_MODEL = '@preset/pray-requests-image-generation'
 
 export function openrouterClient(config: RuntimeConfig) {
   return createOpenRouter({
