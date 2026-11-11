@@ -31,7 +31,14 @@
 - **Alternatives**: `imageModel` + `generateImage` (endpoint `/images` con `input_references`): es otra superficie del proveedor,
   no comprobamos que acepte `@preset/…` y el stub de e2e tendría que imitar un endpoint nuevo. `Output.object` (como la lectura):
   no aplica, la salida es un archivo. Cliente del navegador directo a OpenRouter: expondría la clave (Constitución IV).
-- **Riesgo y verificación**: que el preajuste no fije `modalities`. Por eso se envía en `extraBody`; si el preajuste ya lo
+- **Verificado en el código instalado (T004, `@openrouter/ai-sdk-provider@3.1.0`, `ai@7.0.145`, 2026-11-11)**: (a) los ajustes del
+  modelo de chat aceptan `extraBody` y lo mezclan al final del cuerpo de `/chat/completions` (`index.js` ≈ L4325: `…, this.config.extraBody), this.settings.extraBody)`);
+  (b) `choice.message.images[].image_url.url` (data URL) se convierte en partes `file` del contenido con `mediaType` tomado del data URL
+  (por defecto `image/jpeg`) y los datos en base64 (≈ L4471), que el AI SDK expone en `result.files`; (c) una parte de usuario
+  `{ type: 'file', mediaType: 'image/jpeg', data }` se serializa como `{ type: 'image_url', image_url: { url: 'data:image/jpeg;base64,…' } }`
+  (≈ L3740), y eso es lo que debe reconocer el stub de T050. La persona confirmó que el preajuste existe y actualizó su *system prompt*
+  para la plantilla nueva.
+- **Riesgo residual**: que el preajuste no fije `modalities`. Por eso se envía en `extraBody`; si el preajuste ya lo
   trae, el campo es inofensivo. El *smoke* real está en [quickstart.md](./quickstart.md) § 5 (única prueba que llama al proveedor).
 
 ## D2 — Frontera con el proveedor y capas
