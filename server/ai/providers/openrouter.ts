@@ -4,7 +4,8 @@ import { createOpenRouter } from '@openrouter/ai-sdk-provider'
 import type { LanguageModel } from 'ai'
 import type { RuntimeConfig } from 'nuxt/schema'
 
-export const OPENROUTER_DEFAULT_MODEL = '@preset/image-content-extraction'
+export const OPENROUTER_VISION_MODEL = '@preset/image-content-extraction'
+export const OPENROUTER_PRAY_REQUESTS_MODEL = '@preset/@preset/pray-requests-image-generation'
 
 export function openrouterClient(config: RuntimeConfig) {
   return createOpenRouter({
@@ -16,5 +17,5 @@ export function openrouterClient(config: RuntimeConfig) {
 
 export function resolveImageTextModel(config: RuntimeConfig): LanguageModel | null {
   if (!config.openrouterApikey.trim()) return null
-  return openrouterClient(config)(OPENROUTER_DEFAULT_MODEL)
+  return openrouterClient(config)(OPENROUTER_VISION_MODEL)
 }
