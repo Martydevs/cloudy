@@ -22,3 +22,10 @@ const dateTimeFormat = new Intl.DateTimeFormat('es', { dateStyle: 'medium', time
 export function formatDateTime(iso: string): string {
   return dateTimeFormat.format(new Date(iso))
 }
+
+const dateFormat = new Intl.DateTimeFormat('es', { dateStyle: 'medium' })
+
+/** Solo la fecha («14 oct 2026») en la zona horaria de quien mira. */
+export function formatDate(iso: string): string {
+  return dateFormat.format(new Date(iso))
+}

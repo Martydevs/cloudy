@@ -132,6 +132,8 @@ export const guestSubmissions = pgTable('guest_submissions', {
   rejectionReason: text('rejection_reason'),
 }, t => [
   index('guest_submissions_status_created_idx').on(t.status, t.createdAt),
+  // Página Peticiones (feature 007): aprobados por fecha de aprobación, con desempate por id.
+  index('guest_submissions_status_reviewed_idx').on(t.status, t.reviewedAt, t.id),
 ])
 
 export const guestSubmissionFiles = pgTable('guest_submission_files', {
@@ -182,6 +184,8 @@ export const files = pgTable('files', {
   index('files_deleted_at_idx').on(t.deletedAt),
   index('files_trash_root_idx').on(t.trashRootId),
   index('files_upload_status_created_idx').on(t.uploadStatus, t.createdAt),
+  // La FK `submission_id` no tenía índice: lo usa el JOIN de Peticiones (feature 007) y la aprobación.
+  index('files_submission_idx').on(t.submissionId).where(sql`${t.submissionId} IS NOT NULL`),
 ])
 
 // ---------------------------------------------------------------- comments

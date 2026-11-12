@@ -10,6 +10,7 @@ import type { BrowserContext, Page } from 'playwright-core'
 import { ALLOWED_TYPES, getExtension } from '../../../shared/constants/files'
 import { readEnvFile, requireVar } from '../../../scripts/env'
 import { E2E_URL } from './constants'
+import type { StubCalls, StubMode } from './openrouter-stub'
 
 export { E2E_URL }
 
@@ -285,13 +286,13 @@ async function stubRequest<T>(path: string, body?: unknown): Promise<T> {
   return res.json() as Promise<T>
 }
 
-export interface StubCalls {
-  total: number
-  byImage: Record<string, number>
-}
+export type { PrayerCall, StubCalls, StubMode } from './openrouter-stub'
 
 export const stubCalls = () => stubRequest<StubCalls>('/__stub/calls')
-export const setStubMode = (mode: { fail?: boolean, delayMs?: number }) => stubRequest('/__stub/mode', mode)
+/** Generaciones de imágenes de peticiones (feature 007) que recibió el stub, en orden. */
+export const prayerCalls = async () => (await stubCalls()).prayer
+/** Reemplaza el modo entero (lo omitido vuelve a su valor por defecto). */
+export const setStubMode = (mode: Partial<StubMode>) => stubRequest('/__stub/mode', mode)
 export const resetStub = () => stubRequest('/__stub/reset', {})
 
 // ---------------------------------------------------------------- YouTube (feature 005)
@@ -400,6 +401,66 @@ export async function seedImage(owner: string, fixtureName: string, { withBytes 
 export async function textColumns(fileId: string): Promise<{ text_status: string | null, text_attempts: number, text_content: string | null }> {
   const [row] = await testSql()`SELECT text_status, text_attempts, text_content FROM files WHERE id = ${fileId}`
   return row as { text_status: string | null, text_attempts: number, text_content: string | null }
+}
+
+// ---------------------------------------------------------------- Peticiones (feature 007)
+
+export interface PrayerSeed {
+  status?: 'approved' | 'pending' | 'rejected'
+  sentAt?: Date
+  /** Por defecto, ahora: lo recién sembrado sale primero en el orden por aprobación. */
+  reviewedAt?: Date
+  senderName?: string
+  note?: string | null
+  text?: string | null
+  textStatus?: 'ready' | 'empty' | 'failed' | 'pending' | 'reading'
+  fixtureName?: string
+  deleted?: boolean
+}
+
+/** Carpeta de la corrida para las fotos de peticiones, una por dueño y proceso. */
+const prayerFolders = new Map<string, Promise<string>>()
+
+/**
+ * Siembra una petición como la deja la aprobación (feature 003 + 002): un `guest_submissions` y su fila de `files` con
+ * `submission_id`, `origin = 'guest'` y el texto ya leído. La foto se sube como en `seedImage`. Solo en la rama de pruebas.
+ * Va a una carpeta propia («Peticiones <runId>»), como al aprobar hacia una carpeta: en la raíz, decenas de `<hex>-foto.jpg`
+ * desplazaban de la primera página de Archivos (orden por nombre, 60 por página) lo que suben otros archivos e2e.
+ */
+export async function seedPrayerRequest(owner: string, {
+  status = 'approved',
+  sentAt = new Date(Date.now() - 3_600_000),
+  reviewedAt = new Date(),
+  senderName = `Invitado ${runId()}`,
+  note = null,
+  text = 'Oremos por la familia',
+  textStatus = 'ready',
+  fixtureName = 'foto.jpg',
+  deleted = false,
+}: PrayerSeed = {}): Promise<{ fileId: string, submissionId: string }> {
+  const sql = testSql()
+  const reviewed = status === 'pending' ? null : reviewedAt.toISOString()
+  const [submission] = await sql`
+    INSERT INTO guest_submissions (sender_name, note, status, sender_key, created_at, completed_at, reviewed_by, reviewed_at)
+    VALUES (${senderName}, ${note}, ${status}, ${`e2e-${runId()}`}, ${sentAt.toISOString()}, ${sentAt.toISOString()},
+      ${reviewed ? owner : null}, ${reviewed})
+    RETURNING id
+  ` as { id: string }[]
+  const fileId = await seedImage(owner, fixtureName)
+  // Sufijo aleatorio: cada archivo e2e es otro proceso (otro caché) y el nombre en la raíz es único.
+  if (!prayerFolders.has(owner)) prayerFolders.set(owner, seedFolder(`Peticiones ${runId()} ${randomUUID().slice(0, 8)}`, owner))
+  const folderId = await prayerFolders.get(owner)!
+  const stored = textStatus === 'pending' ? null : textStatus
+  await sql`
+    UPDATE files SET folder_id = ${folderId}, origin = 'guest', uploaded_by = NULL, guest_name = ${senderName}, submission_id = ${submission!.id},
+      text_status = ${stored}::image_text_status, text_content = ${textStatus === 'ready' ? text : null},
+      text_started_at = ${textStatus === 'reading' ? new Date().toISOString() : null},
+      text_read_at = ${textStatus === 'ready' || textStatus === 'empty' || textStatus === 'failed' ? new Date().toISOString() : null},
+      text_error = ${textStatus === 'failed' ? 'provider' : null},
+      deleted_at = ${deleted ? new Date().toISOString() : null}, deleted_by = ${deleted ? owner : null}, trash_root_id = ${deleted ? fileId : null}
+    WHERE id = ${fileId}
+  `
+  return { fileId, submissionId: submission!.id }
 }
 
 // ---------------------------------------------------------------- Canciones (feature 006)

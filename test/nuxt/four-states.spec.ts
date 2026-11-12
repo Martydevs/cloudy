@@ -12,6 +12,7 @@ import CancionesPage from '~/pages/canciones/index.vue'
 import FilesIndexPage from '~/pages/archivos/index.vue'
 import HomePage from '~/pages/index.vue'
 import PapeleraPage from '~/pages/papelera.vue'
+import PeticionesPage from '~/pages/peticiones.vue'
 import SolicitudesPage from '~/pages/solicitudes.vue'
 import UsuariosPage from '~/pages/usuarios.vue'
 import { buttonsWithText, calls, failWith, flush, mockApi, resetCalls } from './helpers/api'
@@ -112,6 +113,14 @@ const rows: Row[] = [
     emptyPayload: { items: [], nextCursor: null },
     errorCopy: 'No pudimos cargar el historial',
     emptyCopy: 'Todavía no hay canciones',
+  },
+  {
+    name: 'Peticiones',
+    page: PeticionesPage,
+    endpoint: '/api/peticiones',
+    emptyPayload: { items: [], nextCursor: null },
+    errorCopy: 'No pudimos cargar las peticiones',
+    emptyCopy: 'Todavía no hay peticiones aprobadas',
   },
 ]
 

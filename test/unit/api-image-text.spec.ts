@@ -1,6 +1,7 @@
 // Endpoints del texto de una imagen del disco (feature 002, contracts/api): GET para el estado y POST para
 // la lectura en la petición (respaldo, Reintentar y Volver a leer).
 import { readFileSync } from 'node:fs'
+import { createError } from 'h3'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ImageText } from '#shared/types/api'
 import { expectGuarded, expectStatus, installNitro, loadHandler, makeEvent, sqlText, UUID } from './helpers/nitro'
@@ -132,16 +133,24 @@ describe('POST /api/files/:id/text', () => {
 
 describe('PATCH /api/files/:id/text (US3)', () => {
   const patch = (body: unknown = { text: '  Oremos por Ana  ' }) => makeEvent({ method: 'PATCH', params: { id: UUID }, body })
+  /** El límite de tasa (feature 007, FR-033) se simula: su SQL no entra en la cola de respuestas de la BD falsa. */
+  let hitRateLimit = vi.fn(async () => {})
+  const install = (results: unknown[] = []) => installNitro(results, { hitRateLimit })
+
+  beforeEach(() => {
+    hitRateLimit = vi.fn(async () => {})
+  })
 
   it.each([null, 'ready', 'empty', 'failed'])('desde %s guarda la corrección y la registra con su longitud, sin el texto', async (status) => {
-    const fake = installNitro([
+    const fake = install([
       visible(),
       { rows: [textRow({ text_status: status, text_error: status === 'failed' ? 'provider' : null })] },
       { rows: [] }, [],
       { rows: [textRow({ text_status: 'ready', text_content: 'Oremos por Ana', text_edited_at: '2026-10-21T11:00:00Z', edited_by_name: 'Ana' })] },
     ])
     const handler = await loadHandler<ImageText>('api/files/[id]/text.patch.ts')
-    expect(await handler(patch())).toEqual({
+    const event = patch()
+    expect(await handler(event)).toEqual({
       status: 'ready', text: 'Oremos por Ana', error: null, readAt: null, editedAt: '2026-10-21T11:00:00.000Z', editedBy: 'Ana',
     })
     expect(fake.db.batch).toHaveBeenCalledTimes(1)
@@ -151,26 +160,39 @@ describe('PATCH /api/files/:id/text (US3)', () => {
     const activity = fake.calls.find(c => c.method === 'values')!.args[0] as { action: string, meta: unknown, targetLabel: string }
     expect(activity).toMatchObject({ action: 'file.text_edit', targetLabel: 'nota.jpg', meta: { length: 14 } })
     expect(JSON.stringify(activity)).not.toContain('Oremos')
+    expect(hitRateLimit).toHaveBeenCalledWith(event, 'text-edit:u1', { limit: 120, windowSec: 3600 })
+  })
+
+  it('pasado el límite responde 429 antes de leer ni escribir nada', async () => {
+    hitRateLimit = vi.fn(async () => {
+      throw createError({ statusCode: 429, statusMessage: 'Too Many Requests', message: 'Demasiados intentos.', data: { retryAfter: 60 } })
+    })
+    const fake = install()
+    const handler = await loadHandler('api/files/[id]/text.patch.ts')
+    await expectStatus(Promise.resolve(handler(patch())), 429)
+    expect(fake.db.execute).not.toHaveBeenCalled()
+    expect(fake.db.batch).not.toHaveBeenCalled()
   })
 
   it('409 si se está leyendo o no admite lectura', async () => {
     const handler = await loadHandler('api/files/[id]/text.patch.ts')
-    installNitro([visible(), { rows: [textRow({ text_status: 'reading', text_started_at: new Date().toISOString() })] }])
+    install([visible(), { rows: [textRow({ text_status: 'reading', text_started_at: new Date().toISOString() })] }])
     await expectStatus(Promise.resolve(handler(patch())), 409)
-    installNitro([visible(), { rows: [textRow({ text_status: 'unavailable' })] }])
+    install([visible(), { rows: [textRow({ text_status: 'unavailable' })] }])
     await expectStatus(Promise.resolve(handler(patch())), 409)
-    installNitro([visible(), { rows: [textRow({ extension: 'gif' })] }])
+    install([visible(), { rows: [textRow({ extension: 'gif' })] }])
     await expectStatus(Promise.resolve(handler(patch())), 409)
   })
 
-  it('422 si la validación falla y 404 si no es una imagen visible', async () => {
+  it('422 si la validación falla (sin gastar el límite) y 404 si no es una imagen visible', async () => {
     const handler = await loadHandler('api/files/[id]/text.patch.ts')
-    installNitro([visible()])
+    install([visible()])
     await expectStatus(Promise.resolve(handler(patch({ text: '   ' }))), 422)
     await expectStatus(Promise.resolve(handler(patch({ text: 'a'.repeat(10_001) }))), 422)
-    installNitro([[]])
+    expect(hitRateLimit).not.toHaveBeenCalled()
+    install([[]])
     await expectStatus(Promise.resolve(handler(patch())), 404)
-    installNitro([visible(), { rows: [] }])
+    install([visible(), { rows: [] }])
     await expectStatus(Promise.resolve(handler(patch())), 404)
   })
 

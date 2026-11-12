@@ -37,6 +37,20 @@ describe('AppSidebar', () => {
     expect(items.join(' ')).not.toMatch(/Usuarios|Actividad|Mi perfil/)
   })
 
+  it.each(['editor', 'admin'] as const)('%s ve Peticiones justo después de Solicitudes (feature 007)', async (role) => {
+    setRole(role)
+    const wrapper = await mountSuspended(AppSidebar, { props: { collapsed: false } })
+    const items = labels(wrapper)
+    expect(items[items.indexOf('Solicitudes') + 1]).toBe('Peticiones')
+    const link = wrapper.findAll('nav a').find(a => (a.attributes('aria-label') ?? a.text().trim()) === 'Peticiones')!
+    expect(link.attributes('href')).toBe('/peticiones')
+    expect(link.html()).toContain('lucide:hand-heart')
+  })
+
+  it('Peticiones solo es para el equipo', () => {
+    expect(navItems.find(item => item.to === '/peticiones')?.roles).toEqual(['editor', 'admin'])
+  })
+
   it('un admin ve todas las secciones', async () => {
     setRole('admin')
     const wrapper = await mountSuspended(AppSidebar, { props: { collapsed: false } })

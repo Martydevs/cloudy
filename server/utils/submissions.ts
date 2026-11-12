@@ -25,7 +25,7 @@ export function toSubmission(row: SubmissionRow, files: SubmissionFileRow[]): Su
       previewUrl: `/api/submissions/${row.id}/files/${f.id}/content`,
       // El texto viaja en el mismo SELECT del listado (sin N+1, feature 002).
       text: f.category === 'image'
-        ? toImageText({ ...f, sizeBytes: Number(f.sizeBytes), textEditedAt: null, editedByName: null })
+        ? toImageText({ ...f, textEditedAt: null, editedByName: null })
         : null,
     })),
   }

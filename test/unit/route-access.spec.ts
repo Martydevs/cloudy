@@ -60,6 +60,22 @@ describe('resolveAccess', () => {
   })
 })
 
+describe('ruta de Peticiones (feature 007)', () => {
+  const meta = readFileSync(fileURLToPath(new URL('../../app/pages/peticiones.vue', import.meta.url)), 'utf8')
+
+  it('peticiones.vue es privada para editor y admin', () => {
+    expect(meta).toMatch(/definePageMeta\(\{[^}]*layout: 'dashboard'[^}]*access: 'private'[^}]*roles: \['editor', 'admin'\]/)
+  })
+
+  it('las reglas de acceso aplican como a las demás privadas', () => {
+    const rule = { access: 'private' as const, roles: ['editor', 'admin'] as ('editor' | 'admin')[] }
+    expect(resolveAccess(rule, none, '/peticiones')).toEqual({ redirect: '/login?redirect=%2Fpeticiones' })
+    expect(resolveAccess(rule, pending, '/peticiones')).toEqual({ redirect: '/pendiente' })
+    expect(resolveAccess(rule, editor, '/peticiones')).toEqual(allow)
+    expect(resolveAccess(rule, admin, '/peticiones')).toEqual(allow)
+  })
+})
+
 describe('rutas de Canciones (feature 006)', () => {
   const meta = (path: string) => readFileSync(fileURLToPath(new URL(`../../app/pages/${path}`, import.meta.url)), 'utf8')
 

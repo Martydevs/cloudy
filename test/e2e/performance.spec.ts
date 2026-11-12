@@ -1,16 +1,19 @@
 // Constitución I / R18 — Presupuestos de rendimiento en móvil 4G: LCP ≤ 2,5 s y CLS ≤ 0,1 en el
 // Inicio (50 archivos sembrados), una carpeta con 200 elementos y /upload. Chromium a 360×740 con
 // red 4G y CPU ×4 vía CDP; mediana de 3 cargas en frío (caché del navegador desactivada).
+import { gzipSync } from 'node:zlib'
 import { createPage, setup } from '@nuxt/test-utils/e2e'
 import type { BrowserContext, Page } from 'playwright-core'
 import { afterAll, describe, expect, it } from 'vitest'
 import type { TestContext } from 'vitest'
-import { E2E_URL, email, profileUserId, routeYoutubeThumbnails, runId, seedFiles, seedFolder, seedYoutubeHistory, signedInAs, viewports, waitForHydration } from './setup/fixtures'
+import { E2E_URL, email, profileUserId, routeYoutubeThumbnails, runId, seedFiles, seedFolder, seedPrayerRequest, seedYoutubeHistory, signedInAs, viewports, waitForHydration } from './setup/fixtures'
 
 await setup({ host: E2E_URL, browser: true })
 
 const LCP_BUDGET_MS = 2500
 const CLS_BUDGET = 0.1
+/** JS inicial por ruta (Constitución I). */
+const JS_BUDGET_KB = 250
 const LOADS = 3
 /** Tras el estado con contenido se deja un respiro para que lleguen los últimos candidatos de LCP y desplazamientos. */
 const SETTLE_MS = 1000
@@ -153,7 +156,7 @@ type Annotate = TestContext['annotate']
  * Los números se anotan en la prueba (el reporter los muestra también cuando pasa) y se escriben
  * directo a stdout: `console.*` dentro del worker puede quedar oculto para las pruebas que pasan.
  */
-async function audit(path: string, annotate: Annotate) {
+async function audit(path: string, annotate: Annotate, { assertLcp = true }: { assertLcp?: boolean } = {}): Promise<{ lcp: number, cls: number }> {
   const p = await throttledPage()
   // Una carga de calentamiento que no cuenta: la primera SSR de cada ruta tras arrancar el servidor
   // paga el código de la ruta y la conexión TLS a Neon (+200–500 ms de TTFB), un artefacto del
@@ -168,8 +171,9 @@ async function audit(path: string, annotate: Annotate) {
   process.stdout.write(`[perf] ${path} · ${summary}\n${detail.map(d => `[perf]   ${d}\n`).join('')}`)
   await annotate(summary, 'perf')
   for (const d of detail) await annotate(d, 'perf')
-  expect(lcp, `${path}: LCP ${lcp} ms supera ${LCP_BUDGET_MS} ms`).toBeLessThanOrEqual(LCP_BUDGET_MS)
+  if (assertLcp) expect(lcp, `${path}: LCP ${lcp} ms supera ${LCP_BUDGET_MS} ms`).toBeLessThanOrEqual(LCP_BUDGET_MS)
   expect(cls, `${path}: CLS ${cls} supera ${CLS_BUDGET}`).toBeLessThanOrEqual(CLS_BUDGET)
+  return { lcp, cls }
 }
 
 describe('Constitución I · Web Vitals en móvil 4G (T155)', () => {
@@ -220,6 +224,45 @@ describe('Constitución I · Web Vitals en móvil 4G (T155)', () => {
   it('/youtube/<id> (feature 005)', async ({ annotate }) => {
     await throttledPage()
     await audit('/youtube/okShortVid1', annotate)
+  })
+
+  // Feature 007 · SC-005 y T082: 12 tarjetas con foto (sin miniatura) y el JS inicial de la ruta ≤ 250 KB gzip. Excepción aceptada
+  // (plan.md, Complexity Tracking): la foto de la primera tarjeta es el LCP y no tiene miniatura, así que el presupuesto de LCP se
+  // afirma para el **texto** de las tarjetas (fotos bloqueadas) y el LCP con fotos solo se reporta.
+  it('/peticiones con 12 peticiones aprobadas (feature 007)', async ({ annotate }) => {
+    const p = await throttledPage()
+    const owner = await profileUserId(email(ADMIN))
+    for (let i = 0; i < 12; i++) {
+      await seedPrayerRequest(owner, { senderName: `Perf ${i + 1} ${runId()}`, text: `Oremos por la familia número ${i + 1}`, reviewedAt: new Date(Date.now() - i * 1000) })
+    }
+    // JS inicial primero (no depende de la red simulada): los módulos que la página ejecuta al abrir (script de entrada +
+    // `modulepreload`), no los `prefetch` de los `Lazy*`. Así se reporta aunque luego falle el LCP.
+    await p.goto(`${E2E_URL}/peticiones`)
+    await waitForHydration(p)
+    const urls = await p.evaluate(() => [...new Set([
+      ...[...document.querySelectorAll<HTMLScriptElement>('script[type="module"][src]')].map(s => s.src),
+      ...[...document.querySelectorAll<HTMLLinkElement>('link[rel="modulepreload"][href]')].map(l => l.href),
+    ])])
+    let gzip = 0
+    for (const url of urls) gzip += gzipSync(Buffer.from(await (await fetch(url)).arrayBuffer())).byteLength
+    const kb = Math.round(gzip / 1024)
+    await annotate(`/peticiones: JS inicial ${kb} KB gzip en ${urls.length} módulos`, 'perf')
+    process.stdout.write(`[perf] /peticiones · JS inicial ${kb} KB gzip en ${urls.length} módulos\n`)
+    expect(urls.length).toBeGreaterThan(0)
+    expect(kb, `/peticiones: ${kb} KB de JS inicial`).toBeLessThanOrEqual(JS_BUDGET_KB)
+
+    // Con fotos: solo se reporta (excepción aceptada). CLS sí se afirma: las cajas de las fotos tienen proporción fija.
+    const withPhotos = await audit('/peticiones', annotate, { assertLcp: false })
+    await annotate(`/peticiones con fotos (informativo): LCP ${withPhotos.lcp} ms`, 'perf')
+
+    // Sin fotos: el texto y las cajas de las tarjetas deben estar utilizables dentro del presupuesto (SC-005).
+    await p.route('**/api/files/*/content', route => route.abort())
+    try {
+      await audit('/peticiones', annotate)
+    }
+    finally {
+      await p.unroute('**/api/files/*/content')
+    }
   })
 })
 

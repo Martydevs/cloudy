@@ -93,6 +93,9 @@ export default defineNuxtConfig({
     // Feature 006 (research D15): el rastreo espera hasta 55 s y la presentación hasta 90 s. El tope del proyecto en
     // Vercel es 300 s; se fija 120 s para no depender del valor por defecto de la plataforma.
     vercel: { functions: { maxDuration: 120 } },
+    // Feature 007 (research D5): la plantilla de «Peticiones de oración» viaja con la función como server asset
+    // (`useStorage('assets:peticiones')`); para cambiarla se reemplaza el archivo y se vuelve a desplegar.
+    serverAssets: [{ baseName: 'peticiones', dir: './server/assets/peticiones' }],
   },
   compatibilityDate: '2025-07-15',
   devtools: { enabled: true },

@@ -272,6 +272,53 @@ describe('useImageText · consulta mientras dura reading', () => {
   })
 })
 
+describe('ImageTextPanel · evento change (feature 007)', () => {
+  const editable = (initial: ImageText) =>
+    mountSuspended(ImageTextPanel, { props: { endpoint: ENDPOINT, initial, editable: true, autoRead: true }, attachTo: document.body })
+
+  it('no emite al montar con initial', async () => {
+    const wrapper = await editable(text())
+    await flush()
+    expect(wrapper.emitted('change')).toBeUndefined()
+  })
+
+  it('emite el ImageText nuevo tras guardar una corrección', async () => {
+    const saved = text({ text: 'Oremos por Rosa', editedAt: '2026-10-21T11:00:00.000Z', editedBy: 'Ana' })
+    mockApi('PATCH', ENDPOINT, saved)
+    const wrapper = await editable(text())
+    await buttonsWithText(wrapper, 'Editar')[0]!.trigger('click')
+    await flush()
+    await wrapper.get('textarea').setValue('Oremos por Rosa')
+    await wrapper.get('form').trigger('submit')
+    await flush()
+    expect(wrapper.emitted('change')).toEqual([[saved]])
+  })
+
+  it('un guardado fallido no emite', async () => {
+    mockApi('PATCH', ENDPOINT, failWith(500))
+    const wrapper = await editable(text())
+    await buttonsWithText(wrapper, 'Editar')[0]!.trigger('click')
+    await flush()
+    await wrapper.get('form').trigger('submit')
+    await flush()
+    expect(wrapper.emitted('change')).toBeUndefined()
+  })
+
+  it('emite cuando termina una relectura, pero no el estado intermedio reading', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] })
+    mockApi('POST', ENDPOINT, text({ status: 'reading', text: null }))
+    const done = text({ text: 'Leído de nuevo' })
+    mockApi('GET', ENDPOINT, done)
+    const wrapper = await editable(text({ status: 'empty', text: null }))
+    await buttonsWithText(wrapper, 'Volver a leer')[0]!.trigger('click')
+    await flush()
+    expect(wrapper.emitted('change')).toBeUndefined()
+    vi.advanceTimersByTime(3000)
+    await flush()
+    expect(wrapper.emitted('change')).toEqual([[done]])
+  })
+})
+
 describe('ImageTextPanel · pendiente sin lectura automática', () => {
   it('no finge una lectura en curso: dice que aún no se ha leído', async () => {
     const wrapper = await mount({ initial: text({ status: 'pending', text: null }), autoRead: false })

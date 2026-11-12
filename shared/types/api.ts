@@ -215,6 +215,23 @@ export interface ImageText {
   editedBy: string | null
 }
 
+// ---------------------------------------------------------------- Peticiones (feature 007, data-model § Petición)
+
+/** Una imagen de un envío de invitado aprobado (tarjeta de la página Peticiones). */
+export interface PrayerRequest {
+  /** `files.id`: también el id para `/api/files/:id/text` y `/content`. */
+  id: string
+  name: string
+  senderName: string
+  note: string | null
+  /** ISO: cuándo lo envió el invitado. */
+  sentAt: string
+  /** ISO: cuándo se aprobó (orden y filtro). */
+  approvedAt: string
+  previewUrl: string
+  text: ImageText
+}
+
 // ---------------------------------------------------------------- YouTube (feature 005, data-model § DTOs)
 
 export type { YoutubeBlockReason, YoutubeEngine, YoutubeFormat } from '../constants/youtube'

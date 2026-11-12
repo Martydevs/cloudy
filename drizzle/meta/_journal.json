@@ -64,6 +64,13 @@
       "when": 1794082229733,
       "tag": "0008_swift_prima",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1794440293590,
+      "tag": "0009_striped_photon",
+      "breakpoints": true
     }
   ]
 }

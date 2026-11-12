@@ -15,10 +15,18 @@ const props = withDefaults(defineProps<{
   /** Encabezado; en Solicitudes nombra el archivo para distinguir varios paneles. */
   title?: string
 }>(), { initial: null, editable: false, autoRead: false, compact: false, heic: false, title: 'Texto de la imagen' })
+/** El texto cambió tras una acción (guardar, releer, una lectura que termina); no al montar (feature 007). */
+const emit = defineEmits<{ change: [text: ImageText] }>()
 
 const { state, loading, error, load, read, copy, save } = useImageText(() => props.endpoint, {
   initial: props.initial,
   autoRead: props.autoRead,
+})
+
+// Solo estados terminales: un `reading` intermedio haría que quien escucha soltara una selección a medio releer.
+const TERMINAL: ReadonlySet<ImageText['status']> = new Set(['ready', 'empty', 'failed', 'unavailable'])
+watch(state, (now, before) => {
+  if (now && before && now !== before && TERMINAL.has(now.status)) emit('change', now)
 })
 const { confirm } = useConfirm()
 
