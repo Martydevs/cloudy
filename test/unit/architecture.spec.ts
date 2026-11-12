@@ -52,15 +52,33 @@ describe('arquitectura de la feature 002', () => {
     expect(files.map(f => f.path)).toContain('server/ai/index.ts')
   })
 
-  it('fuera de server/ai solo server/utils/image-text.ts importa la IA, y solo como #server/ai', () => {
+  // Feature 007 (plan, Complexity Tracking): las imágenes de peticiones son otro caso de uso con su propia capa de aplicación.
+  const AI_IMPORTERS = ['server/utils/image-text.ts', 'server/utils/prayer-images.ts']
+
+  it('fuera de server/ai solo image-text.ts y prayer-images.ts importan la IA, y solo como #server/ai', () => {
     const offenders = files
       .filter(f => !inAi(f.path))
       .flatMap(f => imports(f.code)
         .filter(spec => touchesAi(f.path, spec))
-        .filter(spec => !(f.path === 'server/utils/image-text.ts' && spec === '#server/ai'))
+        .filter(spec => !(AI_IMPORTERS.includes(f.path) && spec === '#server/ai'))
         .map(spec => `${f.path} → ${spec}`))
     expect(offenders).toEqual([])
-    expect(imports(files.find(f => f.path === 'server/utils/image-text.ts')!.code)).toContain('#server/ai')
+    for (const path of AI_IMPORTERS) expect(imports(files.find(f => f.path === path)!.code), path).toContain('#server/ai')
+  })
+
+  it('ni app/, ni shared/, ni los endpoints importan la capa de aplicación de peticiones (feature 007)', () => {
+    const offenders = files
+      .filter(f => f.path.startsWith('app/') || f.path.startsWith('shared/') || f.path.startsWith('server/api/'))
+      .flatMap(f => imports(f.code).filter(spec => /server\/utils\/prayer-images/.test(target(f.path, spec))).map(spec => `${f.path} → ${spec}`))
+    expect(offenders).toEqual([])
+    // El SQL de la feature vive solo en prayer-requests.ts: los endpoints de Peticiones no tocan drizzle.
+    const endpoints = files.filter(f => f.path.startsWith('server/api/peticiones/'))
+    expect(endpoints.length).toBeGreaterThan(0)
+    expect(endpoints.filter(f => imports(f.code).some(spec => spec.startsWith('drizzle-orm') || spec.includes('db/schema'))).map(f => f.path)).toEqual([])
+  })
+
+  it('server/ai/prayer-image existe dentro de la frontera', () => {
+    expect(files.map(f => f.path)).toEqual(expect.arrayContaining(['server/ai/prayer-image/generate.ts', 'server/ai/prayer-image/prompt.ts']))
   })
 
   it('server/ai no importa la base de datos, server/utils ni h3', () => {

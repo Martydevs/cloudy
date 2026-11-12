@@ -115,6 +115,13 @@ describe('guards de los endpoints', () => {
     expect(files.filter(f => (isPublic(f) || isCron(f)) && f.includes('songs'))).toEqual([])
   })
 
+  it('los endpoints de Peticiones exigen rol de equipo y ninguno es público ni exento (feature 007)', () => {
+    const prayers = files.filter(f => f.startsWith('peticiones/'))
+    expect(prayers).toEqual(['peticiones/imagenes.post.ts', 'peticiones/index.get.ts'])
+    for (const file of prayers) expect(source(file), file).toMatch(/\brequireRole\(event, 'editor'\)/)
+    expect(files.filter(f => (isPublic(f) || isCron(f)) && f.includes('peticiones'))).toEqual([])
+  })
+
   it('la solicitud de acceso de invitados se retiró: no quedan sus endpoints', () => {
     expect(files.filter(f => f.startsWith('access-requests/') || f.startsWith('public/access/'))).toEqual([])
   })

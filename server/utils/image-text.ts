@@ -32,8 +32,11 @@ function isStale(row: Pick<ImageTextRow, 'textStartedAt'>, now: number): boolean
   return !row.textStartedAt || now - row.textStartedAt.getTime() > READING_STALE_MS
 }
 
+/** Columnas de la fila que necesita el DTO (el listado de Peticiones no trae el resto). */
+export type ImageTextDtoRow = Pick<ImageTextRow, 'textStatus' | 'textContent' | 'textError' | 'textStartedAt' | 'textReadAt' | 'textEditedAt' | 'editedByName'>
+
 /** DTO de la fila. La fila no cambia: la siguiente reclamación toma una lectura vencida. */
-export function toImageText(row: ImageTextRow, now = Date.now()): ImageText {
+export function toImageText(row: ImageTextDtoRow, now = Date.now()): ImageText {
   const base = { readAt: iso(row.textReadAt), editedAt: iso(row.textEditedAt), editedBy: row.textEditedAt ? row.editedByName : null }
   if (row.textStatus === 'reading' && isStale(row, now)) {
     return { ...base, status: 'failed', text: null, error: 'timeout' }

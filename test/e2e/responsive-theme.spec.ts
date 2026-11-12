@@ -217,6 +217,8 @@ const PRIVATE_ROUTES = [
   '/youtube', '/youtube/:id', '/youtube/:id/ventana',
   // Página Canciones (feature 006): `:id` es una canción sembrada en esta corrida.
   '/canciones', '/canciones/:id',
+  // Página Peticiones (feature 007).
+  '/peticiones',
 ]
 const PUBLIC_ROUTES = ['/login', '/registro', '/recuperar', '/restablecer', '/upload', '/acceso-denegado']
 const PENDING_ROUTES = ['/pendiente']

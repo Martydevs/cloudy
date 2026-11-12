@@ -389,6 +389,58 @@ export async function textColumns(fileId: string): Promise<{ text_status: string
   return row as { text_status: string | null, text_attempts: number, text_content: string | null }
 }
 
+// ---------------------------------------------------------------- Peticiones (feature 007)
+
+export interface PrayerSeed {
+  status?: 'approved' | 'pending' | 'rejected'
+  sentAt?: Date
+  /** Por defecto, ahora: lo recién sembrado sale primero en el orden por aprobación. */
+  reviewedAt?: Date
+  senderName?: string
+  note?: string | null
+  text?: string | null
+  textStatus?: 'ready' | 'empty' | 'failed' | 'pending' | 'reading'
+  fixtureName?: string
+  deleted?: boolean
+}
+
+/**
+ * Siembra una petición como la deja la aprobación (feature 003 + 002): un `guest_submissions` y su fila de `files` con
+ * `submission_id`, `origin = 'guest'` y el texto ya leído. La foto se sube como en `seedImage`. Solo en la rama de pruebas.
+ */
+export async function seedPrayerRequest(owner: string, {
+  status = 'approved',
+  sentAt = new Date(Date.now() - 3_600_000),
+  reviewedAt = new Date(),
+  senderName = `Invitado ${runId()}`,
+  note = null,
+  text = 'Oremos por la familia',
+  textStatus = 'ready',
+  fixtureName = 'foto.jpg',
+  deleted = false,
+}: PrayerSeed = {}): Promise<{ fileId: string, submissionId: string }> {
+  const sql = testSql()
+  const reviewed = status === 'pending' ? null : reviewedAt.toISOString()
+  const [submission] = await sql`
+    INSERT INTO guest_submissions (sender_name, note, status, sender_key, created_at, completed_at, reviewed_by, reviewed_at)
+    VALUES (${senderName}, ${note}, ${status}, ${`e2e-${runId()}`}, ${sentAt.toISOString()}, ${sentAt.toISOString()},
+      ${reviewed ? owner : null}, ${reviewed})
+    RETURNING id
+  ` as { id: string }[]
+  const fileId = await seedImage(owner, fixtureName)
+  const stored = textStatus === 'pending' ? null : textStatus
+  await sql`
+    UPDATE files SET origin = 'guest', uploaded_by = NULL, guest_name = ${senderName}, submission_id = ${submission!.id},
+      text_status = ${stored}::image_text_status, text_content = ${textStatus === 'ready' ? text : null},
+      text_started_at = ${textStatus === 'reading' ? new Date().toISOString() : null},
+      text_read_at = ${textStatus === 'ready' || textStatus === 'empty' || textStatus === 'failed' ? new Date().toISOString() : null},
+      text_error = ${textStatus === 'failed' ? 'provider' : null},
+      deleted_at = ${deleted ? new Date().toISOString() : null}, deleted_by = ${deleted ? owner : null}, trash_root_id = ${deleted ? fileId : null}
+    WHERE id = ${fileId}
+  `
+  return { fileId, submissionId: submission!.id }
+}
+
 // ---------------------------------------------------------------- Canciones (feature 006)
 
 async function apifyStubRequest<T>(path: string, body?: unknown): Promise<T> {

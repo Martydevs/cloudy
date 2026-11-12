@@ -1,0 +1,270 @@
+// T047 — Cola de imágenes de peticiones (feature 007, research D8): una imagen por grupo, 2 a la vez, nombres por fecha e
+// índice, errores en español con reintento solo cuando sirve, 409 que retira peticiones, cancelar, generar de nuevo,
+// descargar, descartar y el aviso al salir.
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { readBody, setResponseHeader, setResponseStatus } from 'h3'
+import type { H3Event } from 'h3'
+import { mockNuxtImport } from '@nuxt/test-utils/runtime'
+import { PRAYER_IMAGE_TIMEOUT_MS } from '#shared/constants/prayers'
+import { calls, flush, mockApi, resetCalls } from './helpers/api'
+
+// Sin red el transporte rechaza sin respuesta: se simula por encima de `$api`.
+const net = vi.hoisted(() => ({ offline: false }))
+mockNuxtImport('useApi', original => () => (net.offline ? (() => Promise.reject(new TypeError('Failed to fetch'))) as unknown as ReturnType<typeof original> : original()))
+
+type Reply = (event: H3Event) => unknown
+
+const png: Reply = (event) => {
+  setResponseHeader(event, 'content-type', 'image/png')
+  return Buffer.from([0x89, 0x50, 0x4E, 0x47])
+}
+const jpeg: Reply = (event) => {
+  setResponseHeader(event, 'content-type', 'image/jpeg')
+  return Buffer.from([0xFF, 0xD8, 0xFF])
+}
+const fail = (status: number, data?: Record<string, unknown>): Reply => (event) => {
+  setResponseStatus(event, status)
+  return { statusCode: status, message: 'x', ...(data ? { data } : {}) }
+}
+
+/** Respuesta por primer id del grupo; las que no tienen una se quedan esperando hasta `release`. */
+const replies = new Map<string, Reply>()
+const gates = new Map<string, () => void>()
+function hold(id: string, reply: Reply = png) {
+  replies.set(id, async (event) => {
+    await new Promise<void>(resolve => gates.set(id, resolve))
+    return reply(event)
+  })
+}
+const release = (id: string) => gates.get(id)?.()
+
+const posts = () => calls.filter(c => c.method === 'POST' && c.url === '/api/peticiones/imagenes')
+const group = (...ids: string[]) => ids.map(id => ({ id }))
+
+let revoke: ReturnType<typeof vi.spyOn>
+let clicks: ReturnType<typeof vi.spyOn>
+let urls = 0
+
+beforeEach(() => {
+  resetCalls()
+  replies.clear()
+  gates.clear()
+  usePrayerImages().reset()
+  useToast().toasts.value = []
+  urls = 0
+  vi.spyOn(URL, 'createObjectURL').mockImplementation(() => `blob:cloudy/${++urls}`)
+  revoke = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {})
+  clicks = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+  mockApi('POST', '/api/peticiones/imagenes', async (event: H3Event) => {
+    const body = await readBody<{ fileIds: string[] }>(event)
+    return (replies.get(body.fileIds[0]!) ?? png)(event)
+  })
+})
+
+afterEach(() => {
+  vi.useRealTimers()
+  vi.restoreAllMocks()
+})
+
+const today = () => {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+describe('usePrayerImages', () => {
+  it('un elemento por grupo, con índice 1-based y los ids en orden', async () => {
+    const images = usePrayerImages()
+    expect(images.enqueue([group('a', 'b', 'c', 'd'), group('e')])).toBe(2)
+    expect(images.items.value.map(i => [i.key, i.index, i.fileIds])).toEqual([
+      ['img-1', 1, ['a', 'b', 'c', 'd']],
+      ['img-2', 2, ['e']],
+    ])
+    expect(images.hasItems.value).toBe(true)
+    await flush(10)
+    expect(posts().map(c => c.body)).toEqual([{ fileIds: ['a', 'b', 'c', 'd'] }, { fileIds: ['e'] }])
+  })
+
+  it('nunca más de 2 a la vez; la tercera arranca cuando termina una', async () => {
+    for (const id of ['a', 'b', 'c']) hold(id)
+    const images = usePrayerImages()
+    images.enqueue([group('a'), group('b'), group('c')])
+    await flush(5)
+    expect(images.items.value.map(i => i.status)).toEqual(['running', 'running', 'queued'])
+    expect(posts()).toHaveLength(2)
+    release('a')
+    await flush(10)
+    expect(images.items.value.map(i => i.status)).toEqual(['done', 'running', 'running'])
+    release('b')
+    release('c')
+    await flush(10)
+    expect(images.items.value.map(i => i.status)).toEqual(['done', 'done', 'done'])
+  })
+
+  it('lista: objectURL, nombre peticiones-AAAA-MM-DD-<n>.png|jpg y aviso; no descarga sola', async () => {
+    replies.set('b', jpeg)
+    const images = usePrayerImages()
+    images.enqueue([group('a'), group('b')])
+    await flush(10)
+    expect(images.items.value.map(i => [i.status, i.url, i.filename])).toEqual([
+      ['done', expect.stringMatching(/^blob:cloudy\//), `peticiones-${today()}-1.png`],
+      ['done', expect.stringMatching(/^blob:cloudy\//), `peticiones-${today()}-2.jpg`],
+    ])
+    expect(clicks).not.toHaveBeenCalled()
+    expect(useToast().toasts.value.map(t => t.message)).toEqual(expect.arrayContaining(['Imagen 1 lista', 'Imagen 2 lista']))
+  })
+
+  it.each([
+    ['rate_limited', 429, true],
+    ['provider', 502, true],
+    ['invalid_output', 502, true],
+    ['too_large', 502, true],
+    ['timeout', 504, true],
+    ['quota_exceeded', 503, false],
+    ['not_configured', 503, false],
+  ] as const)('el código %s del servidor fija el mensaje y si se puede reintentar', async (code, status, retryable) => {
+    replies.set('a', fail(status, { code }))
+    const images = usePrayerImages()
+    images.enqueue([group('a')])
+    await flush(10)
+    const [item] = images.items.value
+    expect(item).toMatchObject({ status: 'failed', errorCode: code, retryable })
+    expect(item!.error).toBeTruthy()
+  })
+
+  it.each([
+    ['504 de la plataforma sin código', fail(504), 'timeout', true],
+    ['429 sin código', fail(429), 'rate_limited', true],
+    ['500 sin código', fail(500), null, true],
+    ['400 sin código', fail(400), null, false],
+  ] as const)('%s → %s', async (_, reply, code, retryable) => {
+    replies.set('a', reply)
+    const images = usePrayerImages()
+    images.enqueue([group('a')])
+    await flush(10)
+    expect(images.items.value[0]).toMatchObject({ status: 'failed', errorCode: code, retryable })
+  })
+
+  it('sin red (sin respuesta): mensaje de conexión y reintentable', async () => {
+    net.offline = true
+    try {
+      const images = usePrayerImages()
+      images.enqueue([group('a')])
+      await flush(10)
+      expect(images.items.value[0]).toMatchObject({ status: 'failed', retryable: true, error: 'Se perdió la conexión al generar la imagen. Revisa tu conexión.' })
+    }
+    finally {
+      net.offline = false
+    }
+  })
+
+  it('409 request_unavailable: no se reintenta y avisa con los ids', async () => {
+    replies.set('a', fail(409, { code: 'request_unavailable', ids: ['b'] }))
+    const images = usePrayerImages()
+    const seen: string[][] = []
+    images.onUnavailable(ids => seen.push(ids))
+    images.enqueue([group('a', 'b')])
+    await flush(10)
+    expect(images.items.value[0]).toMatchObject({ status: 'failed', errorCode: 'request_unavailable', retryable: false })
+    expect(seen).toEqual([['b']])
+  })
+
+  it('cancelar: aborta la activa y saca de la cola la pendiente', async () => {
+    for (const id of ['a', 'b', 'c']) hold(id)
+    const images = usePrayerImages()
+    images.enqueue([group('a'), group('b'), group('c')])
+    await flush(5)
+    images.cancel('img-3')
+    expect(images.items.value.map(i => i.key)).toEqual(['img-1', 'img-2'])
+    images.cancel('img-1')
+    await flush(5)
+    expect(images.items.value[0]!.status).toBe('canceled')
+    release('b')
+    await flush(10)
+    expect(images.items.value[1]!.status).toBe('done')
+  })
+
+  it('reintentar (solo fallidas reintentables) y generar de nuevo (solo esa, revocando la anterior)', async () => {
+    replies.set('a', fail(502, { code: 'provider' }))
+    const images = usePrayerImages()
+    images.enqueue([group('a'), group('b')])
+    await flush(10)
+    expect(images.items.value.map(i => i.status)).toEqual(['failed', 'done'])
+    replies.set('a', png)
+    images.retry('img-1')
+    await flush(10)
+    expect(images.items.value[0]!.status).toBe('done')
+    const before = posts().length
+    const oldUrl = images.items.value[1]!.url
+    images.regenerate('img-2')
+    expect(revoke).toHaveBeenCalledWith(oldUrl)
+    await flush(10)
+    expect(posts().length).toBe(before + 1)
+    expect(posts().at(-1)!.body).toEqual({ fileIds: ['b'] })
+    expect(images.items.value[1]!.status).toBe('done')
+    // Reintentar algo que no falló no hace nada.
+    images.retry('img-1')
+    expect(posts().length).toBe(before + 1)
+  })
+
+  it('una fallida no reintentable no vuelve a la cola', async () => {
+    replies.set('a', fail(503, { code: 'quota_exceeded' }))
+    const images = usePrayerImages()
+    images.enqueue([group('a')])
+    await flush(10)
+    images.retry('img-1')
+    expect(images.items.value[0]!.status).toBe('failed')
+  })
+
+  it('descargar dispara la descarga y marca descargada; el aviso al salir depende de eso', async () => {
+    const images = usePrayerImages()
+    images.enqueue([group('a')])
+    expect(images.needsLeaveGuard.value).toBe(true)
+    await flush(10)
+    expect(images.needsLeaveGuard.value).toBe(true)
+    images.download('img-1')
+    expect(clicks).toHaveBeenCalledTimes(1)
+    expect(images.items.value[0]!.downloaded).toBe(true)
+    expect(images.needsLeaveGuard.value).toBe(false)
+  })
+
+  it('descartar y reiniciar abortan y revocan', async () => {
+    hold('b')
+    const images = usePrayerImages()
+    images.enqueue([group('a'), group('b')])
+    await flush(10)
+    const url = images.items.value[0]!.url
+    images.dismiss('img-1')
+    expect(revoke).toHaveBeenCalledWith(url)
+    expect(images.items.value.map(i => i.key)).toEqual(['img-2'])
+    images.reset()
+    expect(images.items.value).toEqual([])
+    release('b')
+    await flush(10)
+    // La respuesta tardía de una imagen descartada no la revive.
+    expect(images.items.value).toEqual([])
+    expect(images.hasItems.value).toBe(false)
+  })
+
+  it('una nueva generación numera a continuación', async () => {
+    const images = usePrayerImages()
+    images.enqueue([group('a')])
+    images.enqueue([group('b')])
+    expect(images.items.value.map(i => i.index)).toEqual([1, 2])
+  })
+
+  it('el plazo vence: fallida por tiempo y reintentable', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    hold('a')
+    const images = usePrayerImages()
+    images.enqueue([group('a')])
+    await vi.advanceTimersByTimeAsync(PRAYER_IMAGE_TIMEOUT_MS + 1)
+    vi.useRealTimers()
+    await flush(5)
+    expect(images.items.value[0]).toMatchObject({ status: 'failed', errorCode: 'timeout', retryable: true })
+    release('a')
+  })
+
+  it('el estado no se filtra entre pruebas', () => {
+    expect(usePrayerImages().items.value).toEqual([])
+  })
+})

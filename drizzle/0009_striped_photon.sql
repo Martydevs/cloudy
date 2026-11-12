@@ -1,0 +1,2 @@
+CREATE INDEX "files_submission_idx" ON "files" USING btree ("submission_id") WHERE "files"."submission_id" IS NOT NULL;--> statement-breakpoint
+CREATE INDEX "guest_submissions_status_reviewed_idx" ON "guest_submissions" USING btree ("status","reviewed_at","id");

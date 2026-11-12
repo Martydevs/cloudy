@@ -11,6 +11,8 @@ const PRIVATE_ROUTES = [
   '/youtube', '/youtube/okShortVid1', '/youtube/okShortVid1/ventana',
   // Página Canciones (feature 006).
   '/canciones', '/canciones/00000000-0000-0000-0000-000000000000',
+  // Página Peticiones (feature 007).
+  '/peticiones',
 ]
 
 describe('US6 · protección de rutas', () => {
@@ -177,6 +179,8 @@ describe('US6 · protección de rutas', () => {
       ['DELETE', `/api/songs/collections/${id}`],
       ['POST', `/api/songs/collections/${id}/items`],
       ['DELETE', `/api/songs/collections/${id}/items/${id}`],
+      // Página Peticiones (feature 007).
+      ['GET', '/api/peticiones'],
     ] as const
     for (const [method, path] of commentRoutes) {
       const init: { method: string, headers: Record<string, string>, body?: string } = method === 'GET' || method === 'DELETE'

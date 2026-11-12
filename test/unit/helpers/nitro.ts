@@ -20,6 +20,8 @@ import * as imageText from '../../../server/utils/image-text'
 import * as imageTextStore from '../../../server/utils/image-text-store'
 import * as naming from '../../../server/utils/naming'
 import * as pagination from '../../../server/utils/pagination'
+import * as prayerImages from '../../../server/utils/prayer-images'
+import * as prayerRequests from '../../../server/utils/prayer-requests'
 import * as rateLimit from '../../../server/utils/rate-limit'
 import * as session from '../../../server/utils/session'
 import * as submissions from '../../../server/utils/submissions'
@@ -71,6 +73,8 @@ export function installNitro(results: unknown[] = [], overrides: Record<string, 
     ...imageTextStore,
     ...naming,
     ...pagination,
+    ...prayerImages,
+    ...prayerRequests,
     ...rateLimit,
     ...session,
     ...submissions,
