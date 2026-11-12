@@ -52,7 +52,7 @@ const menu: ActionMenuItem[] = [
     </NuxtLink>
 
     <!-- Casilla con área táctil de 44 px. -->
-    <label v-if="selectable" class="absolute left-1 top-1 flex size-11 cursor-pointer items-center justify-center rounded-box bg-base-100/80">
+    <label v-if="selectable" class="absolute left-1 top-1 flex size-11 cursor-pointer items-center justify-center rounded-box">
       <input
         type="checkbox"
         class="checkbox checkbox-primary"

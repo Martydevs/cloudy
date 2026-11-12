@@ -134,6 +134,31 @@
   }
 }
 
+/*
+  Casillas de selección con el aspecto de la tarjeta de Peticiones como predeterminado del tema: redondas
+  (`--radius-selector`), borde y relleno marcado en `primary`, marca en `primary-content` y, sin marcar, relleno sólido
+  `base-100` para que se lean igual sobre una foto, una miniatura o una fila. Un modificador de color (`checkbox-error`…)
+  sigue mandando, por eso se excluyen en `:not()`. En `utilities` por la misma razón que arriba.
+*/
+@layer utilities {
+  .checkbox:not(
+    .checkbox-secondary,
+    .checkbox-accent,
+    .checkbox-neutral,
+    .checkbox-info,
+    .checkbox-success,
+    .checkbox-warning,
+    .checkbox-error
+  ) {
+    --input-color: var(--color-primary);
+    color: var(--color-primary-content);
+  }
+
+  .checkbox:not(:checked, :indeterminate, [aria-checked="true"], [aria-checked="mixed"]) {
+    background-color: var(--color-base-100);
+  }
+}
+
 /* Solo los dispositivos con hover: ahí las acciones de una tarjeta pueden revelarse al pasar el cursor o al enfocar. */
 @custom-variant can-hover (@media (hover: hover));
 

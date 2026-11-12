@@ -95,7 +95,10 @@ const summary = computed(() => {
           v-for="user in data.items"
           :key="user.userId"
           class="card border bg-base-100"
-          :class="user.status === 'pending' ? 'border-warning' : 'border-base-300'"
+          :class="[
+            user.status === 'pending' ? 'border-warning' : selectedSet.has(user.userId) ? 'border-primary' : 'border-base-300',
+            { 'ring-2 ring-primary': selectedSet.has(user.userId) },
+          ]"
         >
           <!-- La casilla va en su propia columna, a la izquierda: el contenido de la tarjeta conserva su acomodo. -->
           <div class="card-body flex-row items-start gap-1 p-4 pl-2">

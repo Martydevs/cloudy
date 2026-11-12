@@ -67,7 +67,7 @@ leído de vuelta con el mismo asistente) pero genera con **concurrencia 2**, no 
 ```text
 <article class="card relative …" :class="selected && 'ring-2 ring-primary'" aria-label="Petición de <nombre>">
   <label class="absolute inset-0 z-0 cursor-pointer" >                      ← cubre la tarjeta
-    <input type="checkbox" class="radio radio-primary absolute right-3 top-3 z-10"
+    <input type="checkbox" class="checkbox checkbox-primary absolute right-3 top-3 z-10"
            :checked="selected" :disabled="disabled" aria-label="Elegir la petición de <nombre>" @change="toggle">
   </label>
   … foto · textos …
@@ -75,9 +75,8 @@ leído de vuelta con el mismo asistente) pero genera con **concurrencia 2**, no 
 </article>
 ```
 
-- Casilla **real** (Espacio, estado «marcada/no marcada» anunciado, foco visible `focus-visible:outline`); `radio` de daisyUI solo da el aspecto circular. El objetivo táctil de la
-  casilla mide ≥ 44 px (`size-7` + área de la etiqueta); toda la tarjeta es objetivo.
-- La marca no depende del color: borde `ring-2`, icono `lucide:check` dentro del indicador y texto accesible «elegida».
+- Casilla **real** (Espacio, estado «marcada/no marcada» anunciado, foco visible `focus-visible:outline`); usa el mismo `checkbox checkbox-primary` que las listas de Archivos (consistencia entre páginas). Su aspecto (redonda, `primary`, relleno `base-100` sin marcar para leerse sobre la foto) es el predeterminado del tema en `app/assets/css/globals.css`, así que la tarjeta no añade clases de color ni fondo. Toda la tarjeta es el objetivo táctil (≥ 44 px) vía la etiqueta.
+- La marca no depende del color: borde `ring-2`, la marca propia del `checkbox` y texto accesible «elegida».
 - `disabled` cuando la tarjeta no tiene texto (no seleccionable) o se alcanzó el tope; el motivo va en `aria-describedby` («Sin texto: escríbelo primero», «Tope de 40 alcanzado»).
 - Las marcas de ilegible se pintan con `badge badge-warning badge-soft` + `lucide:triangle-alert` (no `text-warning` sobre `base-100` claro) y la tarjeta añade «Texto por corregir» como texto, no solo color.
 

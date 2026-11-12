@@ -1,6 +1,7 @@
 <script setup lang="ts">
-// Tarjeta seleccionable de una petición (feature 007, contracts/ui.md § Tarjeta seleccionable): una casilla real con
-// aspecto circular dentro de una etiqueta estirada sobre toda la tarjeta (Espacio, estado anunciado y foco gratis); los
+// Tarjeta seleccionable de una petición (feature 007, contracts/ui.md § Tarjeta seleccionable): una casilla real (el
+// mismo `checkbox checkbox-primary` que las listas de Archivos; su aspecto es el predeterminado del tema, en
+// globals.css) dentro de una etiqueta estirada sobre toda la tarjeta (Espacio, estado anunciado y foco gratis); los
 // botones y enlaces quedan por encima y no cambian la selección. La foto no tiene miniatura: recibe su `src` solo al
 // acercarse al viewport, dentro de una caja de proporción fija.
 import type { PrayerRequest } from '#shared/types/api'
@@ -58,7 +59,7 @@ const failedMessage = computed(() => {
     <label class="absolute inset-0 z-[5] rounded-box" :class="disabled ? 'cursor-not-allowed' : 'cursor-pointer'">
       <input
         type="checkbox"
-        class="radio radio-primary absolute right-3 top-3 z-10 size-7 border-2 bg-base-100 outline-offset-2 focus-visible:outline-2 focus-visible:outline-primary"
+        class="checkbox checkbox-primary absolute right-3 top-3 z-10"
         :checked="selected"
         :disabled="disabled"
         :aria-label="m.pick(request.senderName)"
@@ -66,12 +67,6 @@ const failedMessage = computed(() => {
         @change="emit('toggle')"
       >
     </label>
-    <Icon
-      v-if="selected"
-      name="lucide:check"
-      class="pointer-events-none absolute right-4 top-4 z-10 size-5 text-primary-content"
-      aria-hidden="true"
-    />
 
     <!-- Sin `relative`: la etiqueta estirada (posicionada) debe quedar encima de la foto para recibir el clic. -->
     <div class="aspect-[4/3] w-full bg-base-200">

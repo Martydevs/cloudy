@@ -242,7 +242,11 @@ Never print or commit their values.
   tests or stay stuck behind a hung import. Each import also has an `AbortController` (a module map, not state): API calls time out (`YOUTUBE_IMPORT_REQUEST_MS`), a download or upload with no progress for `YOUTUBE_IMPORT_STALL_MS` is aborted ("La conexión se quedó sin respuesta"), and the tray's **Cancelar** aborts a running import (or drops a queued one) so the queue keeps moving; the service job is always released. Progress lives in a "Guardar en el drive" section of `YoutubeDownloadTray` (the layout mounts the tray for downloads **or** imports).
 - Multi-select (Archivos, Usuarios): selection is a `string[]` of ids (`v-model:selected` on `FileGrid`/`FileList`; a local ref in
   `usuarios.vue`) that is pruned to what is on screen and cleared when the folder, search, type filter or page changes. Checkboxes
-  are always visible inside a `size-11` label with an `aria-label` naming the item. The fixed bar is `ui/SelectionBar.vue` (count in
+  are always visible inside a `size-11` label with an `aria-label` naming the item. Their look is the theme default, taken from the
+  Peticiones card (`app/assets/css/globals.css`): write `checkbox checkbox-primary` and nothing else, since the theme already makes them
+  round, primary-coloured and filled with `base-100` when unchecked, so they read on photos and thumbnails without a backing chip
+  (`bg-base-100/80`) or per-use `bg-*` overrides. A selectable **card** marks its selected state with `border-primary ring-2 ring-primary`
+  (rows use `bg-primary/10`; a pending account keeps its warning border or row tint), never with a border colour alone (hover/focus already use `border-primary`). The fixed bar is `ui/SelectionBar.vue` (count in
   `role="status"`, "Limpiar", safe-area padding); `FilesSelectionBar` and `UsersSelectionBar` only add their actions. Every selection
   bar (this one, `YoutubeSelectionBar`, `SongSelectionBar`) sits above **both** trays, which can be open on any dashboard page:
   `bottom-[calc(var(--youtube-tray-h,0px)+var(--song-tray-h,0px))]` below `md` (the Canciones tray stacks on the YouTube one, `z-40`

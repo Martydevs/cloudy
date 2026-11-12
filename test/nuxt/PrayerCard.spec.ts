@@ -27,15 +27,15 @@ describe('PrayerCard', () => {
     expect(wrapper.text()).toContain('Petición número 1')
   })
 
-  it('la casilla es real, circular y con nombre accesible', async () => {
+  it('la casilla es real, con el estilo común de checkbox y con nombre accesible', async () => {
     const wrapper = await mount({ selected: true })
     const input = wrapper.get('input[type="checkbox"]')
     expect(input.attributes('aria-label')).toBe('Elegir la petición de Ana')
-    expect(input.classes()).toContain('radio')
+    expect(input.classes()).toEqual(expect.arrayContaining(['checkbox', 'checkbox-primary']))
+    expect(input.classes()).not.toContain('radio')
     expect((input.element as HTMLInputElement).checked).toBe(true)
     expect(wrapper.get('article').classes()).toContain('ring-2')
     expect(wrapper.text()).toContain('elegida')
-    expect(wrapper.html()).toContain('lucide:check')
   })
 
   it('no elegida: casilla sin marcar y sin la marca', async () => {

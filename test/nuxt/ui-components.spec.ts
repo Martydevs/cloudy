@@ -375,7 +375,8 @@ describe('tarjetas y listas de archivos', () => {
 
     await card.setProps({ selected: true })
     expect(isChecked(card.get('input[type="checkbox"]'))).toBe(true)
-    expect(card.get('article').classes()).toContain('border-primary')
+    // Elegida como en Peticiones: anillo, no solo el borde (que también se pinta al pasar el cursor o enfocar).
+    expect(card.get('article').classes()).toEqual(expect.arrayContaining(['border-primary', 'ring-2', 'ring-primary']))
     expect(card.get('article').classes()).not.toContain('border-base-300')
   })
 
@@ -387,7 +388,7 @@ describe('tarjetas y listas de archivos', () => {
     expect(box.attributes('aria-label')).toBe('Seleccionar la carpeta Domingo')
     expect(isChecked(box)).toBe(true)
     expect(box.element.parentElement!.className).toContain('size-11')
-    expect(card.get('article').classes()).toContain('border-primary')
+    expect(card.get('article').classes()).toEqual(expect.arrayContaining(['border-primary', 'ring-2', 'ring-primary']))
     // El enlace de la carpeta sigue ahí: la casilla no lo reemplaza.
     expect(card.get('a').attributes('aria-label')).toBe('Abrir carpeta Domingo')
 

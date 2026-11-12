@@ -25,7 +25,7 @@ function onSelect(key: string) {
 <template>
   <article
     class="group relative flex flex-col gap-2 rounded-box border bg-base-100 p-2 focus-within:border-primary hover:border-primary"
-    :class="selected ? 'border-primary' : 'border-base-300'"
+    :class="selected ? 'border-primary ring-2 ring-primary' : 'border-base-300'"
   >
     <NuxtLink :to="href" class="flex flex-col gap-2 rounded-field" :aria-label="`Abrir ${file.name}`">
       <div class="flex aspect-square items-center justify-center overflow-hidden rounded-field bg-base-200">
@@ -53,7 +53,7 @@ function onSelect(key: string) {
       </div>
     </NuxtLink>
     <!-- Casilla siempre visible, con área táctil de 44 px, sobre la esquina de la miniatura. -->
-    <label v-if="selectable" class="absolute left-1 top-1 flex size-11 cursor-pointer items-center justify-center rounded-box bg-base-100/80">
+    <label v-if="selectable" class="absolute left-1 top-1 flex size-11 cursor-pointer items-center justify-center rounded-box">
       <input
         type="checkbox"
         class="checkbox checkbox-primary"

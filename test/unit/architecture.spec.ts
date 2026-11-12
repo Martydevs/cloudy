@@ -205,4 +205,18 @@ describe('estilos globales', () => {
     const css = readFileSync(join(ROOT, 'app/assets/css/globals.css'), 'utf8')
     expect(css).toMatch(/@layer utilities\s*\{\s*\.menu :where\(li:not\(\.menu-title\) > :not\(ul, menu, details, \.menu-title, \.btn\)\)\s*\{\s*align-content:\s*center;/)
   })
+
+  it('las casillas tienen el aspecto de la tarjeta de Peticiones por defecto (primary y relleno base-100 sin marcar)', () => {
+    const css = readFileSync(join(ROOT, 'app/assets/css/globals.css'), 'utf8')
+    expect(css).toMatch(/@layer utilities\s*\{\s*\.checkbox:not\([^)]*\.checkbox-error\s*\)\s*\{\s*--input-color:\s*var\(--color-primary\);/)
+    expect(css).toMatch(/\.checkbox:not\(:checked, :indeterminate[^)]*\)\s*\{\s*background-color:\s*var\(--color-base-100\);/)
+  })
+
+  it('ninguna casilla repite el fondo del tema ni lleva una pastilla translúcida detrás', () => {
+    const offenders = files.filter(f => f.path.endsWith('.vue')).flatMap(({ path, code }) =>
+      [...code.matchAll(/<label[^>]*>\s*<input[^>]*class="[^"]*\bcheckbox\b[^"]*"/g)]
+        .filter(m => /\bbg-base-100\/|not-checked:bg-|\sbg-base-100\b/.test(m[0]))
+        .map(() => path))
+    expect(offenders).toEqual([])
+  })
 })

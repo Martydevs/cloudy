@@ -21,7 +21,7 @@ function onSelect(key: string) {
 <template>
   <article
     class="relative flex items-center gap-2 rounded-box border bg-base-100 p-2 focus-within:border-primary hover:border-primary"
-    :class="selected ? 'border-primary' : 'border-base-300'"
+    :class="selected ? 'border-primary ring-2 ring-primary' : 'border-base-300'"
   >
     <!-- Casilla siempre visible, con área táctil de 44 px. -->
     <label v-if="selectable" class="flex size-11 shrink-0 cursor-pointer items-center justify-center">

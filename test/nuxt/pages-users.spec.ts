@@ -516,6 +516,11 @@ describe('Usuarios · selección múltiple', () => {
     // Una cuenta pendiente marcada conserva su fondo de aviso (no se mezclan los dos).
     expect(rowOf('Pau').classes()).toContain('bg-warning/10')
     expect(rowOf('Pau').classes()).not.toContain('bg-primary/10')
+    // Las tarjetas marcadas llevan el anillo de Peticiones; la pendiente conserva su borde de aviso.
+    const cardOf = (name: string) => cards.findAll('li').find(card => card.text().includes(name))!
+    expect(cardOf('Luis').classes()).toEqual(expect.arrayContaining(['border-primary', 'ring-2', 'ring-primary']))
+    expect(cardOf('Pau').classes()).toEqual(expect.arrayContaining(['border-warning', 'ring-2', 'ring-primary']))
+    expect(cardOf('Ana').classes()).not.toContain('ring-2')
 
     // Y al revés: desmarcar en la tabla desmarca la tarjeta.
     await table.get('input[aria-label="Seleccionar a Luis"]').setValue(false)
