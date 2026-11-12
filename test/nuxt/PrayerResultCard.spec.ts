@@ -105,9 +105,9 @@ describe('PrayerResults', () => {
     useState<PrayerImageItem[]>('prayer-images').value = [item()]
     const wrapper = await mountSuspended(PrayerResults, { attachTo: document.body })
     await buttonsWithText(wrapper, 'Ver en grande')[0]!.trigger('click')
-    await flush()
+    // `LazyPrayerImagePreview` es un `import()`: con la suite completa su chunk puede tardar más que unos ticks.
+    await vi.waitFor(() => expect(document.body.querySelector('dialog img')?.getAttribute('src')).toBe('blob:x'), { timeout: 5000 })
     const dialog = document.body.querySelector('dialog')
-    expect(dialog?.querySelector('img')?.getAttribute('src')).toBe('blob:x')
     expect(dialog?.textContent).toContain('Imagen de peticiones 1')
     wrapper.unmount()
   })

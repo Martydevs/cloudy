@@ -33,8 +33,8 @@ class Canceled extends Error {}
 class TimedOut extends Error {}
 
 const controllers = new Map<string, AbortController>()
-/** Ids retirados por un `409`: la página los quita de la selección. */
-const unavailable = createEventHook<string[]>()
+/** Ids retirados por un `409`: la página los quita de la selección. Tupla: con `string[]` VueUse leería cada id como un argumento. */
+const unavailable = createEventHook<[ids: string[]]>()
 
 const isCode = (value: unknown): value is PrayerErrorCode => typeof value === 'string' && value in PRAYER_ERROR_MESSAGES
 

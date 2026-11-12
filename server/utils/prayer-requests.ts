@@ -3,7 +3,9 @@
 // columnas de `files` que la tarjeta no usa.
 import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm'
 import type { SQL } from 'drizzle-orm'
+import { createError } from 'h3'
 import { PRAYER_PAGE_SIZE } from '#shared/constants/prayers'
+import { uuid } from '#shared/validation/core'
 import type { Paginated, PrayerRequest } from '#shared/types/api'
 import type { PrayersDir } from '#shared/validation/prayers'
 import { files, guestSubmissions } from '../db/schema'
@@ -91,9 +93,21 @@ export interface PrayerListQuery {
   cursor?: string
 }
 
+/**
+ * El cursor tal como lo escribe `encodeCursor` aquí: instante ISO exacto e id UUID. Uno manipulado responde 422 en vez de
+ * llegar a Postgres como un cast inválido (500).
+ */
+function decodePrayerCursor(cursor: string | undefined) {
+  const after = decodeCursor(cursor)
+  if (after && (Number.isNaN(Date.parse(after.v)) || new Date(after.v).toISOString() !== after.v || !uuid()(after.id).ok)) {
+    throw createError({ statusCode: 422, statusMessage: 'Validation failed', data: { errors: { cursor: 'Cursor no válido' } } })
+  }
+  return after
+}
+
 /** Página del listado (contracts/api.md § 1): keyset sobre `(reviewed_at en ms, id)`, 12 por página. */
 export async function listPrayerRequests({ q, from, to, dir = 'desc', cursor }: PrayerListQuery): Promise<Paginated<PrayerRequest>> {
-  const after = decodeCursor(cursor)
+  const after = decodePrayerCursor(cursor)
   const op = dir === 'asc' ? sql`>` : sql`<`
   const search = q?.trim()
   const conditions: (SQL | undefined)[] = [

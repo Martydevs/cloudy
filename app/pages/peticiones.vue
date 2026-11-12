@@ -2,20 +2,36 @@
 // Página Peticiones (feature 007, contracts/ui.md): las imágenes de invitados ya aprobadas como tarjetas seleccionables, con
 // desplazamiento infinito, y las imágenes de «peticiones del día» generadas a partir de la selección. Delgada: la lista, la
 // selección y la cola viven en sus composables.
+import type { ImageText, PrayerRequest } from '#shared/types/api'
+
 definePageMeta({ layout: 'dashboard', access: 'private', roles: ['editor', 'admin'] })
 useHead({ title: 'Peticiones · Cloudy' })
+// Solo en el SSR (el endpoint es configuración privada): la foto de la primera tarjeta es el LCP y llega por el almacenamiento.
+if (import.meta.server) useHead({ link: storagePreconnect(useRuntimeConfig().awsEndpointUrlS3) })
 
 const m = messages.prayers
 const toast = useToast()
 const { confirm } = useConfirm()
 const { copyGuestLink } = useGuestLink()
 
-const requests = usePrayerRequests({ dir: 'desc' })
+// Cambiar un filtro reinicia la lista; la selección no se toca (FR-031).
+const filters = usePrayerFilters()
+const requests = usePrayerRequests(filters.query)
 const { items, firstPage, error, pending, loadingMore, moreError, done } = requests
 const selection = usePrayerSelection()
 const images = usePrayerImages()
 const reviewing = ref(false)
+/** Petición cuya transcripción se corrige (`LazyPrayerTextDialog`). */
+const fixing = ref<PrayerRequest | null>(null)
 const results = useTemplateRef<HTMLElement>('results')
+
+// La tarjeta y la copia elegida toman el texto nuevo (el panel ya avisa con su toast «Texto guardado»).
+function onTextChange(text: ImageText) {
+  const request = fixing.value
+  if (!request) return
+  requests.patchText(request.id, text)
+  selection.sync({ ...request, text })
+}
 
 usePrayerLeaveGuard()
 // Los resultados y la selección viven en la página: al salir se liberan (el guardián ya confirmó si hacía falta).
@@ -58,15 +74,33 @@ async function generate() {
       </button>
     </header>
 
-    <div ref="results" class="scroll-mt-20">
+    <!-- `v-show`: vacío no ocupa un hueco más del `gap` de la columna, pero el `ref` sigue ahí para `scrollIntoView`. -->
+    <div v-show="images.hasItems.value" ref="results" class="scroll-mt-20">
       <LazyPrayerResults v-if="images.hasItems.value" />
     </div>
+
+    <PrayerToolbar
+      v-model:q="filters.q.value"
+      v-model:preset="filters.preset.value"
+      v-model:from="filters.from.value"
+      v-model:to="filters.to.value"
+      v-model:dir="filters.dir.value"
+      :summary="filters.activeSummary.value"
+      :range-error="filters.rangeError.value"
+      @reset="filters.reset()"
+    />
 
     <div v-if="!firstPage && pending" class="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4" aria-busy="true">
       <span class="sr-only" role="status">{{ m.loading }}</span>
       <PrayerCardSkeleton v-for="n in 6" :key="n" />
     </div>
     <ErrorState v-else-if="error && !firstPage" :message="m.load" @retry="requests.refresh()" />
+    <EmptyState v-else-if="items.length === 0 && filters.hasFilters.value" icon="lucide:search-x" :title="m.emptyFiltered" :description="m.emptyFilteredHint">
+      <button type="button" class="btn btn-primary" @click="filters.reset()">
+        <Icon name="lucide:filter-x" class="size-5" aria-hidden="true" />
+        {{ m.clearFilters }}
+      </button>
+    </EmptyState>
     <EmptyState v-else-if="items.length === 0" icon="lucide:hand-heart" :title="m.emptyApproved" :description="m.emptyApprovedHint">
       <NuxtLink to="/solicitudes" class="btn btn-primary">
         <Icon name="lucide:inbox" class="size-5" aria-hidden="true" />
@@ -86,6 +120,7 @@ async function generate() {
       :is-selected="selection.isSelected"
       :limit-reached="selection.limitReached.value"
       @toggle="selection.toggle"
+      @fix="request => fixing = request"
       @load-more="requests.loadMore()"
       @retry-more="requests.loadMore()"
     />
@@ -106,6 +141,14 @@ async function generate() {
       :items="selection.ordered.value"
       @remove="id => selection.remove([id])"
       @close="reviewing = false"
+    />
+
+    <LazyPrayerTextDialog
+      v-if="fixing"
+      :key="fixing.id"
+      :request="fixing"
+      @change="onTextChange"
+      @close="fixing = null"
     />
   </div>
 </template>

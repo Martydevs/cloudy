@@ -110,6 +110,12 @@ describe('POST /api/peticiones/imagenes', () => {
     expect(createPrayerImage).not.toHaveBeenCalled()
   })
 
+  it('un 429 del límite sin data sigue siendo rate_limited', async () => {
+    install({ hitRateLimit: vi.fn(async () => { throw createError({ statusCode: 429, statusMessage: 'Too Many Requests' }) }) })
+    const { result } = await post({ fileIds: IDS })
+    expect((await expectStatus(result, 429)).data).toEqual({ code: 'rate_limited' })
+  })
+
   it('otro error del límite se propaga tal cual', async () => {
     install({ hitRateLimit: vi.fn(async () => { throw createError({ statusCode: 500, statusMessage: 'x' }) }) })
     const { result } = await post({ fileIds: IDS })
@@ -132,6 +138,19 @@ describe('POST /api/peticiones/imagenes', () => {
     await result
     event.node.res.emit('close')
     expect(signal?.aborted).toBe(true)
+  })
+
+  it('el cierre normal tras enviar la respuesta no aborta nada', async () => {
+    let signal: AbortSignal | undefined
+    install({ createPrayerImage: vi.fn(async (_ids: string[], options: { abortSignal: AbortSignal }) => {
+      signal = options.abortSignal
+      return { mediaType: 'image/png', data: PNG, count: 1 }
+    }) })
+    const { event, result } = await post({ fileIds: [IDS[0]] })
+    await result
+    Object.defineProperty(event.node.res, 'writableFinished', { value: true, configurable: true })
+    event.node.res.emit('close')
+    expect(signal?.aborted).toBe(false)
   })
 
   it('exige sesión de equipo', async () => {

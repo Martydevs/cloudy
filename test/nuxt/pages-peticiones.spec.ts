@@ -1,5 +1,6 @@
 // T031 — Página Peticiones (feature 007, contracts/ui.md): encabezado, cuatro estados, desplazamiento infinito y selección.
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { enableAutoUnmount } from '@vue/test-utils'
 import { mockNuxtImport, mountSuspended } from '@nuxt/test-utils/runtime'
 import { nextTick } from 'vue'
 import { getQuery, setResponseHeader, setResponseStatus } from 'h3'
@@ -20,6 +21,10 @@ const page = (from: number, to: number, nextCursor: string | null): Paginated<Pr
   ({ items: Array.from({ length: to - from + 1 }, (_, i) => prayer(from + i)), nextCursor })
 
 const list = () => calls.filter(c => c.url === '/api/peticiones')
+
+// `useFetch` comparte la clave `prayer-requests` y un `refresh` corre con las opciones de la *primera* instancia viva: cada
+// prueba desmonta su página para que la siguiente no herede la query de una página anterior.
+enableAutoUnmount(afterEach)
 
 beforeEach(() => {
   clearNuxtData()
@@ -62,7 +67,10 @@ describe('/peticiones', () => {
     await flush()
     expect(wrapper.text()).toContain('Todavía no hay peticiones aprobadas')
     expect(wrapper.findAll('a').find(a => a.text().includes('Ir a Solicitudes'))!.attributes('href')).toBe('/solicitudes')
-    expect(buttonsWithText(wrapper, 'Copiar enlace para invitados')).toHaveLength(2)
+    const copy = buttonsWithText(wrapper, 'Copiar enlace para invitados')
+    expect(copy).toHaveLength(2)
+    await copy[1]!.trigger('click')
+    expect(copyGuestLink).toHaveBeenCalledOnce()
   })
 
   it('error: ErrorState con Reintentar que vuelve a pedir', async () => {
@@ -143,8 +151,14 @@ describe('/peticiones', () => {
     await flush()
     await wrapper.findAll('input[type="checkbox"]')[0]!.trigger('change')
     await buttonsWithText(wrapper, 'Ver elegidas')[0]!.trigger('click')
+    // `LazyPrayerSelectionDialog` es un `import()`: con la suite completa su chunk puede tardar más que unos ticks.
+    await vi.waitFor(() => expect(document.body.querySelector('dialog')?.textContent).toContain('Invitado 1'), { timeout: 5000 })
+    // **Quitar** saca a esa de la selección; **Cerrar** cierra el diálogo.
+    await wrapper.get('dialog button[aria-label="Quitar la petición de Invitado 1"]').trigger('click')
+    expect(usePrayerSelection().count.value).toBe(0)
+    await buttonsWithText(wrapper.get('dialog'), 'Cerrar')[0]!.trigger('click')
     await flush()
-    expect(document.body.querySelector('dialog')?.textContent).toContain('Invitado 1')
+    expect(wrapper.find('dialog').exists()).toBe(false)
     wrapper.unmount()
   })
 
@@ -197,8 +211,9 @@ describe('/peticiones', () => {
       useConfirm().accept()
       await flush(15)
       expect(posts().map(c => (c.body as { fileIds: string[] }).fileIds.length)).toEqual([4, 1])
+      // `LazyPrayerResults` es un `import()`: con la suite completa su chunk puede tardar más que unos ticks.
+      await vi.waitFor(() => expect(wrapper.findAll('img[alt^="Imagen de peticiones"]')).toHaveLength(2), { timeout: 5000 })
       expect(wrapper.text()).toContain('Imágenes generadas')
-      expect(wrapper.findAll('img[alt^="Imagen de peticiones"]')).toHaveLength(2)
       expect(usePrayerSelection().count.value).toBe(5)
       expect(scroll).toHaveBeenCalled()
       // Los resultados van antes de la rejilla.
@@ -270,6 +285,145 @@ describe('/peticiones', () => {
       window.dispatchEvent(busy)
       expect(busy.defaultPrevented).toBe(true)
       wrapper.unmount()
+    })
+  })
+
+  describe('US3 · corregir la transcripción', () => {
+    const endpoint = (n: number) => `/api/files/${prayer(n).id}/text`
+    type Page = Awaited<ReturnType<typeof mountSuspended<typeof PeticionesPage>>>
+    const card = (wrapper: Page, n: number) =>
+      wrapper.findAll('article').find(a => a.attributes('aria-label') === `Petición de Invitado ${n}`)!
+
+    async function correct(wrapper: Page, n: number, text: string) {
+      mockApi('PATCH', endpoint(n), prayerText({ text, editedAt: '2026-11-12T10:00:00.000Z', editedBy: 'Ana' }))
+      await buttonsWithText(card(wrapper, n), 'Corregir texto')[0]!.trigger('click')
+      // `LazyPrayerTextDialog` es un `import()`: con la suite completa su chunk puede tardar más que unos ticks.
+      await vi.waitFor(() => expect(document.body.querySelector('dialog textarea, dialog button')).not.toBeNull(), { timeout: 5000 })
+      const dialog = wrapper.findAll('dialog').at(-1)!
+      await buttonsWithText(dialog, 'Editar')[0]!.trigger('click')
+      await flush()
+      await dialog.get('textarea').setValue(text)
+      await dialog.get('form').trigger('submit')
+      await flush()
+    }
+
+    it('Corregir texto abre el diálogo de esa petición y no cambia la selección', async () => {
+      const wrapper = await mountSuspended(PeticionesPage, { attachTo: document.body })
+      await flush()
+      await buttonsWithText(card(wrapper, 2), 'Corregir texto')[0]!.trigger('click')
+      await vi.waitFor(() => expect(document.body.querySelector('dialog')?.textContent).toContain('Transcripción de Invitado 2'), { timeout: 5000 })
+      expect(usePrayerSelection().count.value).toBe(0)
+      await wrapper.get('dialog button[aria-label="Cerrar"]').trigger('click')
+      await flush()
+      expect(wrapper.find('dialog').exists()).toBe(false)
+      wrapper.unmount()
+    })
+
+    it('al guardar, la tarjeta y la copia elegida toman el texto nuevo con «Editada», sin recargar la lista', async () => {
+      const wrapper = await mountSuspended(PeticionesPage, { attachTo: document.body })
+      await flush()
+      await card(wrapper, 1).get('input[type="checkbox"]').trigger('change')
+      useToast().toasts.value = []
+      const before = list().length
+      await correct(wrapper, 1, 'Oremos por Rosa')
+      expect(calls.filter(c => c.method === 'PATCH').map(c => c.url)).toEqual([endpoint(1)])
+      expect(card(wrapper, 1).text()).toContain('Oremos por Rosa')
+      expect(card(wrapper, 1).text()).toContain('Editada')
+      expect(usePrayerSelection().ordered.value[0]!.text.text).toBe('Oremos por Rosa')
+      expect(list().length).toBe(before)
+      expect(useToast().toasts.value.map(t => t.message)).toEqual(['Texto guardado'])
+      wrapper.unmount()
+    })
+
+    it('corregir una tarjeta de una página posterior conserva todas las cargadas', async () => {
+      const wrapper = await mountSuspended(PeticionesPage, { attachTo: document.body })
+      await flush()
+      visible.value = true
+      await flush(10)
+      expect(wrapper.findAll('article')).toHaveLength(14)
+      await correct(wrapper, 13, 'Corregida en la página dos')
+      expect(wrapper.findAll('article')).toHaveLength(14)
+      expect(card(wrapper, 13).text()).toContain('Corregida en la página dos')
+      expect(wrapper.text()).toContain('Ya viste todas las peticiones')
+      wrapper.unmount()
+    })
+  })
+
+  describe('US4 · buscar, filtrar y ordenar', () => {
+    /** Queries con las que se pidió la primera página (sin cursor), en orden. */
+    let firstPages: Record<string, unknown>[] = []
+
+    beforeEach(() => {
+      firstPages = []
+      mockApi('GET', '/api/peticiones', (event) => {
+        const query = getQuery(event)
+        if (query.cursor) return page(13, 14, null)
+        firstPages.push(query)
+        return query.q === 'nadie' ? { items: [], nextCursor: null } : page(1, 12, 'c1')
+      })
+    })
+
+    const bar = (wrapper: Awaited<ReturnType<typeof mountSuspended<typeof PeticionesPage>>>) => wrapper.get('[aria-label="Selección de peticiones"]')
+
+    it('la barra de filtros va entre los resultados y la rejilla', async () => {
+      const wrapper = await mountSuspended(PeticionesPage)
+      await flush()
+      const html = wrapper.html()
+      expect(html.indexOf('role="search"')).toBeGreaterThan(-1)
+      expect(html.indexOf('role="search"')).toBeLessThan(html.indexOf('aria-label="Peticiones aprobadas"'))
+    })
+
+    it('cambiar búsqueda, fecha u orden pide la primera página con la query nueva y no cambia la selección', async () => {
+      const wrapper = await mountSuspended(PeticionesPage)
+      await flush()
+      for (const box of wrapper.findAll('input[type="checkbox"]').slice(0, 5)) await box.trigger('change')
+      expect(bar(wrapper).text()).toContain('5 peticiones → 2 imágenes')
+      expect(firstPages.at(-1)).toEqual({ dir: 'desc' })
+
+      await wrapper.get('input[type="search"]').setValue('Ana')
+      await vi.waitFor(() => expect(firstPages.at(-1)).toEqual({ q: 'Ana', dir: 'desc' }), { timeout: 2000 })
+
+      await buttonsWithText(wrapper.get('[role="group"][aria-label="Fecha de aprobación"]'), 'Hoy')[0]!.trigger('click')
+      await vi.waitFor(() => expect(firstPages.at(-1)).toMatchObject({ q: 'Ana', from: expect.any(String), to: expect.any(String) }))
+
+      await wrapper.get('select').setValue('asc')
+      await vi.waitFor(() => expect(firstPages.at(-1)).toMatchObject({ dir: 'asc' }))
+      await flush()
+
+      expect(usePrayerSelection().count.value).toBe(5)
+      expect(bar(wrapper).text()).toContain('5 peticiones → 2 imágenes')
+      expect(wrapper.get('[role="search"] [role="status"]').text()).toBe('Buscando «Ana» · Aprobadas hoy')
+
+      // **Quitar filtros** del resumen vuelve a la query por defecto (orden incluido) sin tocar la selección.
+      await buttonsWithText(wrapper.get('[role="search"]'), 'Quitar filtros')[0]!.trigger('click')
+      await vi.waitFor(() => expect(firstPages.at(-1)).toEqual({ dir: 'desc' }))
+      expect(wrapper.find('[role="search"] [role="status"]').exists()).toBe(false)
+      expect(usePrayerSelection().count.value).toBe(5)
+    })
+
+    it('sin coincidencias: vacío propio con Quitar filtros, que vuelve a la lista completa', async () => {
+      const wrapper = await mountSuspended(PeticionesPage)
+      await flush()
+      await wrapper.get('input[type="search"]').setValue('nadie')
+      await vi.waitFor(() => expect(wrapper.text()).toContain('No hay peticiones con esos filtros'), { timeout: 2000 })
+      expect(wrapper.text()).not.toContain('Todavía no hay peticiones aprobadas')
+      expect(buttonsWithText(wrapper, 'Ir a Solicitudes')).toHaveLength(0)
+
+      // Hay dos «Quitar filtros» (el resumen y el estado vacío): se usa el del estado vacío.
+      const reset = buttonsWithText(wrapper, 'Quitar filtros')
+      expect(reset).toHaveLength(2)
+      await reset.at(-1)!.trigger('click')
+      await vi.waitFor(() => expect(wrapper.findAll('article')).toHaveLength(12))
+      expect(firstPages.at(-1)).toEqual({ dir: 'desc' })
+      expect((wrapper.get('input[type="search"]').element as HTMLInputElement).value).toBe('')
+    })
+
+    it('sin filtros y sin peticiones sigue el vacío de «aún no hay»', async () => {
+      mockApi('GET', '/api/peticiones', { items: [], nextCursor: null })
+      const wrapper = await mountSuspended(PeticionesPage)
+      await flush()
+      expect(wrapper.text()).toContain('Todavía no hay peticiones aprobadas')
+      expect(wrapper.text()).not.toContain('No hay peticiones con esos filtros')
     })
   })
 

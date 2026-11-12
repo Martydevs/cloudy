@@ -12,7 +12,9 @@ const props = withDefaults(defineProps<{
   disabled?: boolean
   /** Por qué no se puede elegir (va en `aria-describedby`). */
   disabledReason?: string | null
-}>(), { selected: false, disabled: false, disabledReason: null })
+  /** Primera tarjeta: su foto es la candidata a LCP, así que sale desde el SSR con prioridad alta en vez de esperar. */
+  priority?: boolean
+}>(), { selected: false, disabled: false, disabledReason: null, priority: false })
 const emit = defineEmits<{ toggle: [], fix: [] }>()
 
 const m = messages.prayers
@@ -29,6 +31,12 @@ const chunks = computed(() => (text.value.status === 'ready' && text.value.text 
 const toFix = computed(() => hasIllegibleMark(text.value.text))
 const long = computed(() => isLongText(text.value.text))
 const hasText = computed(() => text.value.status === 'ready' && !!text.value.text?.trim())
+/** «Corregir texto» con texto o tras un fallo; «Escribir transcripción» sin texto; nada mientras se lee o sin lectura posible (409). */
+const fixLabel = computed(() => {
+  if (hasText.value || text.value.status === 'failed') return m.fix
+  if (text.value.status === 'ready' || text.value.status === 'empty' || text.value.status === 'pending') return m.write
+  return null
+})
 
 const failedMessage = computed(() => {
   switch (text.value.error) {
@@ -68,11 +76,11 @@ const failedMessage = computed(() => {
     <!-- Sin `relative`: la etiqueta estirada (posicionada) debe quedar encima de la foto para recibir el clic. -->
     <div class="aspect-[4/3] w-full bg-base-200">
       <img
-        v-if="near && !photoFailed"
+        v-if="(priority || near) && !photoFailed"
         :src="request.previewUrl"
         :alt="`Foto enviada por ${request.senderName}`"
         decoding="async"
-        fetchpriority="low"
+        :fetchpriority="priority ? 'high' : 'low'"
         class="size-full object-cover"
         @error="photoFailed = true"
       >
@@ -95,7 +103,8 @@ const failedMessage = computed(() => {
       <div v-if="selected || text.editedAt || toFix || long" class="flex flex-wrap gap-1">
         <span v-if="selected" class="badge badge-primary">{{ m.chosen }}</span>
         <span v-if="text.editedAt" class="badge badge-ghost">{{ m.edited }}</span>
-        <span v-if="toFix" class="badge badge-warning badge-soft">
+        <!-- `text-base-content`: el texto de `badge-soft` en `warning` no llega a AA en `cloudy-light` (1,77:1). -->
+        <span v-if="toFix" class="badge badge-warning badge-soft text-base-content">
           <Icon name="lucide:triangle-alert" class="size-4" aria-hidden="true" />
           {{ m.toFix }}
         </span>
@@ -105,7 +114,7 @@ const failedMessage = computed(() => {
       <!-- Transcripción como texto (nunca v-html); las marcas de ilegible resaltadas sin depender del color. -->
       <p v-if="hasText" class="whitespace-pre-line break-words text-sm">
         <template v-for="(chunk, i) in chunks" :key="i">
-          <span v-if="chunk.mark" class="badge badge-warning badge-soft h-auto whitespace-normal align-baseline">
+          <span v-if="chunk.mark" class="badge badge-warning badge-soft h-auto whitespace-normal align-baseline text-base-content">
             <Icon name="lucide:triangle-alert" class="size-3.5 shrink-0" aria-hidden="true" />{{ chunk.text }}
           </span>
           <template v-else>{{ chunk.text }}</template>
@@ -124,6 +133,10 @@ const failedMessage = computed(() => {
       <p v-if="disabled && disabledReason" :id="reasonId" class="text-sm text-base-content/70">{{ disabledReason }}</p>
 
       <div class="relative z-10 mt-1 flex flex-wrap gap-2">
+        <button v-if="fixLabel" type="button" class="btn lg:btn-sm" @click="emit('fix')">
+          <Icon name="lucide:pencil" class="size-4" aria-hidden="true" />
+          {{ fixLabel }}
+        </button>
         <a :href="request.previewUrl" target="_blank" rel="noopener" class="btn btn-ghost lg:btn-sm">
           <Icon name="lucide:external-link" class="size-4" aria-hidden="true" />
           {{ m.openPhoto }}

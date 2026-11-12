@@ -120,6 +120,15 @@ describe('listPrayerRequests', () => {
     await expectStatus(listPrayerRequests({ cursor: 'basura' }), 422)
   })
 
+  it.each([
+    ['fecha que no es fecha', { v: 'ayer', id: UUID }],
+    ['id que no es UUID', { v: created.toISOString(), id: "x'); --" }],
+  ])('cursor bien formado con %s → 422 sin consultar (no un 500 de Postgres)', async (_, data) => {
+    const fake = installNitro([[]])
+    await expectStatus(listPrayerRequests({ cursor: encodeCursor(data) }), 422)
+    expect(fake.calls).toHaveLength(0)
+  })
+
   it('con 13 filas devuelve 12 y el cursor de la duodécima', async () => {
     installNitro([Array.from({ length: 13 }, (_, i) => row(i))])
     const page = await listPrayerRequests({})

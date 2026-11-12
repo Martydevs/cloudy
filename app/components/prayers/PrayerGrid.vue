@@ -35,10 +35,11 @@ watch(sentinelVisible, (visible) => {
 <template>
   <div class="flex flex-col gap-4">
     <ul class="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4" aria-label="Peticiones aprobadas">
-      <li v-for="request in items" :key="request.id" class="flex flex-col">
+      <li v-for="(request, index) in items" :key="request.id" class="flex flex-col">
         <PrayerCard
           class="h-full"
           :request="request"
+          :priority="index === 0"
           :selected="isSelected(request.id)"
           :disabled="!!reason(request)"
           :disabled-reason="reason(request)"
