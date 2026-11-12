@@ -237,6 +237,8 @@ describe('US2 · texto de las imágenes de invitados', () => {
     await expect.poll(() => card.isVisible()).toBe(true)
     const panel = card.getByRole('region', { name: `Texto de «${note}»` })
     await expect.poll(() => panel.textContent(), { timeout: 30_000 }).toContain(FIRST_LINE)
+    // La segunda imagen (HEIC) puede seguir leyéndose cuando ya se ve el texto de la primera: se esperan las dos lecturas.
+    await expect.poll(async () => (await stubCalls()).total, { timeout: 30_000 }).toBe(files.length)
     const callsBeforeApproval = (await stubCalls()).total
     expect(callsBeforeApproval).toBe(files.length)
 

@@ -181,6 +181,7 @@ describe('US6 · protección de rutas', () => {
       ['DELETE', `/api/songs/collections/${id}/items/${id}`],
       // Página Peticiones (feature 007).
       ['GET', '/api/peticiones'],
+      ['POST', '/api/peticiones/imagenes'],
     ] as const
     for (const [method, path] of commentRoutes) {
       const init: { method: string, headers: Record<string, string>, body?: string } = method === 'GET' || method === 'DELETE'
