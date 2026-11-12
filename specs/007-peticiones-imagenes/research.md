@@ -179,12 +179,19 @@
 
 ## D13 — Prompt y contenido literal
 
-- **Decision**: `buildPrayerPrompt(paragraphs)` arma el mensaje de usuario con una instrucción corta (rellenar **solo** el espacio
-  vacío bajo el título «Peticiones de oración», un párrafo por petición en el orden dado, texto literal sin corregir ni traducir ni añadir) y cada petición en
-  una etiqueta `<peticion n="1">…</peticion>`; `<` y `>` del texto se sustituyen por `‹` y `›` para que nada cierre una etiqueta.
-  No se manda nombre, nota ni IP (FR-022): la entrada de la función es `string[]` de 1 a 4 textos.
-- **Rationale**: FR-020/021. El *system prompt* detallado (letra legible con el estilo de plastilina de la plantilla y buen contraste sobre cielo y colinas, no tocar árboles, sol, nubes ni título, ajustar tamaño de letra a
-  4 párrafos sin tapar el camino ni los árboles) vive en el preajuste de OpenRouter, que el equipo edita sin desplegar.
+- **Decision**: `buildPrayerPrompt(paragraphs)` arma el mensaje de usuario con una instrucción corta, alineada con el *system prompt*
+  del preajuste (quitar nubes y pájaros del cielo y escribir ahí las peticiones sin tocar título, sol, árboles ni colinas; un bloque por
+  petición en el orden dado; texto literal palabra por palabra, cada palabra una sola vez sin repetirla al cambiar de línea, sin corregir,
+  traducir ni añadir; solo el contenido de las etiquetas) y cada petición en una etiqueta `<peticion>…</peticion>` (sin atributo `n` ni
+  mención de números: en la segunda revisión de T088b el modelo numeró las peticiones); `<` y `>` del
+  texto se sustituyen por `‹` y `›` para que nada cierre una etiqueta. No se manda nombre, nota ni IP (FR-022): la entrada de la función
+  es `string[]` de 1 a 4 textos.
+- **Rationale**: FR-020/021. El *system prompt* detallado (área del texto en porcentajes entre el título, los árboles y las colinas,
+  columnas y viñetas, tipografía y contraste, reducción uniforme de la letra si no cabe, una sola imagen por llamada) vive en el preajuste
+  de OpenRouter, que el equipo edita sin desplegar y solo vive en el panel de OpenRouter (no hay copia en el repositorio).
+  **Revisión 2026-11-12 (T088b)**: la instrucción anterior («rellena **solo** el espacio vacío») contradecía al preajuste, que pide
+  despejar el cielo, y dos imágenes dejaron nubes; los errores de texto caían en los saltos de línea (la última palabra repetida al empezar
+  la siguiente). Instrucción y preajuste se alinearon con esas dos reglas.
 - **Alternatives**: escapar con entidades HTML (el modelo podría dibujar `&lt;`); JSON (más ruido y el modelo lo copia literal).
 
 ## D14 — Estado, mensajes y accesibilidad

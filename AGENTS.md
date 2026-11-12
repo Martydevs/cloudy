@@ -248,7 +248,16 @@ Never print or commit their values.
   through the existing OpenRouter client with the preset `@preset/pray-requests-image-generation` + `extraBody.modalities = ['image','text']`; the image arrives in `result.files`. The template
   is `server/assets/peticiones/plantilla.jpg` (Nitro `serverAssets`, `assets:peticiones`): replace the file and redeploy to change it. Only `server/utils/prayer-images.ts` imports `#server/ai`
   for this use case. The browser generates **2 images at a time** (`usePrayerImages`, state in `useState('prayer-images')`, `AbortController`/`objectURL` in module maps) and results live in the page,
-  not in a layout tray. E2E run against the OpenRouter stub's `message.images` response.
+  not in a layout tray. Limits: 60 generations per hour per person (`peticiones-img:<userId>`) and 120 transcript edits per hour (`text-edit:<userId>` on `PATCH /api/files/:id/text`). **Corregir
+  texto** opens `LazyPrayerTextDialog`; `ImageTextPanel` emits `change` only for terminal states, and the page patches the card (`usePrayerRequests.patchText`, an overlay map: reassigning
+  `firstPage` would drop the later pages) and the chosen copy (`usePrayerSelection.sync`). Filters live in `usePrayerFilters` (search debounced 300 ms, cleared instantly; approval-date presets in
+  the browser's local day sent as ISO instants, `to` exclusive). E2E run against the OpenRouter stub (`test/e2e/setup/openrouter-stub.ts`): generation calls are recognised by the preset or
+  `modalities` before the image-text path, answered with `message.images` (a PNG fixture) and recorded apart (`prayerCalls()`: model, modalities, template, `<peticion>` texts); keywords in a
+  request's text pick a scenario: `sin-imagen`, `sin-credito` (402), `lento`, `falla-una-vez` (fails the first **two** calls, because the AI SDK retries once by itself).
+  **Accepted LCP exception** (plan.md, Complexity Tracking): guest photos have no thumbnail, so the first card's photo is the LCP and can exceed 2.5 s on 4G. Only the first card
+  renders its `src` in the SSR (`priority`, `fetchpriority="high"`) and the page adds a `preconnect` to the storage origin; `performance.spec.ts` asserts LCP for the card text
+  (photos blocked), CLS and the 250 KB JS budget, and only reports the LCP with photos. Thumbnails were postponed by the team.
+  **Dev QA**: a `.env.development` with an OpenRouter key makes «Generar» a real, paid call; mock `POST /api/peticiones/imagenes` with `page.route` in browser QA.
 - `guest_submissions.completed_at` is stamped with the server clock, like the pulse cursor: with Postgres' `now()` a
   skew of seconds would drop the live toast.
 - The guest access-request layer was removed (migration `drizzle/0008_*`: drops `guest_access_requests`,
