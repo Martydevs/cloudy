@@ -2,7 +2,7 @@
 // de abrir la ficha; «Generar N presentaciones (.zip)» hace una sola petición y descarga `canciones.zip`. Éxito parcial con el
 // porqué de cada canción, todas fallidas sin reintento, cola llena sin gastar un rastreo, servicio dormido con «Reintentar», el
 // modo apagado sigue abriendo la ficha, «Descargar en un .zip» de la barra de selección y 360 px. Contra los stubs de Apify y
-// `cloudy-api` (`POST /v1/lyrics/pptx/batch`, mismos escenarios por título: «vacia», «respaldo»).
+// `cloudy-api` (`POST /api/lyrics/pptx/batch`, mismos escenarios por título: «vacia», «respaldo»).
 import { createPage, setup } from '@nuxt/test-utils/e2e'
 import type { Cookie, Locator, Page } from 'playwright-core'
 import { afterEach, describe, expect, it } from 'vitest'

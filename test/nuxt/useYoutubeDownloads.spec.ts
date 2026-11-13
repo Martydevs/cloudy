@@ -2,7 +2,7 @@
 // uno en uno, guardado al terminar, expiración y sondeo que se pausa sin conexión.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mockNuxtImport } from '@nuxt/test-utils/runtime'
-import { createError, getQuery, readBody } from 'h3'
+import { getQuery } from 'h3'
 import { effectScope } from 'vue'
 import type { YoutubeJob, YoutubeJobItem } from '#shared/types/api'
 import { YOUTUBE_JOB_POLL_MS } from '#shared/constants/youtube'
@@ -22,11 +22,11 @@ const jobId = (n: number) => n.toString(16).padStart(32, '0')
 const ids = (n: number) => Array.from({ length: n }, (_, i) => `video${String(i).padStart(6, '0')}`)
 
 function job(id: string, changes: Partial<YoutubeJob> = {}): YoutubeJob {
-  return { jobId: id, engine: 'v2', status: 'queued', format: 'mp3', progress: 0, items: [], downloadUrl: null, filename: null, sizeBytes: null, expiresAt: null, ...changes }
+  return { jobId: id, status: 'queued', format: 'mp3', progress: 0, items: [], downloadUrl: null, filename: null, sizeBytes: null, expiresAt: null, ...changes }
 }
 
 const done = (id: string, changes: Partial<YoutubeJob> = {}) =>
-  job(id, { status: 'done', progress: 100, downloadUrl: `https://svc.test/v1/jobs/${id}/file?exp=1&sig=x`, filename: 'archivo.mp3', ...changes })
+  job(id, { status: 'done', progress: 100, downloadUrl: `https://svc.test/api/jobs/${id}/file?exp=1&sig=x`, filename: 'archivo.mp3', ...changes })
 
 let created = 0
 const posts = () => calls.filter(c => c.method === 'POST' && c.url === '/api/youtube/jobs')
@@ -235,144 +235,64 @@ describe('useYoutubeDownloads', () => {
     await downloads.dismiss(999)
   })
 
-  describe('motores: lo que falla en v2 por el motor se repite en v1', () => {
+  describe('fallos del servicio: un solo motor, nada se repite por su cuenta', () => {
     const BOT_CHECK = 'YouTube bloqueó la descarga con su verificación anti-robots. Intenta de nuevo en unos minutos.'
     const failed = (videoId: string, code = 'bot_check', message = BOT_CHECK): YoutubeJobItem =>
       ({ videoId, title: null, status: 'failed', progress: 0, error: { code, message }, actualHeight: null })
     const ok = (videoId: string): YoutubeJobItem => ({ videoId, title: null, status: 'done', progress: 100, error: null, actualHeight: null })
     const errorToasts = () => useToast().toasts.value.filter(t => t.type === 'error')
-    /** Responde el trabajo y anota con qué `?engine=` se pidió. */
-    function pollWith(id: string, response: YoutubeJob | (() => YoutubeJob), method: 'GET' | 'DELETE' = 'GET') {
-      const engines: unknown[] = []
-      mockApi(method, `/api/youtube/jobs/${id}`, (event) => {
-        engines.push(getQuery(event).engine)
-        return method === 'DELETE' ? null : typeof response === 'function' ? response() : response
+
+    it('un trabajo que falla por el bloqueo anti-robots no se repite: la fila falla con la causa', async () => {
+      const downloads = useYoutubeDownloads()
+      downloads.enqueue(['okShortVid1'], 'mp3', 'Alabanza')
+      await flush()
+      const queries: unknown[] = []
+      mockApi('GET', `/api/youtube/jobs/${jobId(1)}`, (event) => {
+        queries.push(getQuery(event))
+        return job(jobId(1), { status: 'failed', items: [failed('okShortVid1')] })
       })
-      return engines
-    }
-
-    it('si todo el trabajo falla por el motor, la misma fila se repite en v1 sin avisar; v1 se consulta con su prefijo', async () => {
-      const downloads = useYoutubeDownloads()
-      downloads.enqueue(['okShortVid1'], 'mp3', 'Alabanza')
-      await flush()
-      const v2Polls = pollWith(jobId(1), job(jobId(1), { status: 'failed', items: [failed('okShortVid1')] }))
-      // El servidor responde el motor que creó el trabajo: aquí, el que se le pidió.
-      mockApi('POST', '/api/youtube/jobs', () => job(jobId(++created), { engine: 'v1' }))
-      await downloads.tick()
-      await flush()
-
-      expect(v2Polls).toEqual(['v2'])
-      expect(posts().map(p => p.body)).toEqual([
-        { videoIds: ['okShortVid1'], format: 'mp3' },
-        { videoIds: ['okShortVid1'], format: 'mp3', engine: 'v1' },
-      ])
-      // Una sola fila, de nuevo en curso y sin rastro del intento fallido.
-      expect(downloads.rows.value).toHaveLength(1)
-      expect(downloads.rows.value[0]).toMatchObject({ status: 'queued', message: null, engine: 'v1', batch: 1, total: 1 })
-      expect(downloads.rows.value[0]!.job).toMatchObject({ jobId: jobId(2), engine: 'v1' })
-      expect(errorToasts()).toEqual([])
-      expect(downloads.busy.value).toBe(true)
-
-      const v1Polls = pollWith(jobId(2), done(jobId(2), { engine: 'v1' }))
-      await downloads.tick()
-      await flush()
-      expect(v1Polls).toEqual(['v1'])
-      expect(downloads.rows.value[0]).toMatchObject({ status: 'done', saved: true })
-      expect(click).toHaveBeenCalledTimes(1)
-
-      // «Guardar archivo» también renueva el enlace en el motor del trabajo.
-      await downloads.saveAgain(downloads.rows.value[0]!.id)
-      expect(v1Polls).toEqual(['v1', 'v1'])
-    })
-
-    it('si v1 también falla no se repite otra vez: la fila falla con la causa', async () => {
-      const downloads = useYoutubeDownloads()
-      downloads.enqueue(['okShortVid1'], 'mp3', 'Alabanza')
-      await flush()
-      mockApi('GET', `/api/youtube/jobs/${jobId(1)}`, job(jobId(1), { status: 'failed', items: [failed('okShortVid1')] }))
-      mockApi('POST', '/api/youtube/jobs', () => job(jobId(++created), { engine: 'v1' }))
-      await downloads.tick()
-      await flush()
-      mockApi('GET', `/api/youtube/jobs/${jobId(2)}`, job(jobId(2), { engine: 'v1', status: 'failed', items: [failed('okShortVid1')] }))
       await downloads.tick()
       await flush()
       await downloads.tick()
       await flush()
 
-      expect(posts()).toHaveLength(2)
+      // El trabajo se consulta sin `?engine=`: ya no hay motores.
+      expect(queries).toEqual([{}])
+      expect(posts()).toHaveLength(1)
+      expect(posts()[0]!.body).toEqual({ videoIds: ['okShortVid1'], format: 'mp3' })
       expect(downloads.rows.value).toHaveLength(1)
       expect(downloads.rows.value[0]).toMatchObject({ status: 'failed', message: BOT_CHECK })
+      expect(downloads.rows.value[0]).not.toHaveProperty('engine')
       expect(errorToasts().map(t => t.message)).toEqual([BOT_CHECK])
       expect(downloads.busy.value).toBe(false)
 
-      // «Preparar de nuevo» empieza de cero: el servidor vuelve a probar v2 primero.
+      // «Preparar de nuevo» crea el mismo trabajo otra vez.
       await downloads.retry(downloads.rows.value[0]!.id)
       await flush()
+      expect(posts()).toHaveLength(2)
       expect(posts().at(-1)!.body).toEqual({ videoIds: ['okShortVid1'], format: 'mp3' })
-      expect(downloads.rows.value[0]).toMatchObject({ engine: null, status: 'queued' })
+      expect(downloads.rows.value[0]).toMatchObject({ status: 'queued' })
     })
 
-    it('si los dos motores fallan al crear en v1, la fila dice la causa que respondió el servidor', async () => {
-      const downloads = useYoutubeDownloads()
-      downloads.enqueue(['okShortVid1'], 'mp3', 'Alabanza')
-      await flush()
-      mockApi('GET', `/api/youtube/jobs/${jobId(1)}`, job(jobId(1), { status: 'failed', items: [failed('okShortVid1')] }))
-      mockApi('POST', '/api/youtube/jobs', failWith(502, { code: 'engines_failed', cause: 'botCheck', attempts: [{ engine: 'v1', status: 502, code: 'bot_check' }] }))
-      await downloads.tick()
-      await flush()
-      expect(downloads.rows.value[0]).toMatchObject({ status: 'failed', message: messages.youtube.service.botCheck })
-      expect(errorToasts().map(t => t.message)).toEqual([messages.youtube.service.botCheck])
-    })
-
-    it('un lote entregado con fallos del motor: se guarda el zip y esos videos van a una fila nueva en v1, antes del lote siguiente', async () => {
+    it('un lote entregado con fallos: se guarda el zip y sigue el lote siguiente, sin filas de repetición', async () => {
       const all = ids(12)
       const downloads = useYoutubeDownloads()
       downloads.enqueue(all, 'mp3', 'Domingo')
       await flush()
-      const items = [...all.slice(0, 7).map(ok), failed(all[7]!), failed(all[8]!, 'download_failed', 'x'), failed(all[9]!, 'private', 'Este video es privado.')]
+      const items = [...all.slice(0, 8).map(ok), failed(all[8]!, 'download_failed', 'x'), failed(all[9]!)]
       mockApi('GET', `/api/youtube/jobs/${jobId(1)}`, done(jobId(1), { items }))
-      // Como el servidor: el trabajo dice el motor que se le pidió (sin `engine`, el principal).
-      mockApi('POST', '/api/youtube/jobs', async event => job(jobId(++created), { engine: (await readBody<{ engine?: 'v1' }>(event)).engine ?? 'v2' }))
       await downloads.tick()
       await flush()
 
-      // El zip del lote 1 se entrega como siempre.
       expect(click).toHaveBeenCalledTimes(1)
       expect(downloads.rows.value[0]).toMatchObject({ status: 'done', saved: true, batch: 1, total: 2 })
-      expect(useToast().toasts.value.some(t => t.message === 'Tu archivo está listo · Lote 1 de 2')).toBe(true)
-      // Solo los que fallaron por el motor (no el privado) se repiten, en el mismo grupo y de uno en uno.
       expect(posts()).toHaveLength(2)
-      expect(posts()[1]!.body).toEqual({ videoIds: [all[7], all[8]], format: 'mp3', engine: 'v1' })
-      expect(downloads.rows.value).toHaveLength(2)
-      expect(downloads.rows.value[1]).toMatchObject({ groupId: downloads.rows.value[0]!.groupId, label: 'Domingo', batch: 1, total: 2, engine: 'v1', status: 'queued' })
+      expect(posts()[1]!.body).toEqual({ videoIds: all.slice(10), format: 'mp3' })
+      expect(downloads.rows.value[1]).toMatchObject({ batch: 2, total: 2, status: 'queued' })
       expect(errorToasts()).toEqual([])
-
-      // Al terminar la repetición sigue el lote 2, en el motor principal.
-      mockApi('GET', `/api/youtube/jobs/${jobId(2)}`, done(jobId(2), { engine: 'v1', items: [ok(all[7]!), ok(all[8]!)] }))
-      await downloads.tick()
-      await flush()
-      expect(click).toHaveBeenCalledTimes(2)
-      expect(posts()).toHaveLength(3)
-      expect(posts()[2]!.body).toEqual({ videoIds: all.slice(10), format: 'mp3' })
-      expect(downloads.rows.value[2]).toMatchObject({ batch: 2, total: 2, engine: null })
     })
 
-    it('un trabajo que falla entero con causas mezcladas: la fila falla y solo lo del motor se repite en v1', async () => {
-      const downloads = useYoutubeDownloads()
-      downloads.enqueue(['okShortVid1', 'privateVid1'], 'mp3', 'Dos')
-      await flush()
-      const items = [failed('okShortVid1'), failed('privateVid1', 'private', 'Este video es privado.')]
-      mockApi('GET', `/api/youtube/jobs/${jobId(1)}`, job(jobId(1), { status: 'failed', items }))
-      mockApi('POST', '/api/youtube/jobs', () => job(jobId(++created), { engine: 'v1' }))
-      await downloads.tick()
-      await flush()
-      expect(downloads.rows.value[0]).toMatchObject({ status: 'failed', message: 'Ningún video se pudo descargar. Revisa el motivo de cada uno.' })
-      expect(errorToasts()).toHaveLength(1)
-      expect(posts()[1]!.body).toEqual({ videoIds: ['okShortVid1'], format: 'mp3', engine: 'v1' })
-      expect(downloads.rows.value[1]).toMatchObject({ engine: 'v1', videoIds: ['okShortVid1'], status: 'queued' })
-    })
-
-    it('un fallo que es del video (privado) no se repite; con un solo lote la fila y el aviso dicen esa causa', async () => {
+    it('un fallo que es del video (privado): con un solo lote la fila y el aviso dicen esa causa', async () => {
       const downloads = useYoutubeDownloads()
       downloads.enqueue(['privateVid1'], 'mp3', 'Privado')
       await flush()
@@ -387,158 +307,30 @@ describe('useYoutubeDownloads', () => {
 
     it.each([
       ['botCheck', messages.youtube.service.botCheck],
-      ['engineFailed', messages.youtube.service.engineFailed],
-    ])('los dos motores fallan al crear (502 engines_failed, %s): fila fallida y aviso con la causa', async (cause, message) => {
-      mockApi('POST', '/api/youtube/jobs', failWith(502, { code: 'engines_failed', cause, attempts: [] }))
+      ['failed', messages.youtube.service.failed],
+    ])('el servicio no puede al crear (502 service_failed, %s): fila fallida y aviso con la causa', async (cause, message) => {
+      mockApi('POST', '/api/youtube/jobs', failWith(502, { code: 'service_failed', cause }))
       const downloads = useYoutubeDownloads()
-      downloads.enqueue(['bothBotChk1'], 'mp3', 'Bloqueado')
+      downloads.enqueue(['botCheckVd1'], 'mp3', 'Bloqueado')
       await flush()
+      expect(posts()).toHaveLength(1)
       expect(downloads.rows.value[0]).toMatchObject({ status: 'failed', message })
       expect(errorToasts().map(t => t.message)).toEqual([message])
-      expect(message).toMatch(/los dos servicios/i)
+      expect(message).not.toMatch(/los dos/i)
     })
 
-    it('cancelar descarta lo pendiente de repetir y borra el trabajo en su motor', async () => {
-      const all = ids(3)
-      const downloads = useYoutubeDownloads()
-      downloads.enqueue(all, 'mp3', 'Tres')
-      await flush()
-      mockApi('GET', `/api/youtube/jobs/${jobId(1)}`, done(jobId(1), { items: [ok(all[0]!), ok(all[1]!), failed(all[2]!)] }))
-      mockApi('POST', '/api/youtube/jobs', () => job(jobId(++created), { engine: 'v1' }))
-      await downloads.tick()
-      await flush()
-      const deletes = pollWith(jobId(2), job(jobId(2)), 'DELETE')
-      await downloads.cancel(downloads.rows.value[1]!.id)
-      expect(deletes).toEqual(['v1'])
-      expect(downloads.rows.value[1]!.status).toBe('cancelled')
-      expect(downloads.busy.value).toBe(false)
-      // Con todo cerrado, el mismo gesto vuelve a crear un trabajo (el grupo ya no está ocupado).
-      downloads.enqueue(all, 'mp3', 'Tres')
-      await flush()
-      expect(posts()).toHaveLength(3)
-    })
-
-    /** Un video cuyo trabajo de v2 falló entero por el motor: la fila ya se repitió en v1 (trabajo 2). */
-    async function repeatedOnV1() {
+    it('cancelar borra el trabajo sin `?engine=`', async () => {
       const downloads = useYoutubeDownloads()
       downloads.enqueue(['okShortVid1'], 'mp3', 'Alabanza')
       await flush()
-      mockApi('GET', `/api/youtube/jobs/${jobId(1)}`, job(jobId(1), { status: 'failed', items: [failed('okShortVid1')] }))
-      mockApi('POST', '/api/youtube/jobs', () => job(jobId(++created), { engine: 'v1' }))
-      await downloads.tick()
-      await flush()
-      return downloads
-    }
-
-    it('si v1 está dormido al repetir, la fila queda en pausa y «Reintentar» sigue en v1, sin volver a empezar por v2', async () => {
-      const downloads = useYoutubeDownloads()
-      downloads.enqueue(['okShortVid1'], 'mp3', 'Alabanza')
-      await flush()
-      mockApi('GET', `/api/youtube/jobs/${jobId(1)}`, job(jobId(1), { status: 'failed', items: [failed('okShortVid1')] }))
-      mockApi('POST', '/api/youtube/jobs', failWith(503, { state: 'waking' }))
-      await downloads.tick()
-      await flush()
-
-      // No es un fallo: el lote conserva sus videos y su motor, y no se avisa de error.
-      expect(downloads.rows.value).toHaveLength(1)
-      expect(downloads.rows.value[0]).toMatchObject({
-        status: 'paused', engine: 'v1', videoIds: ['okShortVid1'], message: 'Despertando el servicio, puede tardar hasta 1 minuto',
+      const queries: unknown[] = []
+      mockApi('DELETE', `/api/youtube/jobs/${jobId(1)}`, (event) => {
+        queries.push(getQuery(event))
+        return null
       })
-      expect(posts().at(-1)!.body).toEqual({ videoIds: ['okShortVid1'], format: 'mp3', engine: 'v1' })
-      expect(errorToasts()).toEqual([])
-
-      mockApi('POST', '/api/youtube/jobs', () => job(jobId(++created), { engine: 'v1' }))
-      await downloads.retry(downloads.rows.value[0]!.id)
-      await flush()
-      expect(posts()).toHaveLength(3)
-      expect(posts().at(-1)!.body).toEqual({ videoIds: ['okShortVid1'], format: 'mp3', engine: 'v1' })
-      expect(downloads.rows.value[0]).toMatchObject({ status: 'queued', engine: 'v1' })
-      expect(downloads.rows.value[0]!.job).toMatchObject({ engine: 'v1' })
-    })
-
-    it('si la repetición en v1 de un lote entregado también falla: avisa de ese lote, no lo repite más y sigue con el lote siguiente', async () => {
-      const all = ids(12)
-      const downloads = useYoutubeDownloads()
-      downloads.enqueue(all, 'mp3', 'Domingo')
-      await flush()
-      mockApi('GET', `/api/youtube/jobs/${jobId(1)}`, done(jobId(1), { items: [...all.slice(0, 9).map(ok), failed(all[9]!)] }))
-      mockApi('POST', '/api/youtube/jobs', async event => job(jobId(++created), { engine: (await readBody<{ engine?: 'v1' }>(event)).engine ?? 'v2' }))
-      await downloads.tick()
-      await flush()
-      expect(posts()).toHaveLength(2)
-      expect(posts()[1]!.body).toEqual({ videoIds: [all[9]], format: 'mp3', engine: 'v1' })
-
-      mockApi('GET', `/api/youtube/jobs/${jobId(2)}`, job(jobId(2), { engine: 'v1', status: 'failed', items: [failed(all[9]!)] }))
-      await downloads.tick()
-      await flush()
-      expect(downloads.rows.value[1]).toMatchObject({
-        status: 'failed', engine: 'v1', batch: 1, total: 2, message: 'El lote 1 no se pudo descargar. Seguimos con el resto.',
-      })
-      expect(errorToasts().map(t => t.message)).toEqual(['El lote 1 no se pudo descargar. Seguimos con el resto.'])
-      // Un intento por motor y nada más; el lote 2 nace en el motor principal.
-      expect(posts()).toHaveLength(3)
-      expect(posts()[2]!.body).toEqual({ videoIds: all.slice(10), format: 'mp3' })
-      expect(downloads.rows.value[2]).toMatchObject({ batch: 2, total: 2, engine: null, status: 'queued' })
-    })
-
-    it('un trabajo de v1 que termina con fallos del motor entrega lo que salió y no encola más repeticiones', async () => {
-      const all = ids(3)
-      const downloads = useYoutubeDownloads()
-      downloads.enqueue(all, 'mp3', 'Tres')
-      await flush()
-      mockApi('GET', `/api/youtube/jobs/${jobId(1)}`, job(jobId(1), { status: 'failed', items: all.map(id => failed(id)) }))
-      mockApi('POST', '/api/youtube/jobs', () => job(jobId(++created), { engine: 'v1' }))
-      await downloads.tick()
-      await flush()
-      expect(posts()[1]!.body).toEqual({ videoIds: all, format: 'mp3', engine: 'v1' })
-
-      mockApi('GET', `/api/youtube/jobs/${jobId(2)}`, done(jobId(2), { engine: 'v1', items: [ok(all[0]!), ok(all[1]!), failed(all[2]!)] }))
-      await downloads.tick()
-      await flush()
-      expect(click).toHaveBeenCalledTimes(1)
-      expect(downloads.rows.value).toHaveLength(1)
-      expect(downloads.rows.value[0]).toMatchObject({ status: 'done', saved: true, engine: 'v1' })
-      expect(posts()).toHaveLength(2)
-      expect(errorToasts()).toEqual([])
-      expect(downloads.busy.value).toBe(false)
-    })
-
-    it('repetir el mismo gesto mientras la fila se repite en v1 no crea otra descarga', async () => {
-      const downloads = await repeatedOnV1()
-      expect(downloads.rows.value[0]).toMatchObject({ status: 'queued', engine: 'v1' })
-      expect(downloads.enqueue(['okShortVid1'], 'mp3', 'Alabanza')).toBe(1)
-      await flush()
-      expect(posts()).toHaveLength(2)
-      expect(downloads.rows.value).toHaveLength(1)
-    })
-
-    it('un grupo con videos pendientes de repetir en v1 sigue ocupado: el mismo gesto no crea otro', async () => {
-      // Estado justo entre «el lote terminó con fallos del motor» y «nació la fila que los repite».
-      useState('youtube-downloads').value = {
-        rows: [],
-        groups: [{ id: 1, key: 'mp3:okShortVid1', label: 'Alabanza', format: 'mp3', batches: [['okShortVid1']], next: 1, retries: [{ videoIds: ['okShortVid1'], batch: 1 }] }],
-      }
-      const downloads = useYoutubeDownloads()
-      expect(downloads.enqueue(['okShortVid1'], 'mp3', 'Alabanza')).toBe(1)
-      await flush()
-      expect(posts()).toHaveLength(0)
-      expect(downloads.rows.value).toHaveLength(0)
-    })
-
-    it('un trabajo de v1 que expira se prepara de nuevo desde cero: v2 primero', async () => {
-      const downloads = await repeatedOnV1()
-      const v1Polls = pollWith(jobId(2), () => {
-        throw createError({ statusCode: 404, data: { code: 'expired' } })
-      })
-      await downloads.tick()
-      expect(v1Polls).toEqual(['v1'])
-      expect(downloads.rows.value[0]).toMatchObject({ status: 'expired', engine: 'v1', message: 'Esta descarga expiró. Prepárala de nuevo.' })
-
-      mockApi('POST', '/api/youtube/jobs', () => job(jobId(++created)))
-      await downloads.retry(downloads.rows.value[0]!.id)
-      await flush()
-      expect(posts().at(-1)!.body).toEqual({ videoIds: ['okShortVid1'], format: 'mp3' })
-      expect(downloads.rows.value[0]).toMatchObject({ status: 'queued', engine: null })
+      await downloads.cancel(downloads.rows.value[0]!.id)
+      expect(queries).toEqual([{}])
+      expect(downloads.rows.value[0]!.status).toBe('cancelled')
     })
   })
 

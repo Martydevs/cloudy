@@ -9,14 +9,12 @@ import { FetchError } from 'ofetch'
 import type { FileItem, UploadTicket, YoutubeJob } from '#shared/types/api'
 import { MAX_FILE_SIZE } from '#shared/constants/files'
 import {
-  engineRetryVideoIds,
-  YOUTUBE_FALLBACK_ENGINE,
   YOUTUBE_FORMATS,
   YOUTUBE_IMPORT_REQUEST_MS,
   YOUTUBE_IMPORT_STALL_MS,
   YOUTUBE_JOB_POLL_MS,
 } from '#shared/constants/youtube'
-import type { YoutubeDriveFormat, YoutubeEngine } from '#shared/constants/youtube'
+import type { YoutubeDriveFormat } from '#shared/constants/youtube'
 import { sanitizeFileName } from '#shared/validation/files'
 
 export type DriveImportStage = 'queued' | 'preparing' | 'downloading' | 'uploading' | 'done' | 'error'
@@ -37,8 +35,8 @@ class ImportError extends Error {}
 /** La persona canceló: no es un fallo, no se avisa como tal. */
 class ImportCancelled extends ImportError {}
 
-/** El trabajo del servicio que la importación tiene abierto (id y motor), para liberarlo. */
-interface JobTrack { job: Pick<YoutubeJob, 'jobId' | 'engine'> | null }
+/** El trabajo del servicio que la importación tiene abierto, para liberarlo. */
+interface JobTrack { job: Pick<YoutubeJob, 'jobId'> | null }
 
 /** Espera máxima por la conversión del servicio (el archivo vive 30 min allí). */
 const MAX_WAIT_MS = 10 * 60_000
@@ -95,41 +93,32 @@ export function useYoutubeDriveImport() {
 
   /**
    * Crea el trabajo y espera a que el servicio termine el archivo; deja el trabajo en curso en `track` para liberarlo si
-   * algo falla. El servidor lo crea en el motor `v2` y, si ese falla al crearlo, en `v1`; si el fallo llega después,
-   * dentro del trabajo, aquí se libera y se repite en `v1` sin alargar la espera (`MAX_WAIT_MS` cuenta para los dos).
+   * algo falla.
    */
-  async function prepare(videoId: string, format: YoutubeDriveFormat, signal: AbortSignal, track: JobTrack, release: () => void): Promise<YoutubeJob> {
+  async function prepare(videoId: string, format: YoutubeDriveFormat, signal: AbortSignal, track: JobTrack): Promise<YoutubeJob> {
     const request = requester(signal)
-    async function createJob(engine?: YoutubeEngine): Promise<YoutubeJob> {
-      try {
-        const created = await request<YoutubeJob>('/api/youtube/jobs', { method: 'POST', body: { videoIds: [videoId], format, ...(engine ? { engine } : {}) } })
-        track.job = created
-        return created
-      }
-      catch (error) {
-        if (signal.aborted) throw signal.reason
-        const status = error instanceof FetchError ? error.response?.status : 0
-        // Los dos motores fallaron (502): se dice la causa. `serverMessage` solo toma el texto del servidor en un 4xx.
-        const fallback = engineFailureMessage(error) ?? m.jobFailed
-        throw new ImportError(status === 503 ? messages.youtube.service.waking : serverMessage(error, fallback, { 429: messages.youtube.service.busy }))
-      }
+    let job: YoutubeJob
+    try {
+      job = await request<YoutubeJob>('/api/youtube/jobs', { method: 'POST', body: { videoIds: [videoId], format } })
+      track.job = job
+    }
+    catch (error) {
+      if (signal.aborted) throw signal.reason
+      const status = error instanceof FetchError ? error.response?.status : 0
+      // El servicio no pudo con el video (502): se dice la causa. `serverMessage` solo toma el texto del servidor en un 4xx.
+      const fallback = serviceFailureMessage(error) ?? m.jobFailed
+      throw new ImportError(status === 503 ? messages.youtube.service.waking : serverMessage(error, fallback, { 429: messages.youtube.service.busy }))
     }
 
-    let job = await createJob()
     const deadline = Date.now() + MAX_WAIT_MS
     while (job.status !== 'done') {
-      if (job.status === 'failed' && engineRetryVideoIds(job).length > 0) {
-        release()
-        job = await createJob(YOUTUBE_FALLBACK_ENGINE)
-        continue
-      }
       // Fallo definitivo: la causa del video si el servicio la dio (privado, bloqueo anti-robots…).
       if (job.status === 'failed' || job.status === 'expired') throw new ImportError(job.items.find(item => item.error)?.error?.message ?? m.jobFailed)
       if (Date.now() > deadline) throw new ImportError(m.timeout)
       patch(videoId, { progress: job.progress })
       await withSignal(sleep(YOUTUBE_JOB_POLL_MS), signal)
       try {
-        job = await request<YoutubeJob>(`/api/youtube/jobs/${job.jobId}`, { query: { engine: job.engine } })
+        job = await request<YoutubeJob>(`/api/youtube/jobs/${job.jobId}`)
       }
       catch (error) {
         if (signal.aborted) throw signal.reason
@@ -241,11 +230,11 @@ export function useYoutubeDriveImport() {
     /** El archivo ya está en el navegador (o la importación terminó): el del servicio no hace falta ni debe ocupar su instancia. */
     const releaseJob = () => {
       if (!track.job) return
-      api(`/api/youtube/jobs/${track.job.jobId}`, { method: 'DELETE', query: { engine: track.job.engine } }).catch(() => {})
+      api(`/api/youtube/jobs/${track.job.jobId}`, { method: 'DELETE' }).catch(() => {})
       track.job = null
     }
     try {
-      const job = await prepare(videoId, format, controller.signal, track, releaseJob)
+      const job = await prepare(videoId, format, controller.signal, track)
       const blob = await download(videoId, job, controller)
       releaseJob()
       const extension = YOUTUBE_FORMATS.find(f => f.value === format)!.extension

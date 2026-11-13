@@ -1,19 +1,18 @@
 // Formatos y textos de la página YouTube (feature 005). Importa `./messages` en relativo para que el proyecto `unit`
 // de Vitest lo resuelva.
-import { YOUTUBE_ENGINES_FAILED } from '#shared/constants/youtube'
+import { YOUTUBE_SERVICE_FAILED } from '#shared/constants/youtube'
 import { messages } from './messages'
 
 /**
- * Texto de un error `engines_failed` de `/api/youtube/**` (ningún motor del servicio pudo), según su causa; `null` si
- * el error es otro. Sirve para un `FetchError` y para el `NuxtError` de `useFetch`: los dos traen el cuerpo en `data`.
- * Hace falta porque `serverMessage` solo toma el texto del servidor en un 4xx y este error es un 502.
+ * Texto de un error `service_failed` de `/api/youtube/**` (el servicio respondió pero no pudo con el video), según su
+ * causa; `null` si el error es otro. Sirve para un `FetchError` y para el `NuxtError` de `useFetch`: los dos traen el
+ * cuerpo en `data`. Hace falta porque `serverMessage` solo toma el texto del servidor en un 4xx y este error es un 502.
  */
-export function engineFailureMessage(error: unknown): string | null {
+export function serviceFailureMessage(error: unknown): string | null {
   const data = (error as { data?: { data?: { code?: unknown, cause?: unknown } } } | null | undefined)?.data?.data
-  if (data?.code !== YOUTUBE_ENGINES_FAILED) return null
+  if (data?.code !== YOUTUBE_SERVICE_FAILED) return null
   const service = messages.youtube.service
-  if (data.cause === 'botCheck') return service.botCheck
-  return data.cause === 'waking' ? service.waking : service.engineFailed
+  return data.cause === 'botCheck' ? service.botCheck : service.failed
 }
 
 /** Duración «m:ss» o «h:mm:ss»; vacía si no se conoce (en vivo). */

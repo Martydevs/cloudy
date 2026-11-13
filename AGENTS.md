@@ -219,22 +219,16 @@ Never print or commit their values.
   (`/youtube/<id>/ventana`) that autoplays the same embed. Cloudy sets no CSP, so no `frame-src` is needed. E2E run against `test/e2e/setup/cloudy-api-stub.ts` (scenario video IDs
   such as `okShortVid1`, `privateVid1`, `tooLongVid1`, `lowResVid01`; `setCloudyStubState('asleep')`) and serve `i.ytimg.com`
   thumbnails from a fixture with `routeYoutubeThumbnails(page)` and the embed iframe from a local page with `routeYoutubeEmbed(page)`.
-- YouTube engines: `cloudy-api` serves the same contract under `/v2` (pytubefix, **primary**: works around YouTube's `bot_check` on
-  datacenter IPs) and `/v1` (yt-dlp, **fallback**) and never switches by itself, so Cloudy does. `server/utils/cloudy-api.ts`
-  (`withFallback`) probes videos and creates jobs on v2 and repeats the same call on v1 when v2 answers a 5xx or a 404 without
-  `detail.code` (a deployment without `/v2`). It does **not** fall back on a network error/timeout (same host), 401/403, 429 (shared
-  queue), 422 or a 404 with a code. A job is polled and cancelled only on the engine that created it: `YoutubeJob.engine` comes back
-  from `POST /api/youtube/jobs` and travels as `?engine=` (`youtubeEngineQuery`, default `v2`) on `GET`/`DELETE /api/youtube/jobs/:id`;
-  `POST` takes an optional `engine` that forces one prefix. When a v2 job ends `failed`, or `done` with items whose `error.code` is in
-  `ENGINE_RETRY_CODES` (`engineRetryVideoIds` in `shared/constants/youtube.ts`), the browser re-creates those videos on v1: the same tray
-  row if everything failed, a new row of the same group if the rest was delivered (`useYoutubeDownloads`), and a second job inside the
-  same `MAX_WAIT_MS` for the drive import. v1 jobs never retry (no loops). If both engines fail the server answers **502**
-  `data: { code: 'engines_failed', cause: 'botCheck' | 'engineFailed', attempts }` (or the usual **503** `waking`, also with
-  `cause: 'waking'`, when the last attempt carried no service code); clients turn it into copy with `engineFailureMessage()`
-  (`app/utils/youtube.ts`), because `serverMessage()` ignores the server text on a 5xx. The engine is never shown in the UI, only in
-  server logs (`[cloudy-api] create v2 → 502 (bot_check); fallback v1`). E2E stub: every route exists under both prefixes; scenario IDs
-  `v2BotCheck1`, `bothBotChk1`, `v2ItemFail1`, `bothItemFl1`; `setCloudyStubState('v2-missing')`; `cloudyStubCalls()` returns
-  `jobsCreated: { v1, v2 }`, `createAttempts` and `probes` in order.
+- cloudy-api routes: the service exposes **unversioned** routes under `/api` (`/api/videos/{id}`, `/api/jobs`, `/api/jobs/{id}`,
+  `/api/jobs/{id}/file`, `/api/lyrics/pptx`, `/api/lyrics/pptx/batch`) and `/healthz` at the root; the old `/v1/*` and `/v2/*` answer 404.
+  `NUXT_CLOUDY_API_URL` is just the origin (no `/v1` suffix). There is a single download engine (pytubefix): `server/utils/cloudy-api.ts`
+  never retries on another prefix and the browser never re-creates failed videos by itself (no `engine` field, no `?engine=`). When the
+  service answers a 5xx **with** `detail.code` on a probe or a job creation, the server answers **502**
+  `data: { code: 'service_failed', cause: 'botCheck' | 'failed' }`; a 5xx without code (or on polling/cancelling) is the usual **503**
+  `waking`. Clients turn `service_failed` into copy with `serviceFailureMessage()` (`app/utils/youtube.ts`), because `serverMessage()`
+  ignores the server text on a 5xx. Logs carry only call, status and code (`[cloudy-api] create → 502 (bot_check)`). E2E stub: every
+  route lives under `/api`; scenario IDs `botCheckVd1` (502 `bot_check` on probe/create) and `itemBotChk1` (fails inside the job);
+  `cloudyStubCalls()` returns `jobsCreated`, `createAttempts` and `probes` as counts.
 - YouTube → drive: "Guardar en el drive" (`useYoutubeDriveImport`) moves the file **through the browser** (job in cloudy-api → `fetch` of the signed
   `downloadUrl` → the normal upload flow to the drive root), so the service's `ALLOWED_ORIGINS` must include the Cloudy origin (the e2e stub sends `access-control-allow-origin: *`).
   Files over `MAX_FILE_SIZE` (100 MB) are refused; `POST /api/uploads/:id/complete` takes an optional `source` that tags the `file.upload` activity (no new enum value).
@@ -276,7 +270,7 @@ Never print or commit their values.
   error body is parsed back into `response._data`). Functions run up to 120 s (`nitro.vercel.functions.maxDuration`); a `504` counts as transient.
   The daily cleanup deletes songs out of the history, in no collection and unchanged for 30 days. E2E run against the Apify stub (scenario slugs
   `sin-letra`, `muy-larga`, `fallo-del-run`, `sin-credito`, `redirige`, `con-tildes`; `letrasUrl(slug)`) and the `cloudy-api` stub's
-  `POST /v1/lyrics/pptx` (titles containing `vacia`, `demasiado larga`, `respaldo`).
+  `POST /api/lyrics/pptx` (titles containing `vacia`, `demasiado larga`, `respaldo`).
 - Peticiones (feature 007): the grid lists **approved** guest images (`files ⋈ guest_submissions`, `status = 'approved'`), ordered and filtered by `guest_submissions.reviewed_at`
   (approval date), keyset cursor, 12 per page; guest photos have **no thumbnail**, so each card sets `src` only when it enters the viewport. Transcript edits reuse
   `PATCH /api/files/:id/text` through `ImageTextPanel` (it now emits `change`). `POST /api/peticiones/imagenes` takes 1–4 file ids, rereads their text on the server (the browser never sends

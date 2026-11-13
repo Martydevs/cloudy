@@ -69,7 +69,7 @@ describe('US1 · pegar un enlace, ver y descargar', () => {
     expect(await meta.getByText('3:05').isVisible()).toBe(true)
     expect(await page.locator('img[src*="i.ytimg.com/vi/okShortVid1"]').count()).toBeGreaterThan(0)
     // Abrir la ficha no prepara el video: la cola de la instancia gratuita queda libre.
-    expect((await cloudyStubCalls()).jobsCreated).toEqual({ v1: 0, v2: 0 })
+    expect((await cloudyStubCalls()).jobsCreated).toBe(0)
     expect(keyHeaders).toEqual([])
     await page.close()
   })
@@ -104,8 +104,8 @@ describe('US1 · pegar un enlace, ver y descargar', () => {
     const audio = await mp3
     expect(audio.suggestedFilename()).toContain('Alabanza de prueba')
     expect(audio.suggestedFilename()).toMatch(/\.mp3$/)
-    // El archivo llega directo del servicio (de su motor principal), no de Cloudy.
-    expect(audio.url()).toMatch(/\/v2\/jobs\/[0-9a-f]{32}\/file\?exp=\d+&sig=/)
+    // El archivo llega directo del servicio, no de Cloudy.
+    expect(audio.url()).toMatch(/\/api\/jobs\/[0-9a-f]{32}\/file\?exp=\d+&sig=/)
     await expect.poll(() => page.getByRole('button', { name: 'Guardar archivo' }).isVisible()).toBe(true)
 
     const mp4 = page.waitForEvent('download')
@@ -206,7 +206,7 @@ describe('US1 · pegar un enlace, ver y descargar', () => {
     await openVideo(page, 'okShortVid1')
     await page.getByRole('button', { name: /^Reproducir/ }).click()
     await expect.poll(() => page.locator('iframe[title^="YouTube"]').count()).toBe(1)
-    expect((await cloudyStubCalls()).jobsCreated).toEqual({ v1: 0, v2: 0 })
+    expect((await cloudyStubCalls()).jobsCreated).toBe(0)
     const download = page.waitForEvent('download')
     await page.getByRole('button', { name: 'Descargar' }).click()
     await page.getByRole('menuitemradio', { name: 'Video 720p' }).click()
@@ -241,155 +241,52 @@ describe('US1 · pegar un enlace, ver y descargar', () => {
   })
 })
 
-// El servicio tiene dos motores con el mismo contrato: `v2` (principal) y `v1` (respaldo). Cloudy pasa de uno a otro
-// sin que la persona lo note; solo cuando fallan los dos ve la causa.
-describe('motores · v2 principal, v1 de respaldo', () => {
-  const tray = (page: Page) => page.getByRole('region', { name: /Descargas/ })
+// Cuando el servicio no puede con un video (p. ej. el bloqueo anti-robots de YouTube) la persona ve la causa, no el
+// aviso de «despertando». Hay un solo motor: nada se repite por su cuenta.
+describe('fallos del servicio con un video', () => {
   const trayRows = (page: Page) => page.getByRole('list', { name: 'Trabajos de descarga' }).locator('> li')
-  /** Texto de la bandeja sin el título del video (los de estos escenarios nombran el motor): ahí no debe aparecer el motor. */
-  const trayTextWithout = async (page: Page, title: string) => (await tray(page).innerText()).replaceAll(title, '')
+  const botCheck = 'YouTube bloqueó la descarga con su verificación anti-robots. Intenta de nuevo en unos minutos.'
 
-  async function downloadMp3(page: Page) {
-    const download = page.waitForEvent('download')
-    await page.getByRole('button', { name: 'Descargar' }).click()
-    await page.getByRole('menuitemradio', { name: 'Audio MP3' }).click()
-    return download
-  }
-
-  it('v2BotCheck1: YouTube bloquea a v2 al sondear y al crear → la ficha y el archivo salen de v1', async () => {
+  it('botCheckVd1: YouTube bloquea al sondear y al crear → la ficha y la descarga dicen la causa', async () => {
     await resetCloudyStub()
     const page = await editorPage()
-    await openVideo(page, 'v2BotCheck1')
-    await expect.poll(() => page.getByRole('heading', { name: 'Bloqueado solo en v2' }).isVisible()).toBe(true)
-    const file = await downloadMp3(page)
-    expect(file.suggestedFilename()).toMatch(/Bloqueado solo en v2.*\.mp3$/)
-    expect(file.url()).toMatch(/\/v1\/jobs\/[0-9a-f]{32}\/file\?exp=\d+&sig=/)
-    await expect.poll(() => page.getByRole('button', { name: 'Guardar archivo' }).isVisible()).toBe(true)
-
-    const calls = await cloudyStubCalls()
-    expect(calls.probes).toEqual(['v2', 'v1'])
-    expect(calls.createAttempts).toEqual(['v2', 'v1'])
-    expect(calls.jobsCreated).toEqual({ v1: 1, v2: 0 })
-    // El motor no se muestra: una sola fila, lista, sin avisos de fallo.
-    expect(await trayRows(page).count()).toBe(1)
-    expect(await tray(page).getByText('No se pudo descargar').count()).toBe(0)
-    expect(await trayTextWithout(page, 'Bloqueado solo en v2')).not.toMatch(/\bv[12]\b/)
-    await page.close()
-  })
-
-  it('bothBotChk1: YouTube bloquea a los dos motores → la ficha y la descarga dicen la causa', async () => {
-    await resetCloudyStub()
-    const page = await editorPage()
-    const message = 'YouTube bloqueó la descarga con su verificación anti-robots en los dos servicios. Intenta de nuevo en unos minutos.'
-    await openVideo(page, 'bothBotChk1')
-    await expect.poll(() => page.getByText(message).first().isVisible()).toBe(true)
+    await openVideo(page, 'botCheckVd1')
+    await expect.poll(() => page.getByText(botCheck).first().isVisible()).toBe(true)
     // No es el servicio dormido: se ofrece reintentar, sin el aviso de «despertando».
     expect(await page.getByRole('button', { name: 'Reintentar' }).isVisible()).toBe(true)
     expect(await page.getByText('Despertando el servicio').count()).toBe(0)
-    expect((await cloudyStubCalls()).probes).toEqual(['v2', 'v1'])
+    // Un 502 con causa no se repite solo (`retryStatusCodes` sin 502).
+    expect((await cloudyStubCalls()).probes).toBe(1)
 
     // La descarga desde el historial (sin pasar por la ficha) falla igual, con el mismo motivo.
-    await seedYoutubeVideo(await profileUserId(email('yt-editor')), 'bothBotChk1', 'Bloqueado en los dos')
+    await seedYoutubeVideo(await profileUserId(email('yt-editor')), 'botCheckVd1', 'Bloqueado por YouTube')
     await page.goto(`${E2E_URL}/youtube`)
     await waitForHydration(page)
-    await page.getByRole('button', { name: 'Acciones de Bloqueado en los dos' }).click()
+    await page.getByRole('button', { name: 'Acciones de Bloqueado por YouTube' }).click()
     await page.getByRole('menuitem', { name: 'Descargar audio MP3' }).click()
     // Las filas, no toda la bandeja: su región `sr-only` anuncia lo mismo y duplicaría la coincidencia.
-    await expect.poll(() => trayRows(page).getByText(message).isVisible(), { timeout: 15_000 }).toBe(true)
+    await expect.poll(() => trayRows(page).getByText(botCheck).isVisible(), { timeout: 15_000 }).toBe(true)
     expect(await trayRows(page).getByText('No se pudo descargar').isVisible()).toBe(true)
     const calls = await cloudyStubCalls()
-    expect(calls.createAttempts).toEqual(['v2', 'v1'])
-    expect(calls.jobsCreated).toEqual({ v1: 0, v2: 0 })
+    expect(calls.createAttempts).toBe(1)
+    expect(calls.jobsCreated).toBe(0)
     await page.close()
   })
 
-  it('v2ItemFail1: el video falla dentro del trabajo de v2 → la misma fila lo repite en v1 y entrega el archivo', async () => {
+  it('itemBotChk1: el video falla dentro del trabajo → la fila falla con la causa y no se repite', async () => {
     await resetCloudyStub()
     const page = await editorPage()
-    await openVideo(page, 'v2ItemFail1')
-    await expect.poll(() => page.getByRole('heading', { name: 'Falla dentro de v2' }).isVisible()).toBe(true)
-    const file = await downloadMp3(page)
-    expect(file.suggestedFilename()).toMatch(/Falla dentro de v2.*\.mp3$/)
-    expect(file.url()).toMatch(/\/v1\/jobs\/[0-9a-f]{32}\/file\?/)
-    await expect.poll(() => page.getByRole('button', { name: 'Guardar archivo' }).isVisible()).toBe(true)
-
-    const calls = await cloudyStubCalls()
-    expect(calls.createAttempts).toEqual(['v2', 'v1'])
-    expect(calls.jobsCreated).toEqual({ v1: 1, v2: 1 })
-    // Una sola fila, terminada: el paso por v2 no deja rastro ni avisos.
-    expect(await trayRows(page).count()).toBe(1)
-    expect(await tray(page).getByText('No se pudo descargar').count()).toBe(0)
-    expect(await page.getByRole('alert').filter({ hasText: /no se pudo|bloqueó/i }).count()).toBe(0)
-    await page.close()
-  })
-
-  it('bothItemFl1: el video falla dentro del trabajo en los dos motores → la fila falla con la causa y no se repite más', async () => {
-    await resetCloudyStub()
-    const page = await editorPage()
-    await openVideo(page, 'bothItemFl1')
-    await expect.poll(() => page.getByRole('heading', { name: 'Falla dentro de los dos' }).isVisible()).toBe(true)
+    await openVideo(page, 'itemBotChk1')
+    await expect.poll(() => page.getByRole('heading', { name: 'Bloqueado dentro del trabajo' }).isVisible()).toBe(true)
     await page.getByRole('button', { name: 'Descargar' }).click()
     await page.getByRole('menuitemradio', { name: 'Audio MP3' }).click()
     await expect.poll(() => trayRows(page).getByText('No se pudo descargar').isVisible(), { timeout: 20_000 }).toBe(true)
-    expect(await trayRows(page).getByText('YouTube bloqueó la descarga con su verificación anti-robots. Intenta de nuevo en unos minutos.').count()).toBe(1)
+    expect(await trayRows(page).getByText(botCheck).count()).toBe(1)
     expect(await page.getByRole('button', { name: 'Preparar de nuevo' }).isVisible()).toBe(true)
-    // Un intento por motor y nada más: v1 no vuelve a v2.
     const calls = await cloudyStubCalls()
-    expect(calls.createAttempts).toEqual(['v2', 'v1'])
-    expect(calls.jobsCreated).toEqual({ v1: 1, v2: 1 })
+    expect(calls.createAttempts).toBe(1)
+    expect(calls.jobsCreated).toBe(1)
     expect(await trayRows(page).count()).toBe(1)
-    await page.close()
-  })
-
-  it('un servicio desplegado sin /v2 sigue sirviendo la ficha y las descargas por v1', async () => {
-    await resetCloudyStub()
-    await setCloudyStubState('v2-missing')
-    const page = await editorPage()
-    await openVideo(page, 'okShortVid1')
-    await expect.poll(() => page.getByRole('heading', { name: 'Alabanza de prueba' }).isVisible()).toBe(true)
-    const file = await downloadMp3(page)
-    expect(file.suggestedFilename()).toMatch(/\.mp3$/)
-    expect(file.url()).toMatch(/\/v1\/jobs\/[0-9a-f]{32}\/file\?/)
-    await expect.poll(() => page.getByRole('button', { name: 'Guardar archivo' }).isVisible()).toBe(true)
-    expect((await cloudyStubCalls()).jobsCreated).toEqual({ v1: 1, v2: 0 })
-    await page.close()
-  })
-
-  it('una selección con un video que falla dentro de v2: se entrega el .zip del resto y una segunda fila lo trae de v1', async () => {
-    await resetCloudyStub()
-    const page = await editorPage()
-    const viewer = await profileUserId(email('yt-editor'))
-    await seedYoutubeVideo(viewer, 'lowResVid01', 'Video en baja calidad')
-    await seedYoutubeVideo(viewer, 'v2ItemFail1', 'Falla dentro de v2')
-    await page.goto(`${E2E_URL}/youtube`)
-    await waitForHydration(page)
-    // Los dos archivos llegan solos, uno tras otro: se anotan en vez de esperar cada uno por separado.
-    const files: { name: string, url: string }[] = []
-    page.on('download', download => files.push({ name: download.suggestedFilename(), url: download.url() }))
-
-    await page.getByLabel('Seleccionar Video en baja calidad', { exact: true }).check()
-    await page.getByLabel('Seleccionar Falla dentro de v2', { exact: true }).check()
-    const bar = page.getByRole('region', { name: 'Selección' })
-    await expect.poll(() => bar.getByText('2 seleccionados').isVisible()).toBe(true)
-    await bar.getByRole('button', { name: 'Descargar selección' }).click()
-    await page.getByRole('menuitemradio', { name: 'Audio MP3' }).click()
-
-    await expect.poll(() => files.length, { timeout: 30_000 }).toBe(2)
-    // Primero el lote de v2 con lo que salió bien; después, el video que falló, ya desde v1.
-    expect(files[0]!.name).toMatch(/^cloudy-batch-[0-9a-f]{8}\.zip$/)
-    expect(files[0]!.url).toMatch(/\/v2\/jobs\/[0-9a-f]{32}\/file\?/)
-    expect(files[1]!.name).toMatch(/Falla dentro de v2.*\.mp3$/)
-    expect(files[1]!.url).toMatch(/\/v1\/jobs\/[0-9a-f]{32}\/file\?/)
-
-    const calls = await cloudyStubCalls()
-    expect(calls.createAttempts).toEqual(['v2', 'v1'])
-    expect(calls.jobsCreated).toEqual({ v1: 1, v2: 1 })
-    expect(calls.formats).toEqual(['mp3', 'mp3'])
-    // Dos filas terminadas en la bandeja y ninguna descarga fallida; el motor no se muestra.
-    await expect.poll(() => page.getByRole('button', { name: 'Guardar archivo' }).count()).toBe(2)
-    expect(await trayRows(page).count()).toBe(2)
-    expect(await tray(page).getByText('No se pudo descargar').count()).toBe(0)
-    expect(await trayTextWithout(page, 'Falla dentro de v2')).not.toMatch(/\bv[12]\b/)
     await page.close()
   })
 })

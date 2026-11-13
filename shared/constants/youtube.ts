@@ -3,19 +3,10 @@
 
 export type YoutubeFormat = 'mp4_720' | 'mp4_1080' | 'mp3'
 
-/**
- * Motor del servicio de descargas: `v2` (pytubefix, esquiva el `bot_check` de YouTube en IPs de centros de datos) es
- * el principal y `v1` (yt-dlp) el respaldo. Mismo contrato en ambos; el servicio no cambia de motor por su cuenta.
- */
-export const YOUTUBE_ENGINES = ['v2', 'v1'] as const
-export type YoutubeEngine = (typeof YOUTUBE_ENGINES)[number]
-export const YOUTUBE_PRIMARY_ENGINE: YoutubeEngine = 'v2'
-export const YOUTUBE_FALLBACK_ENGINE: YoutubeEngine = 'v1'
-
-/** Código (`data.code`) del error cuando ningún motor pudo crear el trabajo o sondear el video. */
-export const YOUTUBE_ENGINES_FAILED = 'engines_failed'
+/** Código (`data.code`) del 502 cuando el servicio respondió pero no pudo crear el trabajo o sondear el video. */
+export const YOUTUBE_SERVICE_FAILED = 'service_failed'
 /** Su causa (`data.cause`): cada una tiene su texto en `YOUTUBE_SERVICE_MESSAGES` y en `messages.youtube.service`. */
-export type YoutubeEngineFailure = 'botCheck' | 'engineFailed' | 'waking'
+export type YoutubeServiceFailure = 'botCheck' | 'failed'
 
 /** Motivos de `downloadable: false` del servicio más los códigos de error de video de la sonda (research D10). */
 export type YoutubeBlockReason =
@@ -86,8 +77,8 @@ export const YOUTUBE_SERVICE_MESSAGES = {
   videoNotFound: 'No encontramos ese video. Revisa el enlace.',
   rejected: 'Algunos videos no se pueden descargar. Quítalos e inténtalo de nuevo.',
   invalid: 'El servicio de descargas no aceptó la petición. Inténtalo de nuevo.',
-  botCheck: 'YouTube bloqueó la descarga con su verificación anti-robots en los dos servicios. Intenta de nuevo en unos minutos.',
-  engineFailed: 'Los dos servicios de descarga fallaron con este video. Intenta de nuevo más tarde.',
+  botCheck: 'YouTube bloqueó la descarga con su verificación anti-robots. Intenta de nuevo en unos minutos.',
+  failed: 'El servicio de descargas no pudo con este video. Intenta de nuevo más tarde.',
 } as const
 
 /** Error de un video dentro de un trabajo o de la sonda: qué pasó y qué hacer. */
@@ -128,31 +119,6 @@ export function isBlockReason(value: unknown): value is YoutubeBlockReason {
 export function itemErrorMessage(code: string | null | undefined): string {
   if (code && isBlockReason(code)) return BLOCK_REASON_MESSAGES[code]
   return (code && ITEM_ERROR_MESSAGES[code]) || ITEM_ERROR_MESSAGES.internal!
-}
-
-/**
- * Códigos de un video que apuntan al motor y no al video: con ellos vale la pena repetir la descarga en el otro motor.
- * Los demás (`private`, `unavailable`, `age_restricted`, `members_only`, `geo_restricted`, `live`, `cancelled`,
- * `too_long`) darían la misma respuesta en los dos.
- */
-export const ENGINE_RETRY_CODES: readonly string[] = ['bot_check', 'download_failed', 'ffmpeg_missing', 'format_unavailable', 'internal']
-
-/** Lo mínimo de un trabajo para decidir el reintento (`YoutubeJob` lo cumple). */
-export interface EngineRetryJob {
-  engine: YoutubeEngine
-  items: readonly { videoId: string, status: string, error: { code: string } | null }[]
-}
-
-/**
- * Videos de un trabajo terminado (`failed`, o `done` con fallos) que hay que repetir en `v1`: los que fallaron con un
- * código de `ENGINE_RETRY_CODES`. Un trabajo de `v1` nunca se repite (sin ciclos).
- */
-export function engineRetryVideoIds(job: EngineRetryJob): string[] {
-  if (job.engine !== YOUTUBE_PRIMARY_ENGINE) return []
-  const ids = job.items
-    .filter(item => item.status === 'failed' && item.error !== null && ENGINE_RETRY_CODES.includes(item.error.code))
-    .map(item => item.videoId)
-  return [...new Set(ids)]
 }
 
 /** Parte una lista de IDs en lotes de `size` sin perder ni repetir ninguno. */

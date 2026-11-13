@@ -304,21 +304,21 @@ async function cloudyStubRequest<T>(path: string, body?: unknown): Promise<T> {
   return res.json() as Promise<T>
 }
 
-/** Lo que el stub recibió (`cloudy-api-stub.ts`): trabajos aceptados por motor y el orden de los intentos (v2 → v1). */
+/** Lo que el stub recibió (`cloudy-api-stub.ts`): trabajos aceptados, intentos de crear y sondas. */
 export interface CloudyStubCalls {
-  jobsCreated: { v1: number, v2: number }
-  createAttempts: ('v1' | 'v2')[]
-  probes: ('v1' | 'v2')[]
+  jobsCreated: number
+  createAttempts: number
+  probes: number
   unauthorized: number
   formats: string[]
   /** Presentaciones pedidas (feature 006): título y color de letra recibidos. */
   pptx: { title: string, fontColor: string | null, html: string }[]
-  /** Lotes pedidos (`POST /v1/lyrics/pptx/batch`): las canciones de cada uno, en orden. */
+  /** Lotes pedidos (`POST /api/lyrics/pptx/batch`): las canciones de cada uno, en orden. */
   pptxBatch: { title: string, fontColor: string | null, html: string }[][]
 }
 
 /** `asleep`: el stub responde 502 a todo, como Render mientras levanta la instancia. */
-export const setCloudyStubState = (state: 'up' | 'asleep' | 'degraded' | 'v2-missing') => cloudyStubRequest('/__stub/state', { state })
+export const setCloudyStubState = (state: 'up' | 'asleep' | 'degraded') => cloudyStubRequest('/__stub/state', { state })
 export const cloudyStubCalls = () => cloudyStubRequest<CloudyStubCalls>('/__stub/calls')
 export const resetCloudyStub = () => cloudyStubRequest('/__stub/reset', {})
 
@@ -355,7 +355,7 @@ export async function seedYoutubeHistory(viewer: string, count: number, prefix =
   return ids
 }
 
-/** Deja en el historial un video concreto (un escenario del stub, p. ej. `bothBotChk1`) como lo más reciente. */
+/** Deja en el historial un video concreto (un escenario del stub, p. ej. `botCheckVd1`) como lo más reciente. */
 export async function seedYoutubeVideo(viewer: string, videoId: string, title: string): Promise<void> {
   await testSql().query(
     `INSERT INTO youtube_videos (video_id, title, channel, duration_seconds, thumbnail_url, last_viewed_at, last_viewed_by)

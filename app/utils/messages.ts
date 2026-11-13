@@ -193,9 +193,9 @@ export const messages = {
       busy: 'El servicio está ocupado. Intenta de nuevo en un momento.',
       down: 'El servicio de descargas no está disponible ahora. Reintenta en unos minutos.',
       notConfigured: 'El servicio de descargas no está configurado. Avisa a un administrador.',
-      /** Los dos motores del servicio fallaron (`engines_failed`): mismo texto que responde el servidor. */
+      /** El servicio no pudo con el video (`service_failed`): mismo texto que responde el servidor. */
       botCheck: YOUTUBE_SERVICE_MESSAGES.botCheck,
-      engineFailed: YOUTUBE_SERVICE_MESSAGES.engineFailed,
+      failed: YOUTUBE_SERVICE_MESSAGES.failed,
     },
     load: {
       video: `No pudimos cargar el video. ${CONNECTION}`,

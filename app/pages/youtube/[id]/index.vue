@@ -23,9 +23,9 @@ const service = useYoutubeService()
 const { data: video, error, pending, refresh } = useApiFetch<YoutubeVideoDetail>(() => `/api/youtube/videos/${videoId.value}`, {
   server: false,
   lazy: true,
-  // ofetch repite un GET una vez ante 408/409/425/429/500/502/503/504. Aquí el 502 es `engines_failed`: cada sonda ya
-  // probó los dos motores, así que repetirla al instante golpea otra vez a un servicio que acaba de fallar dos veces
-  // (el usuario reintenta con el botón). El resto, en especial el 503 del servicio dormido, conserva su reintento.
+  // ofetch repite un GET una vez ante 408/409/425/429/500/502/503/504. Aquí el 502 es `service_failed`: el servicio
+  // respondió y dijo por qué no pudo (p. ej. el bloqueo anti-robots), así que repetirlo al instante no ayuda (el usuario
+  // reintenta con el botón). El resto, en especial el 503 del servicio dormido, conserva su reintento.
   retryStatusCodes: [408, 409, 425, 429, 500, 503, 504],
 })
 useHead({ title: () => `${video.value?.title ?? 'Video'} · YouTube · Cloudy` })
@@ -40,8 +40,8 @@ const videoError = computed(() => {
   const code = body?.data?.code
   return isBlockReason(code) ? BLOCK_REASON_MESSAGES[code] : body?.message || messages.youtube.load.video
 })
-// Los dos motores del servicio fallaron con este video (502): se dice la causa, no un error genérico de carga.
-const loadError = computed(() => (error.value && !video.value ? engineFailureMessage(error.value) : null) ?? messages.youtube.load.video)
+// El servicio no pudo con este video (502): se dice la causa, no un error genérico de carga.
+const loadError = computed(() => (error.value && !video.value ? serviceFailureMessage(error.value) : null) ?? messages.youtube.load.video)
 
 // Servicio dormido: se muestra el aviso y, en cuanto despierta, la ficha se vuelve a pedir sola (SC-010).
 watch(sleeping, (asleep) => {

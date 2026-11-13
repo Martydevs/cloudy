@@ -2,13 +2,11 @@
 // (research D13). Cliente y servidor usan las mismas reglas.
 import {
   YOUTUBE_DRIVE_FORMATS,
-  YOUTUBE_ENGINES,
   YOUTUBE_FORMAT_VALUES,
   YOUTUBE_HISTORY_MAX_LIMIT,
   YOUTUBE_HISTORY_PAGE,
   YOUTUBE_MAX_BATCH,
   YOUTUBE_PLAYLIST_NAME_MAX,
-  YOUTUBE_PRIMARY_ENGINE,
   YOUTUBE_VIDEO_ID_RE,
 } from '../constants/youtube'
 import type { Field } from './core'
@@ -41,21 +39,9 @@ function videoIdList(): Field<string[]> {
 
 export const playlistName = () => str({ max: YOUTUBE_PLAYLIST_NAME_MAX })
 
-const engine = () => oneOf(YOUTUBE_ENGINES, 'Motor no válido')
-
-/** `engine` opcional: sin él, el servidor prueba `v2` y, si falla el motor, `v1`; con él, usa solo ese. */
 export const youtubeJobInput = object({
   videoIds: videoIdList(),
   format: oneOf(YOUTUBE_FORMAT_VALUES as readonly ['mp4_720', 'mp4_1080', 'mp3'], 'Formato no válido'),
-  engine: optional(engine()),
-})
-
-/** `?engine=` de consultar o cancelar un trabajo: el motor que lo creó (`v2` si no se dice). */
-export const youtubeEngineQuery = object({
-  engine: (input: unknown) => {
-    const res = optional(engine())(input)
-    return res.ok ? { ok: true as const, value: res.value ?? YOUTUBE_PRIMARY_ENGINE } : res
-  },
 })
 
 /** Origen de un archivo que se importó de YouTube al drive: queda en los metadatos del registro de actividad. */

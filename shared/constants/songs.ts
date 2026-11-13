@@ -1,7 +1,7 @@
 // Reglas de la página Canciones (feature 006, data-model.md § Constantes) que usan cliente y servidor: límites de la
 // letra y de los nombres, tamaños de página y textos en español por código de error (contracts/ui.md § Textos).
 
-/** Límite del servicio de presentaciones (`POST /v1/lyrics/pptx`): más líneas no parece una canción. */
+/** Límite del servicio de presentaciones (`POST /api/lyrics/pptx`): más líneas no parece una canción. */
 export const LYRICS_MAX_LINES = 300
 /** Límite del servicio sobre el HTML que se le envía. */
 export const LYRICS_MAX_CHARS = 500_000

@@ -1,4 +1,4 @@
-// Generar hasta 3 presentaciones en una sola petición (lote de `POST /v1/lyrics/pptx/batch` en cloudy-api). Cuerpo
+// Generar hasta 3 presentaciones en una sola petición (lote de `POST /api/lyrics/pptx/batch` en cloudy-api). Cuerpo
 // `{ songIds }`. Cada canción se revisa aquí igual que en `[id]/pptx.post.ts` (existe, tiene letra, `lyricsWithinLimits`);
 // solo las válidas van al servicio, que las genera de una en una. Éxito parcial: responde el `.zip` (solo los `.pptx`, sin
 // el `manifest.json` del servicio) con las logradas y el resultado de cada canción, en el orden pedido, en la cabecera

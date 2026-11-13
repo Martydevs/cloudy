@@ -1,7 +1,7 @@
 // DTOs del contrato HTTP (specs/001-shared-media-drive/contracts/api.md).
 import type { FileCategory } from '../constants/files'
 import type { Role } from '../permissions'
-import type { YoutubeBlockReason, YoutubeEngine, YoutubeFormat } from '../constants/youtube'
+import type { YoutubeBlockReason, YoutubeFormat } from '../constants/youtube'
 import type { SongPresentationItemError } from '../constants/songs'
 
 export type UserStatus = 'pending' | 'active' | 'disabled' | 'removed'
@@ -265,7 +265,7 @@ export interface PrayerImageCollectionDetail extends PrayerImageCollection { ite
 
 // ---------------------------------------------------------------- YouTube (feature 005, data-model § DTOs)
 
-export type { YoutubeBlockReason, YoutubeEngine, YoutubeFormat } from '../constants/youtube'
+export type { YoutubeBlockReason, YoutubeFormat } from '../constants/youtube'
 
 export interface YoutubePerson { userId: string, name: string, active: boolean }
 
@@ -315,8 +315,6 @@ export interface YoutubeJobItem {
 }
 export interface YoutubeJob {
   jobId: string
-  /** Motor que lo creó: el trabajo se consulta y se cancela con `?engine=` (su enlace sale del mismo prefijo). */
-  engine: YoutubeEngine
   status: YoutubeJobStatus
   format: YoutubeFormat
   /** 0–100. */

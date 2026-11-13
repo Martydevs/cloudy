@@ -160,15 +160,15 @@ describe('arquitectura de la feature 002', () => {
     expect(youtube.length).toBeGreaterThan(0)
     const offenders = youtube.filter(f => /\b(\$?fetch|ofetch)\s*\(/.test(f.code)).map(f => f.path)
     expect(offenders).toEqual([])
-    // En server/, solo la frontera habla con el servicio: `/v1/…`, `/v2/…`, `/${motor}/…` o `/healthz`.
+    // En server/, solo la frontera habla con el servicio: `/api/videos…`, `/api/jobs…` o `/healthz`.
     const callers = files
-      .filter(f => f.path.startsWith('server/') && /['"`]\/((v1|v2|\$\{\w+\})\/(videos|jobs)|healthz)/.test(f.code))
+      .filter(f => f.path.startsWith('server/') && /['"`]\/(api\/(videos|jobs)|healthz)/.test(f.code))
       .map(f => f.path)
     expect(callers).toEqual([BOUNDARY])
-    // Y la frontera arma las rutas con el motor: ninguna queda fija en `/v1` (el respaldo se decide en un solo lugar).
+    // Y la frontera ya no usa las rutas versionadas que el servicio quitó (`/v1/…`, `/v2/…` responden 404).
     const boundary = files.find(f => f.path === BOUNDARY)!.code
-    expect(boundary).toMatch(/`\/\$\{\w+\}\/jobs/)
-    expect(boundary).not.toMatch(/['"`]\/v[12]\/(videos|jobs)/)
+    expect(boundary).toMatch(/['"`]\/api\/jobs/)
+    expect(boundary).not.toMatch(/['"`]\/(v[12]|\$\{\w+\})\/(videos|jobs|lyrics)/)
   })
 
   // Feature 006 (research D1): una sola puerta a Apify; el parser de la letra es puro.
@@ -202,7 +202,7 @@ describe('arquitectura de la feature 002', () => {
     const offenders = songs.filter(f => /\b(\$?fetch|ofetch)\s*\(|ApifyClient/.test(f.code)).map(f => f.path)
     expect(offenders).toEqual([])
     // En server/, solo la frontera de cloudy-api habla con el servicio de presentaciones.
-    const callers = files.filter(f => f.path.startsWith('server/') && /['"`]\/v1\/lyrics/.test(f.code)).map(f => f.path)
+    const callers = files.filter(f => f.path.startsWith('server/') && /['"`]\/api\/lyrics/.test(f.code)).map(f => f.path)
     expect(callers).toEqual([BOUNDARY])
   })
 

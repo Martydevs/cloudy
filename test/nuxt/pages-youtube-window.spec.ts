@@ -108,10 +108,10 @@ describe('/youtube/:id', () => {
   })
 
   it.each([
-    ['botCheck', 'YouTube bloqueó la descarga con su verificación anti-robots en los dos servicios'],
-    ['engineFailed', 'Los dos servicios de descarga fallaron con este video'],
-  ])('si los dos motores del servicio fallan (%s), dice la causa en vez de un error genérico y deja reintentar', async (cause, text) => {
-    mockApi('GET', '/api/youtube/videos/okShortVid1', failWith(502, { code: 'engines_failed', cause, attempts: [] }))
+    ['botCheck', 'YouTube bloqueó la descarga con su verificación anti-robots. Intenta de nuevo en unos minutos.'],
+    ['failed', 'El servicio de descargas no pudo con este video'],
+  ])('si el servicio no puede con el video (%s), dice la causa en vez de un error genérico y deja reintentar', async (cause, text) => {
+    mockApi('GET', '/api/youtube/videos/okShortVid1', failWith(502, { code: 'service_failed', cause }))
     const wrapper = await mountSuspended(VideoPage, { route: '/youtube/okShortVid1' })
     await flush(10)
     expect(wrapper.text()).toContain(text)

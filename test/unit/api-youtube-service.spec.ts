@@ -13,8 +13,8 @@ const JOB = 'b'.repeat(32)
 function boundary(overrides: Record<string, unknown> = {}) {
   return {
     pingService: vi.fn(async () => ({ state: 'up' })),
-    createJob: vi.fn(async () => ({ jobId: JOB, status: 'queued', engine: 'v2' })),
-    getJob: vi.fn(async (_id: string, engine: string) => ({ jobId: JOB, engine, status: 'done', downloadUrl: 'https://svc/file', filename: 'a.mp3', sizeBytes: 10, expiresAt: '2026-11-03T12:00:00.000Z' })),
+    createJob: vi.fn(async () => ({ jobId: JOB, status: 'queued' })),
+    getJob: vi.fn(async () => ({ jobId: JOB, status: 'done', downloadUrl: 'https://svc/file', filename: 'a.mp3', sizeBytes: 10, expiresAt: '2026-11-03T12:00:00.000Z' })),
     cancelJob: vi.fn(async () => {}),
     ...overrides,
   }
@@ -48,28 +48,25 @@ describe('POST /api/youtube/jobs', () => {
     const event = makeEvent({ body: { videoIds: ['okShortVid1', 'lowResVid01', 'okShortVid1'], format: 'mp3' } })
     const job = await handler(event) as { status: string, items: { videoId: string, status: string }[], downloadUrl: null }
     expect(event.node.res.statusCode).toBe(202)
-    expect(job).toMatchObject({ jobId: JOB, engine: 'v2', status: 'queued', format: 'mp3', progress: 0, downloadUrl: null })
+    expect(job).toEqual(expect.objectContaining({ jobId: JOB, status: 'queued', format: 'mp3', progress: 0, downloadUrl: null }))
+    expect(job).not.toHaveProperty('engine')
     expect(job.items.map(i => [i.videoId, i.status])).toEqual([['okShortVid1', 'queued'], ['lowResVid01', 'queued']])
-    // Sin `engine` en el cuerpo, la frontera elige: v2 y, si falla, v1.
-    expect(mocks.createJob).toHaveBeenCalledWith(['okShortVid1', 'lowResVid01'], 'mp3', event, undefined)
+    expect(mocks.createJob).toHaveBeenCalledWith(['okShortVid1', 'lowResVid01'], 'mp3', event)
   })
 
-  it('con `engine` en el cuerpo usa solo ese motor y responde el motor que creó el trabajo', async () => {
-    const mocks = boundary({ createJob: vi.fn(async (_ids: string[], _format: string, _event: unknown, engine?: string) => ({ jobId: JOB, status: 'queued', engine: engine ?? 'v1' })) })
+  it('un `engine` de un cliente viejo se ignora: no hay motores que elegir', async () => {
+    const mocks = boundary()
     installNitro([], mocks)
     const handler = await loadHandler('api/youtube/jobs/index.post.ts')
-    const forced = makeEvent({ body: { videoIds: ['okShortVid1'], format: 'mp3', engine: 'v1' } })
-    expect(await handler(forced)).toMatchObject({ jobId: JOB, engine: 'v1' })
-    expect(mocks.createJob).toHaveBeenCalledWith(['okShortVid1'], 'mp3', forced, 'v1')
-    // Sin `engine`, si la frontera tuvo que pasar a v1, el trabajo lo dice: con ese motor se consulta después.
-    expect(await handler(makeEvent({ body: { videoIds: ['okShortVid1'], format: 'mp3' } }))).toMatchObject({ engine: 'v1' })
+    const event = makeEvent({ body: { videoIds: ['okShortVid1'], format: 'mp3', engine: 'v1' } })
+    expect(await handler(event)).toMatchObject({ jobId: JOB, status: 'queued' })
+    expect(mocks.createJob).toHaveBeenCalledWith(['okShortVid1'], 'mp3', event)
   })
 
   it.each([
     [{ videoIds: [], format: 'mp3' }],
     [{ videoIds: Array.from({ length: 11 }, (_, i) => `video${String(i).padStart(6, '0')}`), format: 'mp3' }],
     [{ videoIds: ['okShortVid1'], format: 'webm' }],
-    [{ videoIds: ['okShortVid1'], format: 'mp3', engine: 'v3' }],
   ])('422 con un cuerpo inválido sin llamar al servicio (%#)', async (body) => {
     const mocks = boundary()
     installNitro([], mocks)
@@ -83,7 +80,7 @@ describe('POST /api/youtube/jobs', () => {
     [429, { retryAfter: 30 }],
     [503, { state: 'waking' }],
     [502, undefined],
-    [502, { code: 'engines_failed', cause: 'botCheck', attempts: [{ engine: 'v2', status: 502, code: 'bot_check' }, { engine: 'v1', status: 502, code: 'bot_check' }] }],
+    [502, { code: 'service_failed', cause: 'botCheck' }],
   ])('propaga el %i de la frontera', async (status, data) => {
     installNitro([], boundary({ createJob: vi.fn(async () => { throw serviceError(status, data) }) }))
     const handler = await loadHandler('api/youtube/jobs/index.post.ts')
@@ -105,19 +102,7 @@ describe('GET /api/youtube/jobs/:jobId', () => {
     const event = makeEvent({ params: { jobId: JOB } })
     expect(await handler(event)).toMatchObject({ status: 'done', downloadUrl: 'https://svc/file', filename: 'a.mp3', sizeBytes: 10, expiresAt: '2026-11-03T12:00:00.000Z' })
     expect(event.node.res.getHeader('Cache-Control')).toBe('no-store')
-    // Sin `?engine=` se consulta el motor principal.
-    expect(mocks.getJob).toHaveBeenCalledWith(JOB, 'v2', event)
-  })
-
-  it('`?engine=` elige el prefijo del trabajo; un motor desconocido es 422 sin llamar al servicio', async () => {
-    const mocks = boundary()
-    installNitro([], mocks)
-    const handler = await loadHandler('api/youtube/jobs/[jobId].get.ts')
-    const event = makeEvent({ params: { jobId: JOB }, url: `/api/youtube/jobs/${JOB}?engine=v1` })
-    expect(await handler(event)).toMatchObject({ engine: 'v1', status: 'done' })
-    expect(mocks.getJob).toHaveBeenCalledWith(JOB, 'v1', event)
-    await expectStatus(Promise.resolve().then(() => handler(makeEvent({ params: { jobId: JOB }, url: `/api/youtube/jobs/${JOB}?engine=v9` }))), 422)
-    expect(mocks.getJob).toHaveBeenCalledTimes(1)
+    expect(mocks.getJob).toHaveBeenCalledWith(JOB, event)
   })
 
   it('404 sin llamar al servicio si el ID no tiene forma; 404 expired si el servicio lo olvidó', async () => {
@@ -140,13 +125,7 @@ describe('DELETE /api/youtube/jobs/:jobId', () => {
     const event = makeEvent({ method: 'DELETE', params: { jobId: JOB } })
     expect(await handler(event)).toBeNull()
     expect(event.node.res.statusCode).toBe(204)
-    expect(mocks.cancelJob).toHaveBeenCalledWith(JOB, 'v2', event)
-    // Un trabajo de v1 se cancela en v1; un motor desconocido no llega al servicio.
-    const fallback = makeEvent({ method: 'DELETE', params: { jobId: JOB }, url: `/api/youtube/jobs/${JOB}?engine=v1` })
-    await handler(fallback)
-    expect(mocks.cancelJob).toHaveBeenLastCalledWith(JOB, 'v1', fallback)
-    await expectStatus(Promise.resolve().then(() => handler(makeEvent({ method: 'DELETE', params: { jobId: JOB }, url: `/api/youtube/jobs/${JOB}?engine=x` }))), 422)
-    expect(mocks.cancelJob).toHaveBeenCalledTimes(2)
+    expect(mocks.cancelJob).toHaveBeenCalledWith(JOB, event)
     await expectStatus(Promise.resolve().then(() => handler(makeEvent({ method: 'DELETE', params: { jobId: 'x' } }))), 404)
     await expectGuarded(handler, { method: 'DELETE', params: { jobId: JOB } })
   })
