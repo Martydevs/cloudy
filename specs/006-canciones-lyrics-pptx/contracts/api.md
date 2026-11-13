@@ -146,7 +146,7 @@ export interface LyricsPptx { bytes: Uint8Array; contentDisposition: string | nu
 export async function createLyricsPptx(input: { html: string; title: string }): Promise<LyricsPptx>
 ```
 
-- `POST {cloudyApiUrl}/v1/lyrics/pptx`, `X-API-Key`, cuerpo `{ html, title, font_color: SONG_FONT_COLOR }` (`'FFFFFF'`, D12), plazo `CLOUDY_API_TIMEOUTS.pptx = 90_000`.
+- `POST {cloudyApiUrl}/api/lyrics/pptx`, `X-API-Key`, cuerpo `{ html, title, font_color: SONG_FONT_COLOR }` (`'FFFFFF'`, D12), plazo `CLOUDY_API_TIMEOUTS.pptx = 90_000`.
 - Lee los bytes con `arrayBuffer()` y las cabeceras `content-disposition`, `x-slide-count`, `x-lyrics-arranged-by` (valores desconocidos → `null`).
 - Errores y mapeo: [research D9](../research.md). `fail()` gana el caso `'pptx'` sin cambiar los existentes.
 
@@ -156,9 +156,9 @@ export interface LyricsPptxBatch { zip: Uint8Array | null; items: LyricsBatchIte
 export async function createLyricsPptxBatch(inputs: readonly { html: string; title: string }[]): Promise<LyricsPptxBatch>
 ```
 
-- `POST {cloudyApiUrl}/v1/lyrics/pptx/batch`, cuerpo `{ items: [{ html, title, font_color: 'FFFFFF' }] }`, plazo `CLOUDY_API_TIMEOUTS.pptxBatch = 110_000` (bajo los 120 s de Vercel).
-  Ese presupuesto depende de que el servicio reparta con el LLM bajo un solo plazo de 45 s por lote (`LYRICS_BATCH_DEADLINE_SECONDS` en Render, después usa el reparto de respaldo):
-  arranque en frío (~50 s) + 45 s + 3 renders ≈ 100 s. Si ese plazo sube en Render hay que revisar los 110 s.
+- `POST {cloudyApiUrl}/api/lyrics/pptx/batch`, cuerpo `{ items: [{ html, title, font_color: 'FFFFFF' }] }`, plazo `CLOUDY_API_TIMEOUTS.pptxBatch = 110_000` (bajo los 120 s de Vercel).
+  Ese presupuesto depende de que el servicio reparta con el LLM bajo un solo plazo de 45 s por lote (`LYRICS_BATCH_DEADLINE_SECONDS` en Railway, después usa el reparto de respaldo):
+  arranque en frío (~50 s) + 45 s + 3 renders ≈ 100 s. Si ese plazo sube en Railway hay que revisar los 110 s.
 - Lee el `manifest.json` del `.zip` con `readZipEntry` y lo quita con `withoutZipEntry` (`server/utils/zip.ts`, sin dependencias); `zip` es el archivo sin el manifest.
 - Los índices del manifest deben ser exactamente `0..n-1`, cada uno una vez (`coversEveryInput`), también en `422 all_items_failed`. Un cuerpo que no es zip, sin manifest,
   con JSON roto, con índices que no cuadran o un zip que no se puede reescribir → `502 misconfigured` (despliegue desalineado, no se reintenta). Un cuerpo que se corta a

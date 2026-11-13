@@ -2,7 +2,7 @@
 
 **Branch**: `006-canciones-lyrics-pptx` | **Date**: 2026-11-05 | **Spec**: [spec.md](./spec.md)
 
-**Input**: Feature specification from `specs/006-canciones-lyrics-pptx/spec.md` · Contrato del servicio de presentaciones: `frontend-lyrics-pptx.md` y `http://localhost:8000/docs` (`POST /v1/lyrics/pptx`) · Rastreo: actor `apify/rag-web-browser` mediante el SDK `apify-client` ya instalado
+**Input**: Feature specification from `specs/006-canciones-lyrics-pptx/spec.md` · Contrato del servicio de presentaciones: `frontend-lyrics-pptx.md` y `http://localhost:8000/docs` (`POST /api/lyrics/pptx`) · Rastreo: actor `apify/rag-web-browser` mediante el SDK `apify-client` ya instalado
 
 ## Summary
 
@@ -15,7 +15,7 @@ con generación por lotes. Es la misma forma de la feature 005 (YouTube) con otr
 - **Dos fronteras con proveedores**, una por servicio (Constitución IV), ambas en `server/utils/`:
   - `lyrics-crawler.ts` — **única** que importa `apify-client` y lee `apifyApiKey`/`apifyBaseUrl`: lanza el actor con `client.actor('apify/rag-web-browser').call(...)`, lee su dataset y traduce los fallos
     a errores en español (research D1–D3).
-  - `cloudy-api.ts` — frontera **existente**; se le agrega `createLyricsPptx` y el mapeo de errores de `POST /v1/lyrics/pptx` (D9). Sin módulo nuevo para el mismo servicio.
+  - `cloudy-api.ts` — frontera **existente**; se le agrega `createLyricsPptx` y el mapeo de errores de `POST /api/lyrics/pptx` (D9). Sin módulo nuevo para el mismo servicio.
 - **Parser puro y sin dependencias** (`lyrics-parser.ts`): HTML de la página → `{ title, artist, stanzas }` y `stanzas` → HTML limpio para el servicio. Separado del SDK para probarse con fixtures (D4–D5).
 - **La letra se guarda como estrofas (`jsonb`)**, nunca como HTML crudo: se muestra como texto y el HTML que se envía al servicio se reconstruye y escapa en cada generación (D5). Un rastreo por canción nueva;
   releer es gratis (SC-003).
@@ -48,7 +48,7 @@ con generación por lotes. Es la misma forma de la feature 005 (YouTube) con otr
 
 **Testing**: Vitest con `unit`, `nuxt` y `e2e`.
 - Unitarios con `vi.mock('apify-client')` para `lyrics-crawler.ts`, `fetch` simulado para `cloudy-api.ts`, y fixtures HTML para `lyrics-parser.ts`.
-- E2E contra **dos stubs locales**: `test/e2e/setup/apify-stub.ts` (nuevo, por `NUXT_APIFY_BASE_URL`) y `cloudy-api-stub.ts` (se le agrega `POST /v1/lyrics/pptx`). Nunca llaman a Apify, a Letras ni a Render.
+- E2E contra **dos stubs locales**: `test/e2e/setup/apify-stub.ts` (nuevo, por `NUXT_APIFY_BASE_URL`) y `cloudy-api-stub.ts` (se le agrega `POST /api/lyrics/pptx`). Nunca llaman a Apify, a Letras ni al `cloudy-api` real.
 
 **Target Platform**: Vercel (preset `vercel`, Node) y navegadores desde 360 px.
 
@@ -65,7 +65,7 @@ con generación por lotes. Es la misma forma de la feature 005 (YouTube) con otr
 
 - Funciones sin estado: la cola de presentaciones vive en el navegador; ningún trabajo en memoria del servidor.
 - `NUXT_APIFY_API_KEY` y `NUXT_CLOUDY_API_KEY` solo en el servidor; jamás en el cliente ni en respuestas (SC-010).
-- Plazos: rastreo ≤ 55 s de espera del actor; generación ≤ 90 s (arranque en frío de Render). El máximo de una función en el proyecto de Vercel es 300 s (pasado, `504 FUNCTION_INVOCATION_TIMEOUT`); se fija `maxDuration` explícito ([research D15](./research.md), [quickstart § 6](./quickstart.md)).
+- Plazos: rastreo ≤ 55 s de espera del actor; generación ≤ 90 s (arranque en frío del servicio). El máximo de una función en el proyecto de Vercel es 300 s (pasado, `504 FUNCTION_INVOCATION_TIMEOUT`); se fija `maxDuration` explícito ([research D15](./research.md), [quickstart § 6](./quickstart.md)).
 - Letra: 1–500 000 caracteres y ≤ 300 líneas (contrato del servicio); título ≤ 200 (`SONG_TITLE_MAX`, mismo valor en la tabla `songs`). Color de letra fijo: blanco (`SONG_FONT_COLOR`), sin selector.
 - Un rastreo cuesta dinero: solo canciones nuevas o **Volver a obtener la letra** rastrean (FR-007).
 
@@ -220,7 +220,7 @@ test/
 │                fixtures/letras-song.html · letras-no-lyrics.html
 ├── nuxt/        SongUrlInput.spec.ts · SongLyrics.spec.ts · SongActions.spec.ts · SongCollectionCard.spec.ts · SongHistoryList.spec.ts · SongSelectionBar.spec.ts · SongPresentationTray.spec.ts · useSongPresentations.spec.ts · pages-canciones.spec.ts · form-schemas.spec.ts (+)
 └── e2e/         songs-fetch.spec.ts · songs-presentation.spec.ts · songs-collections.spec.ts · songs-history.spec.ts · routes-guard.spec.ts (+)
-                 setup/apify-stub.ts · setup/cloudy-api-stub.ts (+ POST /v1/lyrics/pptx) · setup/global-setup.ts (+ NUXT_APIFY_*)
+                 setup/apify-stub.ts · setup/cloudy-api-stub.ts (+ POST /api/lyrics/pptx) · setup/global-setup.ts (+ NUXT_APIFY_*)
 ```
 
 **Structure Decision**: mismo proyecto Nuxt con la separación `app/` · `server/` · `shared/` de las features anteriores. Cada proveedor queda detrás de **un solo módulo de `server/utils/`** (Constitución IV): Apify en

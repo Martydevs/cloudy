@@ -263,7 +263,7 @@ export async function startCloudyApiStub(): Promise<{ url: string, close: () => 
     }
     if (req.method === 'GET' && path === '/__stub/calls') return json(200, calls)
 
-    // Dormido: la plataforma responde 502 a todo, como Render mientras levanta la instancia.
+    // Dormido: la plataforma responde 502 a todo, como la plataforma (Railway) mientras levanta la instancia.
     if (state === 'asleep') {
       res.writeHead(502, { 'content-type': 'text/plain' })
       return res.end('Bad Gateway')

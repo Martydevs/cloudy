@@ -138,4 +138,4 @@ Foco visible en todos los controles; la letra es texto real (lectores de pantall
   `SongHistoryList` (selección), `SongSelectionBar` (con «Descargar en un .zip» solo con 2–3), `SongPresentationTray` y `useSongPresentations` (secuencia de una en una, cancelación, reintento solo transitorio, nota de respaldo),
   `SongBatchQueue` y `useSongPresentationQueue` (agregar/repetida/llena, invalidación, resultado parcial, 422, reintento, Descargar de nuevo, Vaciar), `useSongPresentationBatch`, `pages-canciones.spec.ts` (modo cola sin navegar, cola llena sin rastrear, zip de la selección).
 - E2E (`test/e2e/songs-*.spec.ts`): US1–US4 con stubs; sin sesión y rol equivocado en ambas rutas; 360 px y 1280 px. `songs-batch.spec.ts`: cola del `.zip` (un solo `canciones.zip`, parcial, todas fallidas,
-  cola llena, servicio dormido, modo apagado, barra de selección, 360 px) contra `POST /v1/lyrics/pptx/batch` del stub de `cloudy-api`.
+  cola llena, servicio dormido, modo apagado, barra de selección, 360 px) contra `POST /api/lyrics/pptx/batch` del stub de `cloudy-api`.

@@ -71,7 +71,7 @@ Reglas verificadas por pruebas: `endpoint-guards.spec.ts` (13 endpoints con `req
   `/api/songs/fetch`, `/refresh` y `/pptx` y anota aquí cómo quedó configurado: **`nitro.vercel.functions.maxDuration = 120`** en `nuxt.config.ts` (el preset `vercel` de Nitro copia `vercel.functions` a la configuración de la función del servidor, que atiende todas las rutas).
 - **Medición del rastreo real** (T003, 2026-11-05: tres rastreos de ~20–22 s y ~0,0018 USD cada uno; queda al borde de SC-002 y el endpoint suma poco a eso): tiempo típico del actor para Letras (objetivo < 20 s, SC-002) y crédito consumido por canción; si excede, ajustar `requestTimeoutSecs`/`waitSecs` o evaluar D15 (trabajo asíncrono).
 - **Lote de presentaciones** (`POST /api/songs/presentations`): `CLOUDY_API_TIMEOUTS.pptxBatch = 110 s` supone que cloudy-api reparte con el LLM bajo un solo plazo de 45 s por lote
-  (`LYRICS_BATCH_DEADLINE_SECONDS` en Render). Ese valor debe quedarse en ≤ ~50 s; si sube, revisar los 110 s y los 120 s de la función.
+  (`LYRICS_BATCH_DEADLINE_SECONDS` en Railway). Ese valor debe quedarse en ≤ ~50 s; si sube, revisar los 110 s y los 120 s de la función.
 - **Presupuesto**: `bun run analyze` y revisar que `/canciones` y `/canciones/[id]` no superen 250 KB gzip de JS inicial.
 - **Credenciales**: en el navegador (pestaña Red y bundle) no debe aparecer ninguna clave (SC-010).
 

@@ -1,6 +1,6 @@
 // T023 — US1 (feature 005, quickstart §2 escenarios 1–7): pegar un enlace, ver la ficha con su reproductor y descargar
 // como video o audio; enlaces inválidos, videos no descargables, servicio dormido y rutas protegidas. Todo contra el
-// stub del servicio (`test/e2e/setup/cloudy-api-stub.ts`): nunca se llama a YouTube ni a Render.
+// stub del servicio (`test/e2e/setup/cloudy-api-stub.ts`): nunca se llama a YouTube ni al servicio real.
 import { createPage, setup } from '@nuxt/test-utils/e2e'
 import type { Cookie, Page } from 'playwright-core'
 import { afterEach, describe, expect, it } from 'vitest'

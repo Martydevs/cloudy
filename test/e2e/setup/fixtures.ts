@@ -317,7 +317,7 @@ export interface CloudyStubCalls {
   pptxBatch: { title: string, fontColor: string | null, html: string }[][]
 }
 
-/** `asleep`: el stub responde 502 a todo, como Render mientras levanta la instancia. */
+/** `asleep`: el stub responde 502 a todo, como la plataforma (Railway) mientras levanta la instancia. */
 export const setCloudyStubState = (state: 'up' | 'asleep' | 'degraded') => cloudyStubRequest('/__stub/state', { state })
 export const cloudyStubCalls = () => cloudyStubRequest<CloudyStubCalls>('/__stub/calls')
 export const resetCloudyStub = () => cloudyStubRequest('/__stub/reset', {})

@@ -12,6 +12,9 @@ description: "Task list for Cloudy — Página Canciones: letras de Letras.com a
 
 **Organization**: Las tareas se agrupan por historia de usuario en orden de prioridad (US1 P1 → US2 P2 → US3 P3 → US4 P4) y **cada historia se puede desplegar sola** una vez terminadas las anteriores (Constitución II). US1 es el MVP y corresponde a la **Fase 1** del spec (enlace → rastreo → letra guardada y visible). US2 es la **Fase 2** (presentación `.pptx` desde el servicio ya implementado). US3 agrega colecciones y su generación por lotes. US4 agrega el historial, la selección múltiple y la limpieza diaria. Lo compartido (constantes, validadores, permiso, DTOs, tablas, mensajes, esquemas de formulario, configuración) es fundacional.
 
+> **Enmienda (2026-11-13)**: las tareas marcadas nombran `POST /v1/lyrics/pptx` y `/v1/lyrics/pptx/batch` tal como se implementaron.
+> Desde el commit `a5fbf55` el servicio usa rutas sin versión: `POST /api/lyrics/pptx` y `POST /api/lyrics/pptx/batch` (`/v1/*` responde 404).
+
 ## Format: `[ID] [P?] [Story] Description`
 
 - **[P]**: se puede ejecutar en paralelo (archivos distintos, sin dependencias pendientes).
@@ -29,7 +32,7 @@ description: "Task list for Cloudy — Página Canciones: letras de Letras.com a
 - **Estado del cliente**: la cola de presentaciones vive en `useState` (`songs-presentations`), se procesa **de una en una** con un `pump` guiado por el propio estado (patrón de `useYoutubeDriveImport`); los `AbortController` y `objectURL` en un mapa de módulo, no en el estado. La bandeja es `Lazy*` con `v-if`. Un doble clic lanza una sola generación (FR-019).
 - **Formularios**: `songUrlSchema` y `songCollectionSchema` en `app/utils/form-schemas.ts`, siempre por `useFormSchema`; nunca `useRegle`/`useRegleSchema` directo.
 - **Interfaz**: forma de la página YouTube (contracts/ui.md, columna "Equivale a"); textos en español en `app/utils/messages.ts` (bloque `songs`) y `shared/constants/songs.ts`; clases semánticas de daisyUI; iconos `lucide:*`; `btn` base (como máximo `lg:btn-sm`); cuatro estados (`SkeletonList`, `EmptyState`, `ErrorState`, contenido); `ConfirmDialog` antes de eliminar, quitar o **Volver a obtener la letra**; toast al terminar acciones; nada depende de `hover`; 360 px sin scroll horizontal; objetivos táctiles ≥ 44 px; sin `text-warning` sobre `base-100` claro. Los colores `000000`/`FFFFFF` de la presentación son dato, no colores de interfaz.
-- **Tests**: seleccionan con `getByRole`/`getByLabel`. Los e2e usan `signedInAs`/`ensureAccount`/`login` de `test/e2e/setup/fixtures.ts` y **nunca** llaman a Apify, Letras.com ni Render: van contra `test/e2e/setup/apify-stub.ts` y `test/e2e/setup/cloudy-api-stub.ts`. Un rastreo real cuesta crédito: las pruebas manuales usan pocas canciones.
+- **Tests**: seleccionan con `getByRole`/`getByLabel`. Los e2e usan `signedInAs`/`ensureAccount`/`login` de `test/e2e/setup/fixtures.ts` y **nunca** llaman a Apify, Letras.com ni al `cloudy-api` real: van contra `test/e2e/setup/apify-stub.ts` y `test/e2e/setup/cloudy-api-stub.ts`. Un rastreo real cuesta crédito: las pruebas manuales usan pocas canciones.
 - **Agentes**: nada destructivo contra ninguna base ni bucket (AGENTS.md, "No destructive actions"). Las migraciones las aplica la persona (`bun run db:migrate`, `bun run db:migrate:test`); el agente pide permiso antes de cualquier comando de base de datos. El agente no borra ni descarta archivos sin versionar.
 - **Definición de hecho por tarea y por fase**: la de AGENTS.md ("Workflow"): typecheck → tests → verificación en navegador al final (360 px y ≥ 1280 px, tema oscuro y claro, cuatro estados, foco y consola) → reporte antes de marcar la tarea.
 

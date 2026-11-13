@@ -84,7 +84,7 @@ export default async function setup(project: TestProject) {
   // Stub de chat completions: los e2e nunca llaman a OpenRouter (research A9).
   const stub = await startAiStub()
   project.provide('aiStubUrl', stub.url)
-  // Stub del servicio de descargas: los e2e nunca llaman a YouTube ni a Render (feature 005, research D17).
+  // Stub del servicio de descargas: los e2e nunca llaman a YouTube ni al servicio real (feature 005, research D17).
   const cloudyStub = await startCloudyApiStub()
   project.provide('cloudyStubUrl', cloudyStub.url)
   // Stub de Apify: los e2e nunca rastrean Letras.com ni gastan crédito (feature 006, research D14).

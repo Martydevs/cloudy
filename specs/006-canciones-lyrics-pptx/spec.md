@@ -439,8 +439,8 @@ primero), marcar las tres y generar sus presentaciones: llegan tres `.pptx`.
 - **Usuarios**: solo administradores y editores usan la página (los mismos roles de equipo de Cloudy); los invitados no
   tienen acceso. Las colecciones y el historial son compartidos por todo el equipo, sin colecciones privadas en esta
   versión.
-- **Servicio de presentaciones**: ya existe y se despliega aparte (el mismo `cloudy-api` de la feature 005, plan
-  gratuito en Render, que se duerme tras 15 minutos de inactividad). Su contrato (una canción por solicitud, hasta 300
+- **Servicio de presentaciones**: ya existe y se despliega aparte (el mismo `cloudy-api` de la feature 005, en
+  Railway, que puede estar dormido, reiniciándose o desplegando). Su contrato (una canción por solicitud, hasta 300
   líneas y 500 000 caracteres, color de letra opcional, encabezados con diapositivas y tipo de reparto, errores
   «sin letra» y «letra demasiado larga») es el límite de lo que Cloudy puede ofrecer. **No rastrea ni busca letras:**
   recibe la letra ya extraída. La presentación sale con texto **blanco** sin relleno de fondo, pensada para proyectarse

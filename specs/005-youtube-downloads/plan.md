@@ -2,7 +2,7 @@
 
 **Branch**: `005-youtube-downloads` | **Date**: 2026-11-03 | **Spec**: [spec.md](./spec.md)
 
-**Input**: Feature specification from `specs/005-youtube-downloads/spec.md` · Servicio: `C:\Users\andre.perez\Dev\cloudy-api` (FastAPI + yt-dlp en Render)
+**Input**: Feature specification from `specs/005-youtube-downloads/spec.md` · Servicio: `C:\Users\andre.perez\Dev\cloudy-api` (FastAPI + pytubefix en Railway)
 
 ## Summary
 
@@ -21,7 +21,7 @@ También guarda videos en **listas** compartidas y consulta un **historial** del
 - **Datos mínimos** (D9–D11): `youtube_videos` (video + historial compartido en la misma fila), `youtube_playlists` y `youtube_playlist_items`; migración `0005`. Historial con
   cursor keyset; listas con conteo y miniaturas por subconsulta.
 - **Sin dependencias nuevas.** El servicio de descargas es el único servicio externo nuevo (Complexity Tracking).
-- **Arranque en frío** del plan gratuito de Render: ping a `/healthz` al abrir la feature y banner con reintento (D7).
+- **Arranque en frío** del servicio en Railway (dormido, reiniciándose o desplegando): ping a `/healthz` al abrir la feature y banner con reintento (D7).
 - **Hallazgo corregido** (commit 6871c03): `.env.example` declaraba `NUXT_CLOUDY_APIURL`, que no mapea a `runtimeConfig.cloudyApiUrl`; ahora es `NUXT_CLOUDY_API_URL` más `NUXT_CLOUDY_API_KEY` (D16).
 
 ## Technical Context
@@ -44,7 +44,7 @@ También guarda videos en **listas** compartidas y consulta un **historial** del
 - **Servicio de descargas**: estado de trabajos en memoria y archivos temporales (30 min); fuera de nuestro control y no se recupera tras un reinicio.
 
 **Testing**: Vitest con los proyectos `unit`, `nuxt` y `e2e`.
-- E2E contra un **stub del servicio** (`test/e2e/setup/cloudy-api-stub.ts`, `NUXT_CLOUDY_API_URL`), con el mismo patrón que el de OpenRouter; nunca llaman a YouTube ni a Render (research D17).
+- E2E contra un **stub del servicio** (`test/e2e/setup/cloudy-api-stub.ts`, `NUXT_CLOUDY_API_URL`), con el mismo patrón que el de OpenRouter; nunca llaman a YouTube ni al `cloudy-api` real (research D17).
 - Unitarios con `fetch` simulado para `cloudy-api.ts` (clasificación de errores, plazos).
 
 **Target Platform**: Vercel (preset `vercel`, Node) y navegadores desde 360 px. Reproducción con `<video>` MP4/H.264 y MP3.
@@ -53,7 +53,7 @@ También guarda videos en **listas** compartidas y consulta un **historial** del
 
 **Performance Goals**:
 
-- Ficha del video con título, canal y miniatura en < 3 s con el servicio despierto (SC-002); depende de la sonda de yt-dlp (D8).
+- Ficha del video con título, canal y miniatura en < 3 s con el servicio despierto (SC-002); depende de la sonda de pytubefix (D8).
 - Primer bloque del historial con 5 000 entradas en < 2 s; INP < 200 ms al marcar casillas (SC-007).
 - `YoutubePlayer`, `YoutubePlaylistDialog` y `YoutubeDownloadTray` son `Lazy*` con `v-if`: JS inicial de cada ruta ≤ 250 KB gzip.
 - Sin sondeo de la feature cuando no hay trabajo activo ni pestaña oculta (el sondeo solo corre con un trabajo `queued/running/zipping`).
@@ -230,6 +230,6 @@ test/
 
 | Violación / adición | Why Needed | Simpler Alternative Rejected Because |
 |---------------------|------------|--------------------------------------|
-| Servicio externo nuevo: `cloudy-api` (FastAPI + yt-dlp en Render) | Descargar y convertir de YouTube necesita yt-dlp, ffmpeg y un runtime de JavaScript, imposibles en funciones de Vercel (límite de cuerpo, duración y binarios del sistema). Es lo que pidió la persona y ya está construido | Hacerlo dentro de Nuxt: ni ffmpeg ni archivos temporales de minutos caben en funciones sin estado (Principio I y Despliegue) |
-| Una segunda unidad desplegable con estado en memoria (el servicio) | El servicio es la fuente de verdad de los trabajos y de sus archivos temporales; Cloudy lo trata como no recuperable | Duplicar los trabajos en Postgres obliga a sincronizar un estado de 30 min que se pierde si Render reinicia (research D2) |
+| Servicio externo nuevo: `cloudy-api` (FastAPI + pytubefix en Railway) | Descargar y convertir de YouTube necesita pytubefix, ffmpeg y un runtime de JavaScript, imposibles en funciones de Vercel (límite de cuerpo, duración y binarios del sistema). Es lo que pidió la persona y ya está construido | Hacerlo dentro de Nuxt: ni ffmpeg ni archivos temporales de minutos caben en funciones sin estado (Principio I y Despliegue) |
+| Una segunda unidad desplegable con estado en memoria (el servicio) | El servicio es la fuente de verdad de los trabajos y de sus archivos temporales; Cloudy lo trata como no recuperable | Duplicar los trabajos en Postgres obliga a sincronizar un estado de 30 min que se pierde si el servicio reinicia o se redespliega (research D2) |
 | Orquestación de lotes en el cliente (`useYoutubeDownloads`) | Un lote a la vez evita el `429 queue_full` y muestra el avance; las funciones de Vercel no pueden esperar minutos | Encolar todo de golpe (429 con listas grandes) o un endpoint que espere el lote (excede el tiempo de la función) |

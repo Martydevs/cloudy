@@ -213,7 +213,7 @@ Never print or commit their values.
   Chromium's `--use-fake-ui-for-media-stream` / `--use-fake-device-for-media-stream` and forces `(pointer: coarse)`.
 - YouTube (feature 005): download jobs live **only** in the `cloudy-api` service (in memory, files for 30 min); the browser
   creates them, polls every 2.5 s and chains batches of `YOUTUBE_MAX_BATCH` one at a time (`useYoutubeDownloads`). The tray
-  survives navigation but not a reload. The free Render instance sleeps: `/api/youtube/health` wakes it and the banner retries
+  survives navigation but not a reload. The service (`cloudy-api`, on Railway) can be asleep, restarting or redeploying: `/api/youtube/health` wakes it and the banner retries
   every 5 s. The player is YouTube's official embed (`youtube-nocookie.com/embed/<id>`, `YoutubePlayer`): a thumbnail until Play,
   then the iframe (no 720p copy, no cloudy-api job; `preconnect` on hover/focus). The external player window is a Cloudy page
   (`/youtube/<id>/ventana`) that autoplays the same embed. Cloudy sets no CSP, so no `frame-src` is needed. E2E run against `test/e2e/setup/cloudy-api-stub.ts` (scenario video IDs

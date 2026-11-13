@@ -7,7 +7,7 @@ Guía de validación de extremo a extremo. Solo usa datos de `.env.development` 
 ## 0. Requisitos
 
 - Variables en `.env.development`, `.env.test` y `.env` (nombres, sin valores; ver research D16):
-  `NUXT_CLOUDY_API_URL` (`http://localhost:8000` en local, `https://<servicio>.onrender.com` en Render) y `NUXT_CLOUDY_API_KEY` (la misma `API_KEY` del servicio).
+  `NUXT_CLOUDY_API_URL` (`http://localhost:8000` en local, `https://<servicio>.up.railway.app` en Railway; solo el origen, sin `/api` ni `/v1`) y `NUXT_CLOUDY_API_KEY` (la misma `API_KEY` del servicio).
   Corregir antes `.env.example`: hoy dice `NUXT_CLOUDY_APIURL`.
 - Migración aplicada a la rama de desarrollo y a la de pruebas: `bun run db:migrate` y `bun run db:migrate:test` (la persona las ejecuta).
 - Servicio local para el modo "real" (§4): en `C:\Users\andre.perez\Dev\cloudy-api`, `bun run dev` (necesita `uv`, ffmpeg y Node/deno; ver su README). Para el resto
@@ -19,7 +19,7 @@ Guía de validación de extremo a extremo. Solo usa datos de `.env.development` 
 bun run typecheck
 bun run test:unit      # parseYoutubeUrl, validadores, cloudy-api (fetch simulado), historial/listas, permisos, guards, architecture
 bun run test:nuxt      # YoutubeUrlInput, YoutubePlayer, YoutubeHistoryList, YoutubePlaylistCard, bandeja, schemas
-bun run test:e2e       # test/e2e/youtube-*.spec.ts contra el stub del servicio (sin YouTube ni Render)
+bun run test:e2e       # test/e2e/youtube-*.spec.ts contra el stub del servicio (sin YouTube ni el servicio real)
 bun run test:coverage  # umbral del proyecto: 92 %
 ```
 
@@ -60,11 +60,11 @@ Cada fila es la **Independent Test** de su historia; pasar `agent-browser` con e
 
 ## 4. Modo "real" (una vez, antes de integrar)
 
-Con el servicio local o el de Render y un video corto público (<5 min) elegido por la persona:
+Con el servicio local o el de Railway y un video corto público (<5 min) elegido por la persona:
 
 1. `GET {servicio}/healthz` → `status: "ok"`.
 2. Escenarios 1, 3, 4, 12 (lista de 2–3 videos cortos) y 16 sin stub.
-3. **Red**: en la pestaña Network, confirmar que el navegador llama a `{servicio}/v1/jobs/<id>/file?...` directamente y que **ninguna** petición del navegador lleva
+3. **Red**: en la pestaña Network, confirmar que el navegador llama a `{servicio}/api/jobs/<id>/file?...` directamente y que **ninguna** petición del navegador lleva
    `X-API-Key` (SC-009); y que los bytes del MP4/MP3 no pasan por `/api/youtube/**` (FR-030).
 4. **Duración de la función de Vercel** (research D8): en un despliegue de vista previa, crear un lote de 10 videos cortos y comprobar que `POST /api/youtube/jobs` responde dentro del
    tiempo máximo de la función; si no, bajar `YOUTUBE_MAX_BATCH` (`shared/constants/youtube.ts`).
@@ -73,7 +73,7 @@ Con el servicio local o el de Render y un video corto público (<5 min) elegido 
 ## 5. Despliegue
 
 - Vercel: definir `NUXT_CLOUDY_API_URL` y `NUXT_CLOUDY_API_KEY` por entorno (no hay archivos `.env`). `ALLOWED_ORIGINS` del servicio no cambia para esta feature (no hay `fetch` entre orígenes).
-- Render: el servicio ya existe (`render.yaml`); confirmar `API_KEY` igual a `NUXT_CLOUDY_API_KEY`.
+- Railway: el servicio ya existe; confirmar `API_KEY` igual a `NUXT_CLOUDY_API_KEY`, `PUBLIC_BASE_URL` con su dominio público (de ahí salen los `downloadUrl`) y `ALLOWED_ORIGINS` con el origen de Cloudy (lo usa «Guardar en el drive»).
 - Después de `main`: la limpieza diaria (`/api/cron/cleanup`) ya incluye el borrado de videos huérfanos.
 
 ## 6. Resultados

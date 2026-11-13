@@ -8,6 +8,13 @@
 
 **Input**: User description: "New feature page in Cloudy, Youtube. This page need to have two core features, Playlists and Downloads. Downloads means the cloudy team can download videos and audios pasting the yt video url, so cloudy give the options for downloading as video or audio; Playlists means cloudy team can organize his saved yt links; so can able to fetch and download on demand YT media sources. The videos will served by FastAPI python webservice with yt-dlp as core where currently is created, the python api will be hosted on Render.com. [...] in home page, below the page layout, a big input where the cloudy member input the youtube url. below the input, two row sections: 1. playlists [...] 2. recent and history of the fetched videos/audios url plus, on playlists section, when hover a playlist let appear a download button to fetch all the videos the playlist includes and, on historic fetched videos section, let user marks multiple checks for batch download. When a cloudy member enter a link on input, a slug page with the id of the video is shown [...] top placed a daisy cloudy themed videoplayer [...] below the player two sections, 1. the video metadata and action buttons like Download, Create playlist over the slug video, play this video on fullscreen through external browser window or in the active page window 2. a row of the historic fetched videos. [...] the way works is based on jobs and batch downloads, for more information of the backend, i have loaded for you the backend repo dir."
 
+> **Enmienda (2026-11-13) — `cloudy-api` sin versión y con un solo motor.** El servicio de descargas expone sus rutas bajo `/api`
+> (`/api/videos/{id}`, `/api/jobs`, `/api/jobs/{id}`, `/api/jobs/{id}/file`, `/api/lyrics/pptx`, `/api/lyrics/pptx/batch`) y `/healthz`
+> en la raíz; `/v1/*` y `/v2/*` ya no existen. Hay un solo motor de descargas (pytubefix): Cloudy ya no prueba `v2` y luego `v1` ni
+> repite en otro motor los videos que fallan. Cuando el servicio no puede con un video (p. ej. el bloqueo anti-robots de YouTube), la
+> persona ve la causa (`502 service_failed`) y puede volver a intentarlo con «Preparar de nuevo». Ver research D6 (nota del
+> 2026-11-13) y contracts/api.md.
+
 ## Contexto
 
 El equipo de multimedia y audio necesita con frecuencia material que ya existe en YouTube (un tema musical, un
@@ -35,7 +42,7 @@ descargarse. Los archivos y los trabajos son temporales (el servicio los borra a
 ### Session 2026-11-03
 
 - Directiva del usuario: dos funciones centrales, **Descargas** y **Listas**; el servicio de descargas ya existe
-  (FastAPI + yt-dlp, alojado en Render) y trabaja por trabajos y lotes.
+  (FastAPI + pytubefix, alojado en Railway) y trabaja por trabajos y lotes.
 - Alcance acordado al leer el servicio: el servicio solo acepta **IDs de video individuales** (no URLs de listas de
   YouTube), ofrece **tres formatos** (MP4 720p, MP4 1080p, MP3), acepta **hasta 10 videos por trabajo**, rechaza videos
   de más de **30 minutos**, en vivo o de duración desconocida, y no ofrece reproducción en streaming: solo archivos
@@ -338,7 +345,7 @@ sale con Escape; abrir la ventana externa y comprobar que reproduce el mismo vid
 
 - **Usuarios**: solo administradores y editores usan la página (los mismos roles de equipo de Cloudy); los invitados no
   tienen acceso. Las listas y el historial son compartidos por todo el equipo, sin listas privadas en esta versión.
-- **Servicio de descargas**: ya existe y se despliega aparte (Render, plan gratuito). Su contrato (formatos, límite de 10
+- **Servicio de descargas**: ya existe y se despliega aparte (Railway). Su contrato (formatos, límite de 10
   videos por trabajo, 30 minutos de duración máxima, archivos con 30 minutos de vida, enlaces firmados de unos 10
   minutos) es el límite de lo que Cloudy puede ofrecer. Cloudy depende de que esté disponible; cuando no lo está, la
   feature se degrada con mensajes claros, sin romper el resto de la aplicación.

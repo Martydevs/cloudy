@@ -37,7 +37,7 @@
   and **Assumptions** as dependencies, not in requirements or success criteria; `.pptx` and PowerPoint are the user's
   deliverable, not an implementation choice.
 - Contract limits quoted from `frontend-lyrics-pptx.md` and confirmed against the running API's OpenAPI schema
-  (`/v1/lyrics/pptx`): 300 lines, 500 000 characters, 200-character title, optional `font_color`, `422` codes
+  (`/api/lyrics/pptx`): 300 lines, 500 000 characters, 200-character title, optional `font_color`, `422` codes
   `no_lyrics` / `lyrics_too_long`, response headers for slide count and arrangement mode.
 - Decisions taken as defaults (documented in Assumptions, no clarification needed): one file per song when
   downloading a collection or selection; lyrics are stored after the first crawl and reused; **Volver a obtener la

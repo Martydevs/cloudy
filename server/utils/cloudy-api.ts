@@ -29,8 +29,8 @@ import { readZipEntry, withoutZipEntry } from './zip'
 /**
  * Plazo por llamada (research D8): `createJob` sondea cada video antes de encolar. `pptxBatch` genera hasta 3 canciones de
  * una en una y queda por debajo de los 120 s de la función en Vercel. Ese margen depende de que el servicio reparta con el
- * LLM bajo un solo plazo de 45 s para todo el lote (`LYRICS_BATCH_DEADLINE_SECONDS` en Render; después usa el reparto de
- * respaldo): arranque en frío (~50 s) + 45 s + 3 renders ≈ 100 s. Si ese plazo sube en Render, hay que revisar este presupuesto.
+ * LLM bajo un solo plazo de 45 s para todo el lote (`LYRICS_BATCH_DEADLINE_SECONDS` en Railway; después usa el reparto de
+ * respaldo): arranque en frío (~50 s) + 45 s + 3 renders ≈ 100 s. Si ese plazo sube en Railway, hay que revisar este presupuesto.
  */
 export const CLOUDY_API_TIMEOUTS = { ping: 5_000, job: 10_000, probe: 20_000, create: 45_000, pptx: 90_000, pptxBatch: 110_000 } as const
 /** Segundos que se sugieren al cliente cuando la cola del servicio está llena. */
@@ -156,7 +156,7 @@ function raise(failure: Failure, call: Call, event?: H3Event): never {
   }
   // El servicio no pudo con el video y dijo por qué: se dice la causa en vez de «está despertando».
   if (status >= 500 && code && (call === 'create' || call === 'video')) throw serviceFailed(code)
-  // 502/503/504 (Render dormido o caído) y cualquier otro fallo del servicio: se ofrece reintentar.
+  // 502/503/504 (servicio dormido, reiniciándose o caído) y cualquier otro fallo del servicio: se ofrece reintentar.
   throw waking()
 }
 

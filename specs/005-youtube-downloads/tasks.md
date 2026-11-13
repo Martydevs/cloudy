@@ -12,6 +12,9 @@ description: "Task list for Cloudy — Página YouTube: descargas y listas de re
 
 **Organization**: Las tareas se agrupan por historia de usuario en orden de prioridad (US1 P1 → US2 P2 → US3 P3 → US4 P4) y **cada historia se puede desplegar sola** una vez terminadas las anteriores (Constitución II). US1 es el MVP: pegar el enlace, ver la ficha con su reproductor (preparar y reproducir) y descargar. US2 agrega listas compartidas y su descarga por lotes. US3 agrega el historial y la selección múltiple. US4 agrega pantalla completa y la ventana externa. Lo compartido (constantes, validadores, permiso, DTOs, tablas, frontera del servicio, mensajes, stub de e2e) es fundacional.
 
+> **Enmienda (2026-11-13)**: las tareas marcadas describen las rutas `/v1/…` y el respaldo `v2` → `v1` tal como se implementaron.
+> Desde el commit `a5fbf55` el servicio usa rutas `/api/…` sin versión y un solo motor (pytubefix); ver la enmienda de `spec.md` y research D6.
+
 ## Format: `[ID] [P?] [Story] Description`
 
 - **[P]**: se puede ejecutar en paralelo (archivos distintos, sin dependencias pendientes).
@@ -27,7 +30,7 @@ description: "Task list for Cloudy — Página YouTube: descargas y listas de re
 - **Estado del cliente**: trabajos y lotes en `useState` (no `localStorage`); sondeo con `useIntervalFn` y pausa sin conexión (`useOnline`); la bandeja es `Lazy*` con `v-if`. Un doble clic crea un solo trabajo (FR-031).
 - **Formularios**: `youtubeUrlSchema` y `youtubePlaylistSchema` en `app/utils/form-schemas.ts`, siempre por `useFormSchema`; nunca `useRegle` directo.
 - **Interfaz**: textos en español en `app/utils/messages.ts` (bloque `youtube`) y `shared/constants/youtube.ts`; clases semánticas de daisyUI; iconos `lucide:*`; `btn` base (como máximo `lg:btn-sm`); cuatro estados (`SkeletonList`, `EmptyState`, `ErrorState`, contenido); `ConfirmDialog` antes de eliminar o quitar; toast al terminar acciones; nada depende de `hover`; 360 px sin scroll horizontal; objetivos táctiles ≥ 44 px; sin `text-warning` sobre `base-100` claro.
-- **Tests**: seleccionan con `getByRole`/`getByLabel`. Los e2e usan `signedInAs`/`ensureAccount`/`login` de `test/e2e/setup/fixtures.ts` y **nunca** llaman a YouTube ni a Render: van contra `test/e2e/setup/cloudy-api-stub.ts`.
+- **Tests**: seleccionan con `getByRole`/`getByLabel`. Los e2e usan `signedInAs`/`ensureAccount`/`login` de `test/e2e/setup/fixtures.ts` y **nunca** llaman a YouTube ni al `cloudy-api` real: van contra `test/e2e/setup/cloudy-api-stub.ts`.
 - **Agentes**: nada destructivo contra ninguna base ni bucket (AGENTS.md, "No destructive actions"). Las migraciones las aplica la persona (`bun run db:migrate`, `bun run db:migrate:test`); el agente pide permiso antes de cualquier comando de base de datos. El agente no borra ni descarta archivos sin versionar.
 - **Definición de hecho por tarea y por fase**: la de AGENTS.md ("Workflow"): typecheck → tests → verificación en navegador al final (360 px y ≥ 1280 px, tema oscuro y claro, cuatro estados, foco y consola) → reporte antes de marcar la tarea.
 
@@ -297,5 +300,5 @@ Cliente:  T030 useYoutubeService · T032 banner · T033 picker · T034 url input
 
 1. **MVP primero**: Phase 1 → Phase 2 → Phase 3 (US1). Con eso el equipo ya baja audio y video desde un enlace; se puede desplegar y validar con el servicio real (T080) antes de seguir.
 2. **Entrega incremental**: US2 (listas) → US3 (historial y selección) → US4 (pantalla completa y ventana). Cada historia pasa su verificación de fase (typecheck → tests → navegador) y se puede desplegar sola.
-3. **Riesgos a vigilar**: (a) la duración de la función de Vercel para `POST /api/youtube/jobs` con 10 videos (T080; palanca: `YOUTUBE_MAX_BATCH`); (b) descargas automáticas encadenadas bloqueadas por el navegador (mitigado por **Guardar archivo**, research D4); (c) el arranque en frío de Render (banner y reintento, D7).
-4. **Reglas del proyecto**: nada destructivo ejecutado por el agente; la migración y los valores de `.env` los aplica la persona; los e2e no tocan YouTube ni Render.
+3. **Riesgos a vigilar**: (a) la duración de la función de Vercel para `POST /api/youtube/jobs` con 10 videos (T080; palanca: `YOUTUBE_MAX_BATCH`); (b) descargas automáticas encadenadas bloqueadas por el navegador (mitigado por **Guardar archivo**, research D4); (c) el arranque en frío del servicio en Railway (banner y reintento, D7).
+4. **Reglas del proyecto**: nada destructivo ejecutado por el agente; la migración y los valores de `.env` los aplica la persona; los e2e no tocan YouTube ni el `cloudy-api` real.

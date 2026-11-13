@@ -213,10 +213,10 @@ Junto a **Generar presentación** se muestra el texto `present.whiteHint` («La 
 
 - `apify-stub.ts`: servidor local que implementa las rutas que usa el SDK para `call()` + `listItems()` (crear run del actor, consultar el run con `waitForFinish`, leer el dataset), con escenarios por URL
   (canción normal, `sin-letra`, `muy-larga`, `fallo-del-run`, `sin-credito`). Las rutas exactas se toman del código del SDK en la tarea de implementación. Se activa con `NUXT_APIFY_BASE_URL`.
-- `cloudy-api-stub.ts`: se agrega `POST /v1/lyrics/pptx` (devuelve un `.pptx` mínimo válido con `X-Slide-Count` y `X-Lyrics-Arranged-By`; escenarios `no_lyrics`, `lyrics_too_long`, `fallback`).
+- `cloudy-api-stub.ts`: se agrega `POST /api/lyrics/pptx` (devuelve un `.pptx` mínimo válido con `X-Slide-Count` y `X-Lyrics-Arranged-By`; escenarios `no_lyrics`, `lyrics_too_long`, `fallback`).
 - `global-setup.ts` inyecta `NUXT_APIFY_API_KEY=e2e-stub` y `NUXT_APIFY_BASE_URL`.
 
-**Razón**: mismo patrón que OpenRouter y `cloudy-api`; los e2e jamás llaman a Apify, Letras ni Render. `apifyBaseUrl` vacío = Apify real.
+**Razón**: mismo patrón que OpenRouter y `cloudy-api`; los e2e jamás llaman a Apify, Letras ni al `cloudy-api` real. `apifyBaseUrl` vacío = Apify real.
 
 ## D15 — Duración de las funciones en Vercel
 

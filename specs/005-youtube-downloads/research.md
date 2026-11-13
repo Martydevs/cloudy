@@ -25,13 +25,13 @@ Las referencias al servicio vienen de `C:\Users\andre.perez\Dev\cloudy-api` (REA
   siguiente nace cuando el anterior termina (`done` o `failed`).
 - **Razón**:
   - El servicio es la fuente de verdad del estado; duplicarlo en Postgres obligaría a sincronizar un trabajo que vive 30 min y se
-    pierde si Render reinicia (spec, Assumptions: "no se recuperan").
+    pierde si el servicio reinicia o se redespliega (spec, Assumptions: "no se recuperan").
   - Las funciones de Vercel no pueden esperar un lote (minutos) ni guardar estado en memoria (Constitución, Despliegue).
   - El servicio procesa un trabajo a la vez (`MAX_CONCURRENT_JOBS=1`) y su cola admite 20 (`MAX_QUEUE`): encolar 11+ lotes de golpe
     chocaría con `429 queue_full`. Un lote a la vez evita el 429 y hace explícito el avance ("lote 2 de 4").
   - Un doble clic crea un solo trabajo porque el botón queda deshabilitado mientras la creación está en vuelo y el trabajo
     activo ocupa el estado (FR-031).
-- **Alternativas**: tabla `youtube_jobs` con sondeo del servidor (estado duplicado, trabajo huérfano si Render reinicia); un
+- **Alternativas**: tabla `youtube_jobs` con sondeo del servidor (estado duplicado, trabajo huérfano si el servicio reinicia o se redespliega); un
   endpoint que espere el lote (excede el tiempo máximo de la función).
 
 ## D3. La bandeja de descargas sobrevive a la navegación pero no a la recarga (FR-009, spec Assumptions)
@@ -71,7 +71,7 @@ Las referencias al servicio vienen de `C:\Users\andre.perez\Dev\cloudy-api` (REA
   - `<video>` y la navegación a un archivo no requieren CORS, así que `ALLOWED_ORIGINS` del servicio no necesita cambios para esta
     feature. `Content-Disposition: attachment` no impide que un `<video src>` lo reproduzca.
 - **Razón**: el servicio solo entrega archivos, no streaming (README). El póster con acción explícita protege la cola; reutilizar la
-  copia 720p ahorra una conversión de yt-dlp en una instancia de capacidad mínima.
+  copia 720p ahorra una conversión de pytubefix en una instancia de capacidad mínima.
 - **Alternativas**: el iframe de YouTube (no es un `<video>` nativo, no usa el tema y no es lo que pidió la persona); crear la copia al
   abrir la página (satura la cola); `controls` nativos (no respetan el tema `cloudy`).
 - **Revisión (2026-11-04) — reemplazada por el reproductor incrustado oficial de YouTube**: preparar una copia 720p era lento con
@@ -97,26 +97,20 @@ Las referencias al servicio vienen de `C:\Users\andre.perez\Dev\cloudy-api` (REA
   Los códigos por elemento (`private`, `unavailable`, `age_restricted`, `members_only`, `geo_restricted`, `live`,
   `format_unavailable`, `bot_check`, `ffmpeg_missing`, `download_failed`, `cancelled`, `internal`) y los motivos de `downloadable: false`
   (`too_long`, `live`, `unknown_duration`) tienen su texto en `shared/constants/youtube.ts`, usado en cliente y servidor.
-- **Nota (v2 → v1, 2026-11-09)**: el servicio expone el mismo contrato en `/v2` (pytubefix, esquiva el `bot_check` de YouTube en IPs
-  de centros de datos) y en `/v1` (yt-dlp), y no cambia de motor por su cuenta. `cloudy-api.ts` sondea videos y crea trabajos en
-  **`v2`** y repite la misma llamada en **`v1`** cuando `v2` responde un 5xx (con o sin código: `bot_check`, `download_failed`,
-  `ffmpeg_missing`, `metadata_unavailable`, el 502 del proxy) o un 404 **sin** `detail.code` (despliegue sin `/v2`). No hay respaldo
-  ante red caída o plazo vencido (mismo host), 401/403, `429 queue_full` (cola compartida), 422 ni un 404 con código: `v1` daría lo
-  mismo, y la tabla de arriba se aplica a esa respuesta. Un trabajo se consulta y se cancela solo en el motor que lo creó
-  (`?engine=`); allí un 5xx sigue siendo **503** y un 404, `expired`. Si fallan los dos motores:
+- **Nota (servicio sin versión, 2026-11-13; reemplaza la nota v2 → v1 del 2026-11-09)**: el servicio expone sus rutas bajo `/api`
+  (`/api/videos/{id}`, `/api/jobs`, `/api/jobs/{id}`, `/api/jobs/{id}/file`) y `/healthz` en la raíz; `/v1/*` y `/v2/*` responden 404.
+  Tiene un solo motor (pytubefix), así que `cloudy-api.ts` no repite llamadas en otro prefijo y el navegador no repite videos por su
+  cuenta (ya no existen `engine`, `?engine=`, `engines_failed` ni `ENGINE_RETRY_CODES`). Además de la tabla de arriba, un 5xx **con**
+  `detail.code` al sondear un video o crear un trabajo responde:
 
-  | `v2` y `v1` | Cloudy | `data` y copy |
-  |-------------|--------|---------------|
-  | alguno dijo `bot_check` | **502** | `{ code: 'engines_failed', cause: 'botCheck', attempts }` · "YouTube bloqueó la descarga con su verificación anti-robots en los dos servicios. Intenta de nuevo en unos minutos." |
-  | el último intento trajo otro código | **502** | `{ code: 'engines_failed', cause: 'engineFailed', attempts }` · "Los dos servicios de descarga fallaron con este video. Intenta de nuevo más tarde." |
-  | el último intento no trajo código (proxy) o no respondió | **503** | `{ state: 'waking', code: 'engines_failed', cause: 'waking', attempts }` · el texto de "despertando" (se puede reintentar, como siempre) |
+  | Servicio | Cloudy | `data` y copy |
+  |----------|--------|---------------|
+  | 5xx `bot_check` | **502** | `{ code: 'service_failed', cause: 'botCheck' }` · "YouTube bloqueó la descarga con su verificación anti-robots. Intenta de nuevo en unos minutos." |
+  | 5xx con otro código (`download_failed`, `quota_exceeded`, `metadata_unavailable`, `ffmpeg_missing`…) | **502** | `{ code: 'service_failed', cause: 'failed' }` · "El servicio de descargas no pudo con este video. Intenta de nuevo más tarde." |
 
-  `attempts` es `[{ engine, status, code }]`: sin mensajes del servicio ni URLs. Con el motor obligado (`engine` en el cuerpo de
-  `POST /api/youtube/jobs`), un 5xx con código da el mismo **502** con un solo intento. El fallo que llega después, dentro del
-  trabajo, lo repite el navegador en `v1` para los videos con un código de `ENGINE_RETRY_CODES` (`bot_check`, `download_failed`,
-  `ffmpeg_missing`, `format_unavailable`, `internal`); los códigos del video (`private`, `unavailable`, `age_restricted`,
-  `members_only`, `geo_restricted`, `live`, `cancelled`, `too_long`) no se repiten. Un trabajo de `v1` nunca se repite. El motor no
-  se muestra en la interfaz; queda en los registros del servidor.
+  Al consultar o cancelar un trabajo, un 5xx (con o sin código) sigue siendo **503** y un 404, `expired`. El cliente convierte
+  `service_failed` en texto con `serviceFailureMessage()` (`app/utils/youtube.ts`). Los registros llevan solo llamada, estado y código
+  (`[cloudy-api] create → 502 (bot_check)`); nunca la clave.
 - **Razón**: el usuario nunca ve respuestas crudas (AGENTS: solo `serverMessage()`); un único mapa evita copy duplicado.
 - **Alternativas**: reenviar el `detail.message` del servicio (está en inglés y filtra detalles internos).
 
@@ -127,21 +121,20 @@ Las referencias al servicio vienen de `C:\Users\andre.perez\Dev\cloudy-api` (REA
   `useYoutubeService()` lo consulta; mientras no sea `up` muestra `YoutubeServiceBanner` ("Despertando el servicio, puede tardar
   hasta 1 minuto") y reintenta cada 5 s con `useIntervalFn`, y se detiene al quedar `up` o al salir de la página. Cualquier
   acción que falle con `503` muestra el mismo banner con **Reintentar**.
-- **Razón**: Render gratuito duerme tras 15 min y tarda ≈1 min (README sugiere exactamente este ping). Así el servicio ya está
+- **Razón**: el servicio (en Railway) puede estar dormido, reiniciándose o desplegando y tardar en responder (su README sugiere exactamente este ping). Así el servicio ya está
   despierto cuando la persona termina de pegar el enlace.
-- **Alternativas**: pingar desde un Vercel Cron (mantiene despierto el servicio las 24 h y consume horas gratuitas de Render);
+- **Alternativas**: pingar desde un Vercel Cron (mantiene despierto el servicio las 24 h y consume horas de cómputo de Railway);
   esperar el timeout de la primera acción real (mala experiencia).
 
 ## D8. Plazos de las llamadas y duración de la función (riesgo abierto)
 
 - **Decisión**: plazos por llamada en `cloudy-api.ts`: `ping` 5 s, `getJob`/`cancelJob` 10 s, `probeVideo` 20 s, `createJob` 45 s
   (el servicio sondea cada video antes de encolar: hasta 10 videos con `PROBE_CONCURRENCY=3`). Al vencer el plazo, error `503`.
-- **Razón**: `POST /v1/jobs` hace el *preflight* de todos los videos antes de responder `202` (`routers/jobs.py::_preflight`), lo que
+- **Razón**: `POST /api/jobs` hace el *preflight* de todos los videos antes de responder `202` (`routers/jobs.py::_preflight`), lo que
   con 10 videos puede tardar decenas de segundos.
 - **Riesgo**: el tiempo máximo de la función de Vercel depende del plan. **Verificar en el despliegue** que `createJob` (45 s)
   cabe; si no, bajar el lote a 5 videos (`YOUTUBE_MAX_BATCH`, constante en `shared/constants/youtube.ts`) sin tocar el servicio.
-  Queda como paso de quickstart §6. Con el respaldo `v2` → `v1` (D6) el plazo es **por intento**: si `v2` tarda en fallar, crear un
-  trabajo puede sumar hasta dos plazos (el `bot_check` suele llegar pronto, en el sondeo). Vale la misma verificación.
+  Queda como paso de quickstart §6.
 
 ## D9. Datos: videos, historial y listas (FR-015–FR-026, FR-032)
 
@@ -234,14 +227,14 @@ Las referencias al servicio vienen de `C:\Users\andre.perez\Dev\cloudy-api` (REA
 ## D17. Pruebas sin tocar YouTube (Principio V)
 
 - **Decisión**: igual que el stub de OpenRouter (`test/e2e/setup/openrouter-stub.ts`), `test/e2e/setup/cloudy-api-stub.ts` implementa el contrato
-  del servicio (`/healthz`, `/v1/videos/:id`, `/v1/jobs`, `/v1/jobs/:id`, `/v1/jobs/:id/file`) con videos de prueba (un MP4 y un MP3 diminutos
-  generados en código) y escenarios por ID de video (`privateVid1`, `tooLongVid1`, `liveVideo01`, `slowJobVid1`, `failMidVid1`, `unavailVid1`, `lowResVid01`, …; deben tener 11 caracteres). Los unitarios simulan `fetch` en
-  `cloudy-api.ts` (no hay red). Los e2e de la feature nunca llaman a Render ni a YouTube.
-- **Razón**: determinista, rápido y sin depender de que YouTube cambie. El servicio ya tiene su propia suite (`cloudy-api/tests`) que cubre yt-dlp.
+  del servicio (`/healthz` y, bajo `/api`, `/videos/:id`, `/jobs`, `/jobs/:id`, `/jobs/:id/file`; las viejas `/v1` y `/v2` responden 404) con videos de prueba (un MP4 y un MP3 diminutos
+  generados en código) y escenarios por ID de video (`privateVid1`, `tooLongVid1`, `liveVideo01`, `slowJobVid1`, `failMidVid1`, `unavailVid1`, `lowResVid01`, `botCheckVd1`, `itemBotChk1`, …; deben tener 11 caracteres). Los unitarios simulan `fetch` en
+  `cloudy-api.ts` (no hay red). Los e2e de la feature nunca llaman al `cloudy-api` real ni a YouTube.
+- **Razón**: determinista, rápido y sin depender de que YouTube cambie. El servicio ya tiene su propia suite (`cloudy-api/tests`) que cubre pytubefix.
 - **Alternativas**: apuntar los e2e al servicio real (frágil, lento, depende de YouTube y de una instancia que duerme).
 
 ## D18. Dependencias (Constitución II)
 
 - **Decisión**: **ninguna dependencia nueva**. VueUse cubre `useMediaControls`, `useFullscreen`, `useInfiniteScroll`, `useIntervalFn`,
   `useOnline`, `useClipboard`, `useConfirmDialog`; daisyUI, `modal`, `dropdown`, `range`, `progress`, `skeleton`, `card`; `@nuxt/icon` con lucide.
-- **Servicio externo nuevo**: el servicio de descargas (`cloudy-api` en Render) **sí** es un servicio nuevo y se justifica en Complexity Tracking.
+- **Servicio externo nuevo**: el servicio de descargas (`cloudy-api` en Railway) **sí** es un servicio nuevo y se justifica en Complexity Tracking.
