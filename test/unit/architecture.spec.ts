@@ -71,10 +71,25 @@ describe('arquitectura de la feature 002', () => {
       .filter(f => f.path.startsWith('app/') || f.path.startsWith('shared/') || f.path.startsWith('server/api/'))
       .flatMap(f => imports(f.code).filter(spec => /server\/utils\/prayer-images/.test(target(f.path, spec))).map(spec => `${f.path} → ${spec}`))
     expect(offenders).toEqual([])
-    // El SQL de la feature vive solo en prayer-requests.ts: los endpoints de Peticiones no tocan drizzle.
+    // El SQL de la feature vive solo en prayer-requests.ts, prayer-gallery.ts y prayer-collections.ts: los endpoints de
+    // Peticiones no tocan drizzle.
     const endpoints = files.filter(f => f.path.startsWith('server/api/peticiones/'))
     expect(endpoints.length).toBeGreaterThan(0)
     expect(endpoints.filter(f => imports(f.code).some(spec => spec.startsWith('drizzle-orm') || spec.includes('db/schema'))).map(f => f.path)).toEqual([])
+  })
+
+  it('el SQL de las tablas de Peticiones solo vive en sus tres capas (más la limpieza diaria, que las llama)', () => {
+    const PRAYER_SQL = ['server/utils/prayer-requests.ts', 'server/utils/prayer-gallery.ts', 'server/utils/prayer-collections.ts']
+    const tables = /\b(prayerImages|prayerImageCollections|prayerImageCollectionItems)\b|\bprayer_image/
+    const users = files
+      .filter(f => (f.path.startsWith('server/') || f.path.startsWith('app/') || f.path.startsWith('shared/')) && f.path !== 'server/db/schema.ts')
+      .filter(f => tables.test(f.code))
+      .map(f => f.path)
+      .sort()
+    expect(users).toEqual(PRAYER_SQL.filter(path => path !== 'server/utils/prayer-requests.ts').sort())
+    // La subida de la imagen generada pasa solo por la frontera de storage, desde la capa del historial.
+    const putters = files.filter(f => /\bputObject\(/.test(f.code)).map(f => f.path).sort()
+    expect(putters).toEqual(['server/utils/prayer-gallery.ts', 'server/utils/storage.ts'])
   })
 
   it('server/ai/prayer-image existe dentro de la frontera', () => {

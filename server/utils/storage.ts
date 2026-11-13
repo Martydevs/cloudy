@@ -76,6 +76,20 @@ export async function presignGet(
   return getSignedUrl(useS3(), command, { expiresIn })
 }
 
+/**
+ * Sube bytes que nacieron en el servidor (la imagen generada de Peticiones, ≤ 4 MB). Los archivos del navegador nunca pasan
+ * por aquí: van directo al bucket con `presignPut`.
+ */
+export async function putObject(objectKey: string, body: Uint8Array, contentType: string): Promise<void> {
+  await useS3().send(new PutObjectCommand({
+    Bucket: bucket(),
+    Key: objectKey,
+    Body: body,
+    ContentType: contentType,
+    ContentLength: body.byteLength,
+  }))
+}
+
 /** Metadatos del objeto, o `null` si no existe. */
 export async function head(objectKey: string): Promise<{ size: number, contentType?: string } | null> {
   try {

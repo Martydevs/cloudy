@@ -221,6 +221,26 @@ description: "Task list for Cloudy — Página Peticiones: peticiones de oració
 
 ---
 
+## Phase 8: Enmienda — Colecciones e historial de imágenes generadas (2026-11-12)
+
+**Purpose**: La página pasa a tres secciones (Colecciones → Peticiones aprobadas → Historial). Las imágenes generadas se guardan
+en el bucket con tablas propias, se conservan 30 días salvo las que estén en una colección, y se agrupan en colecciones con nombre.
+Ver la enmienda al inicio de `spec.md`, `data-model.md` § Historial y colecciones, `contracts/api.md` § 5–6 y `contracts/ui.md`.
+
+**Independent Test**: generar una imagen → aparece en el historial y sigue tras recargar; guardarla en una colección nueva y en una
+existente; ver, renombrar, quitar y eliminar la colección; eliminar la imagen (solo autora o admin); **Generar de nuevo** desde el historial.
+
+- [x] T091 Esquema: `prayer_images`, `prayer_image_collections`, `prayer_image_collection_items` en `server/db/schema.ts` y migración aditiva `drizzle/0010_*` (`bun run db:generate`).
+- [x] T092 Compartido: `save_failed`, `PRAYER_IMAGE_RETENTION_DAYS`, `PRAYER_HISTORY_PAGE`/`MAX_LIMIT` (`shared/constants/prayers.ts`); validadores de historial y colecciones (`shared/validation/prayers.ts`); DTOs (`shared/types/api.ts`); permiso `prayers.moderate` (`shared/permissions.ts`).
+- [x] T093 Servidor: `putObject` en `server/utils/storage.ts`; `server/utils/prayer-gallery.ts` (guardar sin huérfanos, listar keyset, leer, eliminar, purga) y `server/utils/prayer-collections.ts`; `POST /api/peticiones/imagenes` responde `201` JSON; endpoints nuevos de historial y colecciones; paso 7 de `/api/cron/cleanup`.
+- [x] T094 Cliente: `usePrayerImages` sin blob/objectURL; `usePrayerHistory`, `usePrayerCollections`/`usePrayerCollectionList`; `PrayerHistory`, `PrayerHistoryCard`, `PrayerCollectionRow`, `PrayerCollectionCard`, `PrayerCollectionDialog`; `PrayerResultCard` reducido; `PrayerResults` retirado; página en tres secciones; textos en `messages.prayers.history`/`collection`; `prayerCollectionSchema`.
+- [x] T095 Pruebas unit y nuxt: `api-peticiones.spec.ts`, `api-peticiones-galeria.spec.ts` (nuevo), `api-cron.spec.ts`, `endpoint-guards.spec.ts`, `architecture.spec.ts`, `permissions.spec.ts`, `validation-prayers.spec.ts`, `prayers-shared.spec.ts`, `server-storage.spec.ts`; `PrayerHistory.spec.ts` y `PrayerCollections.spec.ts` (nuevos), `usePrayerImages.spec.ts`, `PrayerResultCard.spec.ts`, `pages-peticiones.spec.ts`, `four-states.spec.ts`, `form-schemas.spec.ts`.
+- [x] T096 Pruebas e2e escritas: US2 de `test/e2e/peticiones.spec.ts` reescrita para el historial; `test/e2e/peticiones-historial.spec.ts` (nuevo: colecciones, permisos, eliminar, 360 px); `routes-guard.spec.ts` con los 10 endpoints nuevos; tablas nuevas en el `TRUNCATE` de `global-setup.ts`.
+- [ ] T097 Migración `0010`: **la persona** ejecuta `bun run db:migrate` (desarrollo), `bun run db:migrate:test` y, al desplegar, `bun run db:migrate:prod` (solo `CREATE TABLE`/`INDEX`, no destructiva), o autoriza al agente. — *2026-11-12, con autorización: aplicada en desarrollo (`bun run db:migrate`) y en la rama de pruebas (por `bun run test:e2e`); **producción pendiente**.*
+- [ ] T098 Definición de hecho de la fase: `bun run test:e2e` (aplica la migración a la rama aislada de pruebas) y verificación en navegador con `agent-browser` (360 px y ≥ 1280 px, ambos temas, cuatro estados, foco y consola; generación simulada con `page.route`, nunca una llamada de pago). — *2026-11-12: typecheck ✅, build ✅, unit + nuxt 150 archivos / 2345 pruebas ✅, cobertura 97,7 / 93,5 / 95,4 / 98,6 % ✅; `bun run test:e2e` completo 23 archivos / 217 pruebas: 215 ✅ y 2 ❌ en `image-text.spec.ts` (conteo de lecturas del stub, ajeno a Peticiones; ese archivo solo pasa 10/10); `peticiones.spec.ts` 21/21 y `peticiones-historial.spec.ts` 5/5 ✅. **Verificación en navegador pendiente** (la persona decidió posponerla: no hay cuenta del agente en la rama de desarrollo).*
+
+---
+
 ## Dependencies & Execution Order
 
 ### Phase Dependencies

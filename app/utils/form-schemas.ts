@@ -138,6 +138,9 @@ export const songUrlSchema = z.object({ url: z.string().check(filled, letrasUrl)
 /** Nombre de una colección de canciones: 1–80 caracteres tras recortar, como `songCollectionName()` del servidor. */
 export const songCollectionSchema = z.object({ name: z.string().check(filled, maxChars(SONG_COLLECTION_NAME_MAX)) })
 
+/** Nombre de una colección de imágenes de Peticiones: la misma regla, como `prayerCollectionName()` del servidor. */
+export const prayerCollectionSchema = z.object({ name: z.string().check(filled, maxChars(SONG_COLLECTION_NAME_MAX)) })
+
 export type RegisterForm = z.infer<typeof registerSchema>
 export type LoginForm = z.infer<typeof loginSchema>
 export type ForgotForm = z.infer<typeof forgotSchema>

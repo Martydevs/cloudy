@@ -1,8 +1,10 @@
-// Validadores de la página Peticiones (feature 007, data-model.md § Validación): la query del listado y el cuerpo de la
-// generación. El servidor es la autoridad; el cliente arma la misma query con `usePrayerFilters`.
-import { PRAYER_PER_IMAGE } from '../constants/prayers'
+// Validadores de la página Peticiones (feature 007, data-model.md § Validación): la query del listado, el cuerpo de la
+// generación, el historial de imágenes y sus colecciones. El servidor es la autoridad; el cliente arma la misma query con
+// `usePrayerFilters` y valida el nombre de una colección con `prayerCollectionSchema` (app/utils/form-schemas.ts).
+import { PRAYER_HISTORY_MAX_LIMIT, PRAYER_HISTORY_PAGE, PRAYER_PER_IMAGE } from '../constants/prayers'
 import type { Field } from './core'
-import { array, object, oneOf, optional, str, uuid } from './core'
+import { array, int, object, oneOf, optional, str, uuid } from './core'
+import { songCollectionName } from './songs'
 
 const DATE_MESSAGE = 'Fecha no válida'
 const RANGE_MESSAGE = 'La fecha final debe ser posterior a la inicial'
@@ -50,3 +52,25 @@ function fileIdList(): Field<string[]> {
 
 /** Cuerpo de `POST /api/peticiones/imagenes`. El navegador no manda texto: el servidor lo relee (FR-027). */
 export const prayerImageInput = object({ fileIds: fileIdList() })
+
+/** Query de `GET /api/peticiones/imagenes`: `limit` 1–48 (12 por defecto) y `cursor` keyset opcional. */
+export const prayerHistoryQuery = object({
+  limit: (input: unknown) => {
+    const res = optional(int({ min: 1, max: PRAYER_HISTORY_MAX_LIMIT }))(input)
+    return res.ok ? { ok: true as const, value: res.value ?? PRAYER_HISTORY_PAGE } : res
+  },
+  cursor: optional(str({ max: 500 })),
+})
+
+/** Nombre de una colección de imágenes: la misma regla que las colecciones de canciones (1–80 caracteres tras recortar). */
+export const prayerCollectionName = songCollectionName
+
+/** Cuerpo de `POST /api/peticiones/colecciones`: con `imageId`, la colección nace con esa imagen. */
+export const prayerCollectionInput = object({
+  name: prayerCollectionName(),
+  imageId: optional(uuid()),
+})
+
+export const prayerCollectionRename = object({ name: prayerCollectionName() })
+
+export const prayerCollectionItemInput = object({ imageId: uuid() })

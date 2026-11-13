@@ -1,6 +1,13 @@
 // T006 — Validadores de la página Peticiones (feature 007, data-model § Validación).
 import { describe, expect, it } from 'vitest'
-import { prayerImageInput, prayersQuery } from '../../shared/validation/prayers'
+import {
+  prayerCollectionInput,
+  prayerCollectionItemInput,
+  prayerCollectionRename,
+  prayerHistoryQuery,
+  prayerImageInput,
+  prayersQuery,
+} from '../../shared/validation/prayers'
 
 const UUIDS = [
   '3f2504e0-4f89-11d3-9a0c-0305e82c3301',
@@ -71,5 +78,30 @@ describe('prayerImageInput', () => {
 
   it('ids en mayúsculas se normalizan y cuentan como repetidos', () => {
     expect(prayerImageInput({ fileIds: [UUIDS[0], UUIDS[0]!.toUpperCase()] }).ok).toBe(false)
+  })
+})
+
+describe('historial y colecciones de imágenes (enmienda de historial)', () => {
+  it('prayerHistoryQuery: 12 por defecto, 1–48 y cursor opcional', () => {
+    expect(prayerHistoryQuery({})).toEqual({ ok: true, data: { limit: 12, cursor: undefined } })
+    expect(prayerHistoryQuery({ limit: '48', cursor: 'abc' })).toEqual({ ok: true, data: { limit: 48, cursor: 'abc' } })
+    for (const limit of ['0', '49', 'x', '1.5']) expect(prayerHistoryQuery({ limit }).ok, limit).toBe(false)
+    expect(prayerHistoryQuery({ cursor: 'a'.repeat(501) }).ok).toBe(false)
+  })
+
+  it('prayerCollectionInput: nombre recortado 1–80 e imageId opcional (UUID)', () => {
+    expect(prayerCollectionInput({ name: '  Domingo  ' })).toEqual({ ok: true, data: { name: 'Domingo', imageId: undefined } })
+    expect(prayerCollectionInput({ name: 'Domingo', imageId: UUIDS[0] })).toEqual({ ok: true, data: { name: 'Domingo', imageId: UUIDS[0] } })
+    expect(prayerCollectionInput({ name: 'a'.repeat(80) }).ok).toBe(true)
+    for (const name of ['', '   ', 'a'.repeat(81), 3]) expect(prayerCollectionInput({ name }).ok, String(name)).toBe(false)
+    expect(prayerCollectionInput({ name: 'Domingo', imageId: 'x' }).ok).toBe(false)
+  })
+
+  it('prayerCollectionRename y prayerCollectionItemInput', () => {
+    expect(prayerCollectionRename({ name: ' Ensayo ' })).toEqual({ ok: true, data: { name: 'Ensayo' } })
+    expect(prayerCollectionRename({ name: '' }).ok).toBe(false)
+    expect(prayerCollectionItemInput({ imageId: UUIDS[1] })).toEqual({ ok: true, data: { imageId: UUIDS[1] } })
+    expect(prayerCollectionItemInput({}).ok).toBe(false)
+    expect(prayerCollectionItemInput({ imageId: 'no' }).ok).toBe(false)
   })
 })

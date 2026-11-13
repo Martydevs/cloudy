@@ -115,9 +115,22 @@ describe('guards de los endpoints', () => {
     expect(files.filter(f => (isPublic(f) || isCron(f)) && f.includes('songs'))).toEqual([])
   })
 
-  it('los endpoints de Peticiones exigen rol de equipo y ninguno es público ni exento (feature 007)', () => {
+  it('los endpoints de Peticiones (con el historial y las colecciones) exigen rol de equipo y ninguno es público ni exento (feature 007)', () => {
     const prayers = files.filter(f => f.startsWith('peticiones/'))
-    expect(prayers).toEqual(['peticiones/imagenes.post.ts', 'peticiones/index.get.ts'])
+    expect(prayers).toEqual([
+      'peticiones/colecciones/[id]/index.delete.ts',
+      'peticiones/colecciones/[id]/index.get.ts',
+      'peticiones/colecciones/[id]/index.patch.ts',
+      'peticiones/colecciones/[id]/items/[imageId].delete.ts',
+      'peticiones/colecciones/[id]/items/index.post.ts',
+      'peticiones/colecciones/index.get.ts',
+      'peticiones/colecciones/index.post.ts',
+      'peticiones/imagenes/[id]/content.get.ts',
+      'peticiones/imagenes/[id]/index.delete.ts',
+      'peticiones/imagenes/index.get.ts',
+      'peticiones/imagenes/index.post.ts',
+      'peticiones/index.get.ts',
+    ])
     for (const file of prayers) expect(source(file), file).toMatch(/\brequireRole\(event, 'editor'\)/)
     expect(files.filter(f => (isPublic(f) || isCron(f)) && f.includes('peticiones'))).toEqual([])
   })

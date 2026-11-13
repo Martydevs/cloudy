@@ -1,5 +1,5 @@
 // Reglas de la página Peticiones (feature 007, data-model.md § Constantes) que usan cliente y servidor: límites de la
-// selección y de la generación, y textos en español por código de error de `POST /api/peticiones/imagenes`
+// selección, de la generación y del historial, y textos en español por código de error de `POST /api/peticiones/imagenes`
 // (contracts/api.md § 2).
 
 /** Peticiones por imagen: la quinta abre la segunda imagen. */
@@ -16,6 +16,11 @@ export const PRAYER_IMAGE_CONCURRENCY = 2
 export const PRAYER_IMAGE_TIMEOUT_MS = 110_000
 /** Tope de la imagen que atraviesa la función (< 4,5 MB de respuesta en Vercel, research D12). */
 export const PRAYER_IMAGE_MAX_BYTES = 4_000_000
+/** Días que se conserva una imagen generada que no está en ninguna colección (limpieza diaria). */
+export const PRAYER_IMAGE_RETENTION_DAYS = 30
+/** Imágenes por página del historial: ninguna tiene miniatura. */
+export const PRAYER_HISTORY_PAGE = 12
+export const PRAYER_HISTORY_MAX_LIMIT = 48
 
 /** Códigos de error de `POST /api/peticiones/imagenes` (`data.code`). */
 export type PrayerErrorCode =
@@ -27,9 +32,10 @@ export type PrayerErrorCode =
   | 'invalid_output'
   | 'too_large'
   | 'timeout'
+  | 'save_failed'
 
 export const PRAYER_ERROR_CODES: readonly PrayerErrorCode[] = [
-  'request_unavailable', 'not_configured', 'quota_exceeded', 'rate_limited', 'provider', 'invalid_output', 'too_large', 'timeout',
+  'request_unavailable', 'not_configured', 'quota_exceeded', 'rate_limited', 'provider', 'invalid_output', 'too_large', 'timeout', 'save_failed',
 ]
 
 export const PRAYER_ERROR_MESSAGES: Record<PrayerErrorCode, string> = {
@@ -41,4 +47,5 @@ export const PRAYER_ERROR_MESSAGES: Record<PrayerErrorCode, string> = {
   invalid_output: 'El servicio no devolvió una imagen. Usa «Generar de nuevo».',
   too_large: 'La imagen salió demasiado pesada. Usa «Generar de nuevo».',
   timeout: 'La imagen tardó demasiado. Inténtalo de nuevo.',
+  save_failed: 'La imagen se generó pero no se pudo guardar. Inténtalo de nuevo.',
 }

@@ -1,24 +1,21 @@
 // Cola de imágenes de peticiones (feature 007, research D8; forma de `useSongPresentations`): una imagen por petición HTTP y
 // dos a la vez. La cola vive en `useState('prayer-images')` y la mueve el propio estado (`pump`); los `AbortController` van en
-// un mapa del módulo. No descarga sola: la persona revisa la vista previa y pulsa **Descargar**. Los resultados viven en la
-// página (no en una bandeja del layout) y se pierden al salir.
-import type { PrayerRequest } from '#shared/types/api'
+// un mapa del módulo. Enmienda de historial: el servidor guarda cada imagen y responde su JSON, así que una imagen lista sale
+// de la cola y entra arriba en el historial (`PRAYER_HISTORY_ADDED_KEY`); en la cola solo quedan las que están en curso,
+// fallaron o se cancelaron.
+import type { PrayerGeneratedImage, PrayerRequest } from '#shared/types/api'
 import type { PrayerErrorCode } from '#shared/constants/prayers'
 import { PRAYER_ERROR_MESSAGES, PRAYER_IMAGE_CONCURRENCY, PRAYER_IMAGE_TIMEOUT_MS } from '#shared/constants/prayers'
 import { FetchError } from 'ofetch'
 
-export type PrayerImageStatus = 'queued' | 'running' | 'done' | 'failed' | 'canceled'
+export type PrayerImageStatus = 'queued' | 'running' | 'failed' | 'canceled'
 
 export interface PrayerImageItem {
   key: string
-  /** 1-based: posición en el reparto y en el nombre del archivo. */
+  /** 1-based: el número con el que la cola nombra la imagen («Imagen 2 lista»). */
   index: number
   fileIds: string[]
   status: PrayerImageStatus
-  /** `objectURL` de la imagen lista. */
-  url?: string
-  filename?: string
-  downloaded: boolean
   error?: string
   errorCode?: PrayerErrorCode | null
   retryable?: boolean
@@ -27,7 +24,6 @@ export interface PrayerImageItem {
 const ACTIVE: readonly PrayerImageStatus[] = ['queued', 'running']
 /** Requieren a un administrador o retirar peticiones: **Reintentar** no ayudaría. */
 const FINAL: readonly PrayerErrorCode[] = ['quota_exceeded', 'not_configured', 'request_unavailable']
-const EXTENSIONS: Record<string, string> = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/webp': 'webp' }
 
 class Canceled extends Error {}
 class TimedOut extends Error {}
@@ -38,16 +34,13 @@ const unavailable = createEventHook<[ids: string[]]>()
 
 const isCode = (value: unknown): value is PrayerErrorCode => typeof value === 'string' && value in PRAYER_ERROR_MESSAGES
 
-/** `AAAA-MM-DD` en la zona de quien genera. */
-function today(): string {
-  const now = new Date()
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
-}
-
 export function usePrayerImages() {
   const api = useApi()
   const toast = useToast()
   const items = useState<PrayerImageItem[]>('prayer-images', () => [])
+  const added = useState<PrayerGeneratedImage[]>(PRAYER_HISTORY_ADDED_KEY, () => [])
+  /** Último aviso para la región viva del historial (lista o fallida). */
+  const announcement = useState('prayer-images-announcement', () => '')
   const m = messages.prayers
 
   const find = (key: string) => items.value.find(item => item.key === key)
@@ -60,12 +53,10 @@ export function usePrayerImages() {
     if (!item) return
     controllers.get(item.key)?.abort(new Canceled())
     controllers.delete(item.key)
-    revokeDownload(item.url)
   }
 
   /** Por qué falló, en español, y si **Reintentar** tiene sentido. */
-  async function describe(error: unknown): Promise<Pick<PrayerImageItem, 'error' | 'errorCode' | 'retryable'>> {
-    await readBlobError(error)
+  function describe(error: unknown): Pick<PrayerImageItem, 'error' | 'errorCode' | 'retryable'> {
     const response = error instanceof FetchError ? error.response : undefined
     const code = (error as { data?: { data?: { code?: unknown } } } | null)?.data?.data?.code
     if (isCode(code)) return { error: PRAYER_ERROR_MESSAGES[code], errorCode: code, retryable: !FINAL.includes(code) }
@@ -82,36 +73,23 @@ export function usePrayerImages() {
     // Un `reset` o `dismiss` pudo reemplazar este intento: entonces no se escribe nada.
     const current = () => controllers.get(item.key) === controller
     try {
-      // `$api` no expone `.raw`: el tipo se lee en `onResponse` si el `Blob` no lo trae.
-      let type: string | null = null
-      const request = api<Blob>('/api/peticiones/imagenes', {
+      const request = api<PrayerGeneratedImage>('/api/peticiones/imagenes', {
         method: 'POST',
         body: { fileIds: item.fileIds },
-        responseType: 'blob',
         signal: controller.signal,
-        onResponse: ({ response }) => {
-          type = response.headers.get('content-type')
-        },
       })
       // Cancelar o vencer el plazo libera la cola aunque el transporte no respete la señal.
       const aborted = new Promise<never>((_, reject) => {
         controller.signal.addEventListener('abort', () => reject(controller.signal.reason), { once: true })
       })
       request.catch(() => {})
-      const blob = await Promise.race([request, aborted])
-      if (!(blob instanceof Blob)) throw new Error('sin imagen')
+      const image = await Promise.race([request, aborted])
+      if (!image?.id) throw new Error('sin imagen')
       if (!current()) return
-      const mediaType = (blob.type || type || 'image/png').split(';')[0]!.trim()
-      const url = URL.createObjectURL(blob)
-      patch(item.key, {
-        status: 'done',
-        url,
-        filename: `peticiones-${today()}-${item.index}.${EXTENSIONS[mediaType] ?? 'png'}`,
-        downloaded: false,
-        error: undefined,
-        errorCode: null,
-        retryable: false,
-      })
+      // Guardada: sale de la cola y entra arriba en el historial.
+      items.value = items.value.filter(other => other.key !== item.key)
+      added.value = [image, ...added.value.filter(other => other.id !== image.id)]
+      announcement.value = m.generated(item.index)
       toast.success(m.generated(item.index))
     }
     catch (error) {
@@ -123,10 +101,12 @@ export function usePrayerImages() {
       }
       if (reason instanceof TimedOut) {
         patch(item.key, { status: 'failed', error: PRAYER_ERROR_MESSAGES.timeout, errorCode: 'timeout', retryable: true })
+        announcement.value = m.failedImage(item.index)
         return
       }
-      const failure = await describe(error)
+      const failure = describe(error)
       patch(item.key, { status: 'failed', ...failure })
+      announcement.value = m.failedImage(item.index)
       if (failure.errorCode === 'request_unavailable') {
         const ids = (error as { data?: { data?: { ids?: unknown } } }).data?.data?.ids
         if (Array.isArray(ids)) void unavailable.trigger(ids.filter((id): id is string => typeof id === 'string'))
@@ -149,16 +129,23 @@ export function usePrayerImages() {
     }
   }
 
-  /** Una imagen por grupo (1–4 peticiones), numeradas a continuación de las que ya están en la página. */
+  /** Numeración continua en la sesión: no se repite aunque las anteriores ya hayan salido de la cola. */
+  const counter = useState('prayer-images-counter', () => 0)
+
+  /** Una imagen por grupo (1–4 peticiones). */
   function enqueue(groups: readonly (readonly Pick<PrayerRequest, 'id'>[])[]): number {
-    let index = items.value.reduce((max, item) => Math.max(max, item.index), 0)
-    const added = groups.filter(group => group.length > 0).map((group): PrayerImageItem => {
-      index++
-      return { key: `img-${index}`, index, fileIds: group.map(request => request.id), status: 'queued', downloaded: false }
+    const fresh = groups.filter(group => group.length > 0).map((group): PrayerImageItem => {
+      counter.value++
+      return { key: `img-${counter.value}`, index: counter.value, fileIds: group.map(request => request.id), status: 'queued' }
     })
-    items.value = [...items.value, ...added]
+    items.value = [...items.value, ...fresh]
     pump()
-    return added.length
+    return fresh.length
+  }
+
+  /** **Generar de nuevo** una imagen del historial: las mismas peticiones; el servidor relee su texto actual. */
+  function regenerateFrom(fileIds: readonly string[]): number {
+    return enqueue([fileIds.map(id => ({ id }))])
   }
 
   /** En cola: sale de la cola. Generándose: se aborta y la cola sigue. */
@@ -175,20 +162,12 @@ export function usePrayerImages() {
     pump()
   }
 
-  /** **Generar de nuevo** una imagen lista (o cancelada): solo esa vuelve a la cola. */
+  /** Una imagen cancelada vuelve a la cola. */
   function regenerate(key: string) {
     const item = find(key)
-    if (!item || (item.status !== 'done' && item.status !== 'canceled')) return
-    revokeDownload(item.url)
-    patch(key, { status: 'queued', url: undefined, filename: undefined, downloaded: false, error: undefined, errorCode: null })
+    if (item?.status !== 'canceled') return
+    patch(key, { status: 'queued', error: undefined, errorCode: null })
     pump()
-  }
-
-  function download(key: string) {
-    const item = find(key)
-    if (item?.status !== 'done' || !item.url || !item.filename) return
-    triggerDownload(item.url, item.filename)
-    patch(key, { downloaded: true })
   }
 
   function dismiss(key: string) {
@@ -197,25 +176,26 @@ export function usePrayerImages() {
     pump()
   }
 
-  /** Aborta todo, libera las imágenes y vacía la página. */
+  /** Aborta todo, vacía la cola y vuelve a numerar desde 1. Lo ya guardado sigue en el historial. */
   function reset() {
     for (const item of items.value) release(item)
     items.value = []
+    counter.value = 0
   }
 
   return {
     items,
+    announcement,
     enqueue,
+    regenerateFrom,
     cancel,
     retry,
     regenerate,
-    download,
     dismiss,
-    dismissAll: reset,
     reset,
     hasItems: computed(() => items.value.length > 0),
-    /** Hay algo generándose o una imagen lista sin descargar. */
-    needsLeaveGuard: computed(() => items.value.some(item => ACTIVE.includes(item.status) || (item.status === 'done' && !item.downloaded))),
+    /** Hay algo en cola o generándose: lo terminado ya está guardado. */
+    needsLeaveGuard: computed(() => items.value.some(item => ACTIVE.includes(item.status))),
     onUnavailable: unavailable.on,
   }
 }

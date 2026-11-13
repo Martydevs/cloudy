@@ -8,8 +8,9 @@ send material from a public page into an approval queue that the team reviews li
 file. Keep this guide aligned with it whenever the constitution is amended.
 
 **Active feature**: `specs/007-peticiones-imagenes/` (Peticiones page: approved guest prayer-request images shown as selectable cards, corrected with the feature-002 text editor and
-turned into "prayer requests of the day" images, up to 4 requests per image, by the OpenRouter preset `@preset/pray-requests-image-generation` over a bundled template; no new tables, no new
-dependencies). Previous: `specs/006-canciones-lyrics-pptx/` (Canciones page: Letras.com lyrics crawled with the Apify actor `apify/rag-web-browser` through `apify-client`, then
+turned into "prayer requests of the day" images, up to 4 requests per image, by the OpenRouter preset `@preset/pray-requests-image-generation` over a bundled template; no new
+dependencies. Amended 2026-11-12: generated images are stored in the bucket (`prayer_images`, migration `0010`), listed in a team-wide history and grouped in named collections, see the
+amendment at the top of its `spec.md`). Previous: `specs/006-canciones-lyrics-pptx/` (Canciones page: Letras.com lyrics crawled with the Apify actor `apify/rag-web-browser` through `apify-client`, then
 turned into `.pptx` slides by the external `cloudy-api` service; reuses the shape of `specs/005-youtube-downloads/`, whose YouTube page is the previous active feature, and builds on
 `specs/001-shared-media-drive/`, `specs/002-note-text-extraction/` and `specs/003-guest-upload-access-code/`; feature 003's access-approval step was later removed, see the
 amendment at the top of its `spec.md`). Read `spec.md` (what), `plan.md` + `research.md`
@@ -84,7 +85,8 @@ fetching uses Nuxt `useFetch`, not VueUse.
 **I. Performance** — Mobile 4G budgets: LCP ≤ 2.5 s, INP ≤ 200 ms, CLS ≤ 0.1, initial JS ≤ 250 KB
 gzip per route. Index every filtered/sorted column; no N+1 queries; cursor pagination. **Never stream
 file binaries through server functions** (Vercel body limit ~4.5 MB): browsers upload/download
-directly with presigned URLs. The bounded exceptions are the lyrics `.pptx` of feature 006 and the generated prayer-request image of feature 007 (see Known gotchas). Lazy-load images and non-critical components at the component level (a thumbnail is optional: an image without one loads only near the viewport, inside a fixed-size box) (`Lazy*` behind `v-if` for UI that only appears after an action or a later state, e.g. `LazyItemDialogs`).
+directly with presigned URLs. The bounded exception is the lyrics `.pptx` of feature 006 (see Known gotchas); the generated prayer-request image of feature 007 no longer travels back as a
+response: it is born in the server function and uploaded from there to the bucket (≤ 4 MB), then served by presigned redirects like any file. Lazy-load images and non-critical components at the component level (a thumbnail is optional: an image without one loads only near the viewport, inside a fixed-size box) (`Lazy*` behind `v-if` for UI that only appears after an action or a later state, e.g. `LazyItemDialogs`).
 Guest upload (feature 003, one step): at `/upload` the guest fills name + optional note + files in one form
 (`GuestUploadForm` → `POST /api/public/submissions`, then `POST /api/public/submissions/:id/complete`) and the
 submission lands straight in the team's queue; the only approval is staff approving/rejecting the files. No guest
@@ -278,11 +280,21 @@ Never print or commit their values.
 - Peticiones (feature 007): the grid lists **approved** guest images (`files ⋈ guest_submissions`, `status = 'approved'`), ordered and filtered by `guest_submissions.reviewed_at`
   (approval date), keyset cursor, 12 per page; guest photos have **no thumbnail**, so each card sets `src` only when it enters the viewport. Transcript edits reuse
   `PATCH /api/files/:id/text` through `ImageTextPanel` (it now emits `change`). `POST /api/peticiones/imagenes` takes 1–4 file ids, rereads their text on the server (the browser never sends
-  text), and returns the generated image (**second bounded exception** to "no binaries through server functions": capped at `PRAYER_IMAGE_MAX_BYTES` = 4 000 000, never stored). The call goes
+  text), uploads the generated image to the bucket with `putObject` (`key('peticiones/<id>.<ext>')`, capped at `PRAYER_IMAGE_MAX_BYTES` = 4 000 000), inserts its `prayer_images` row and
+  answers **201** with `PrayerGeneratedImage` JSON (no binary in the response); if the insert fails the object is deleted and it answers `502 save_failed`. The call goes
   through the existing OpenRouter client with the preset `@preset/pray-requests-image-generation` + `extraBody.modalities = ['image','text']`; the image arrives in `result.files`. The template
   is `server/assets/peticiones/plantilla.jpg` (Nitro `serverAssets`, `assets:peticiones`): replace the file and redeploy to change it. Only `server/utils/prayer-images.ts` imports `#server/ai`
-  for this use case. The browser generates **2 images at a time** (`usePrayerImages`, state in `useState('prayer-images')`, `AbortController`/`objectURL` in module maps) and results live in the page,
-  not in a layout tray. Limits: 60 generations per hour per person (`peticiones-img:<userId>`) and 120 transcript edits per hour (`text-edit:<userId>` on `PATCH /api/files/:id/text`). **Corregir
+  for this use case. The browser generates **2 images at a time** (`usePrayerImages`, state in `useState('prayer-images')`, `AbortController`s in a module map; no blobs or objectURLs): a saved
+  image leaves the queue and is prepended to the history through `useState(PRAYER_HISTORY_ADDED_KEY)`; only queued/running/failed/canceled items stay in the queue, and the leave guard only
+  counts queued/running. **History and collections (amendment, 2026-11-12)**: the page has three sections in this order: the approved requests as **one horizontally scrolling row** (`PrayerGrid`:
+  `overflow-x-auto snap-x`, cards `w-72 sm:w-80`, the infinite-scroll sentinel at the end of the row observed with the row as root, «Cargar más» for keyboard, ‹ › buttons from `sm`;
+  `PrayerCard :scroll-root` loads each photo near the row's edge), `PrayerCollectionRow` (SSR, fixed min height), and `LazyPrayerHistory hydrate-on-idle` (`#historial`,
+  `usePrayerHistory`, `server: false`, keyset of 12, 4 states, the running queue on top; not `hydrate-on-visible`: the queue must be live when «Generar» scrolls there). The row never
+  grows downward, so it does not push the sections below (the old `PrayerGrid :auto-load` pinning was removed). History endpoints: `GET /api/peticiones/imagenes`,
+  `GET …/imagenes/:id/content` (302 presigned; `?download=1` → `peticiones-AAAA-MM-DD-<6 of id>.<ext>`, UTC date) and `DELETE …/imagenes/:id` (author or admin, `prayers.moderate`;
+  row first, then object). Collections mirror `songs/collections` under `/api/peticiones/colecciones/**` (no «Generar»; deleting a collection keeps its images). All their SQL lives in
+  `server/utils/prayer-gallery.ts` and `server/utils/prayer-collections.ts` (endpoints never touch drizzle; `architecture.spec.ts`). Retention: the daily cron (step 7) deletes, in batches of
+  500, images older than `PRAYER_IMAGE_RETENTION_DAYS` (30) that are in **no** collection (rows, then objects); collections are what the team keeps. Downloads are plain links (no blobs). Limits: 60 generations per hour per person (`peticiones-img:<userId>`) and 120 transcript edits per hour (`text-edit:<userId>` on `PATCH /api/files/:id/text`). **Corregir
   texto** opens `LazyPrayerTextDialog`; `ImageTextPanel` emits `change` only for terminal states, and the page patches the card (`usePrayerRequests.patchText`, an overlay map: reassigning
   `firstPage` would drop the later pages) and the chosen copy (`usePrayerSelection.sync`). Filters live in `usePrayerFilters` (search debounced 300 ms, cleared instantly; approval-date presets in
   the browser's local day sent as ISO instants, `to` exclusive). E2E run against the OpenRouter stub (`test/e2e/setup/openrouter-stub.ts`): generation calls are recognised by the preset or

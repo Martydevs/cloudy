@@ -1,8 +1,20 @@
-// T008 — Endpoints de Peticiones (feature 007, contracts/api.md § 1): guard de equipo, validación antes de consultar y
-// `Cache-Control: no-store`.
+// T008 — Endpoints de Peticiones (feature 007, contracts/api.md § 1–2, enmienda de historial): guard de equipo, validación
+// antes de consultar, `Cache-Control: no-store` y la imagen generada que se guarda en el bucket y responde como JSON.
 import { createError } from 'h3'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { expectGuarded, expectStatus, installNitro, loadHandler, makeEvent } from './helpers/nitro'
+
+const s3 = vi.hoisted(() => ({
+  putObject: vi.fn(async () => {}),
+  deleteMany: vi.fn(async () => {}),
+  presignGet: vi.fn(async () => 'https://bucket.test/signed'),
+}))
+vi.mock('../../server/utils/storage', () => ({ key: (path: string) => `pre/${path}`, ...s3 }))
+
+beforeEach(() => {
+  s3.putObject.mockReset().mockResolvedValue(undefined)
+  s3.deleteMany.mockReset().mockResolvedValue(undefined)
+})
 
 afterEach(() => {
   vi.unstubAllGlobals()
@@ -50,40 +62,89 @@ describe('POST /api/peticiones/imagenes', () => {
   const IDS = ['3f2504e0-4f89-11d3-9a0c-0305e82c3301', '9b2c1f0e-1d2c-4e5f-8a9b-0c1d2e3f4a5b']
   const PNG = new Uint8Array([0x89, 0x50, 0x4E, 0x47])
 
-  function install({ createPrayerImage = vi.fn(async () => ({ mediaType: 'image/png', data: PNG, count: 2 })), hitRateLimit = vi.fn(async () => {}) } = {}) {
-    installNitro([], { createPrayerImage, hitRateLimit })
-    return { createPrayerImage, hitRateLimit }
+  function install({ createPrayerImage = vi.fn(async () => ({ mediaType: 'image/png', data: PNG, count: 2 })), hitRateLimit = vi.fn(async () => {}), db = [] as unknown[] } = {}) {
+    const fake = installNitro(db, { createPrayerImage, hitRateLimit })
+    return { createPrayerImage, hitRateLimit, fake }
   }
 
   const post = async (body: unknown) => {
-    const handler = await loadHandler<Buffer>('api/peticiones/imagenes.post.ts')
+    const handler = await loadHandler<Record<string, unknown>>('api/peticiones/imagenes/index.post.ts')
     const event = makeEvent({ method: 'POST', url: '/api/peticiones/imagenes', body })
     return { event, result: Promise.resolve().then(() => handler(event)) }
   }
 
-  it('éxito: devuelve los bytes con su tipo, nombre inline, no-store y el conteo', async () => {
-    const { createPrayerImage, hitRateLimit } = install()
+  it('éxito: sube al bucket, guarda la fila y responde 201 con el JSON de la imagen (sin binario)', async () => {
+    const { createPrayerImage, hitRateLimit, fake } = install()
     const { event, result } = await post({ fileIds: IDS })
-    expect(Array.from(await result)).toEqual(Array.from(PNG))
+    const image = await result
     expect(hitRateLimit).toHaveBeenCalledWith(event, 'peticiones-img:u1', { limit: 60, windowSec: 3600 })
     expect(createPrayerImage).toHaveBeenCalledWith(IDS, { abortSignal: expect.any(AbortSignal) })
-    expect(event.node.res.getHeader('Content-Type')).toBe('image/png')
-    expect(event.node.res.getHeader('Content-Disposition')).toBe('inline; filename="peticiones.png"')
+    const id = image.id as string
+    expect(id).toMatch(/^[0-9a-f-]{36}$/)
+    expect(image).toEqual({
+      id,
+      previewUrl: `/api/peticiones/imagenes/${id}/content`,
+      downloadUrl: `/api/peticiones/imagenes/${id}/content?download=1`,
+      fileIds: IDS,
+      requestCount: 2,
+      author: { userId: 'u1', name: 'Ana', active: true },
+      createdAt: expect.any(String),
+    })
+    expect(s3.putObject).toHaveBeenCalledWith(`pre/peticiones/${id}.png`, PNG, 'image/png')
+    expect(fake.calls.find(c => c.method === 'values')?.args[0]).toMatchObject({
+      id, storageKey: `pre/peticiones/${id}.png`, mediaType: 'image/png', sizeBytes: 4, fileIds: IDS, createdBy: 'u1',
+    })
+    expect(event.node.res.statusCode).toBe(201)
     expect(event.node.res.getHeader('Cache-Control')).toBe('no-store')
-    expect(event.node.res.getHeader('X-Peticiones-Count')).toBe('2')
+    expect(event.node.res.getHeader('Content-Type')).not.toBe('image/png')
+    expect(s3.deleteMany).not.toHaveBeenCalled()
   })
 
-  it('JPEG se nombra .jpg', async () => {
+  it('JPEG se guarda como .jpg', async () => {
     install({ createPrayerImage: vi.fn(async () => ({ mediaType: 'image/jpeg', data: PNG, count: 1 })) })
-    const { event, result } = await post({ fileIds: [IDS[0]] })
-    await result
-    expect(event.node.res.getHeader('Content-Disposition')).toBe('inline; filename="peticiones.jpg"')
+    const { result } = await post({ fileIds: [IDS[0]] })
+    const image = await result
+    expect(s3.putObject).toHaveBeenCalledWith(`pre/peticiones/${image.id}.jpg`, PNG, 'image/jpeg')
   })
 
-  it('un tipo que no es imagen conocida → 502 invalid_output', async () => {
+  it('un tipo que no es imagen conocida → 502 invalid_output sin subir nada', async () => {
     install({ createPrayerImage: vi.fn(async () => ({ mediaType: 'image/x-raro', data: PNG, count: 1 })) })
     const { result } = await post({ fileIds: [IDS[0]] })
     expect((await expectStatus(result, 502)).data).toEqual({ code: 'invalid_output' })
+    expect(s3.putObject).not.toHaveBeenCalled()
+  })
+
+  it('si la subida falla → 502 save_failed y no se escribe la fila', async () => {
+    s3.putObject.mockRejectedValue(new Error('bucket'))
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const { fake } = install()
+    const { result } = await post({ fileIds: IDS })
+    const failure = await expectStatus(result, 502)
+    expect(failure.data).toEqual({ code: 'save_failed' })
+    expect(failure.message).toBe('La imagen se generó pero no se pudo guardar. Inténtalo de nuevo.')
+    expect(fake.calls.some(c => c.method === 'insert')).toBe(false)
+    expect(error).toHaveBeenCalledWith('[prayer-image] save_failed (upload)')
+    error.mockRestore()
+  })
+
+  it('si la fila no entra → 502 save_failed y se borra el objeto subido (sin huérfanos)', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+    install({ db: [new Error('db caída')] })
+    const { result } = await post({ fileIds: IDS })
+    expect((await expectStatus(result, 502)).data).toEqual({ code: 'save_failed' })
+    const [uploaded] = s3.putObject.mock.calls[0] as unknown as [string]
+    expect(s3.deleteMany).toHaveBeenCalledWith([uploaded])
+    error.mockRestore()
+  })
+
+  it('si además el borrado del objeto falla, se registra y sigue siendo save_failed', async () => {
+    s3.deleteMany.mockRejectedValue(new Error('bucket'))
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+    install({ db: [new Error('db caída')] })
+    const { result } = await post({ fileIds: IDS })
+    expect((await expectStatus(result, 502)).data).toEqual({ code: 'save_failed' })
+    expect(error).toHaveBeenCalledWith('[prayer-image] orphan object not deleted')
+    error.mockRestore()
   })
 
   it.each([
@@ -98,6 +159,7 @@ describe('POST /api/peticiones/imagenes', () => {
     await expectStatus(result, 422)
     expect(hitRateLimit).not.toHaveBeenCalled()
     expect(createPrayerImage).not.toHaveBeenCalled()
+    expect(s3.putObject).not.toHaveBeenCalled()
   })
 
   it('el límite propio responde 429 rate_limited antes de generar', async () => {
@@ -155,6 +217,6 @@ describe('POST /api/peticiones/imagenes', () => {
 
   it('exige sesión de equipo', async () => {
     install()
-    await expectGuarded(await loadHandler('api/peticiones/imagenes.post.ts'), { method: 'POST', url: '/api/peticiones/imagenes', body: { fileIds: IDS } })
+    await expectGuarded(await loadHandler('api/peticiones/imagenes/index.post.ts'), { method: 'POST', url: '/api/peticiones/imagenes', body: { fileIds: IDS } })
   })
 })

@@ -1,7 +1,7 @@
 // Capa de aplicación de las imágenes de peticiones (feature 007, contracts/api.md § 2): relee las peticiones en el servidor
 // (el navegador no manda texto), carga la plantilla, llama a la IA y traduce cada fallo a HTTP. Junto con `image-text.ts`,
-// es el único importador de `#server/ai`; el SQL vive en `prayer-requests.ts`. Al proveedor solo viajan los textos y la
-// plantilla (FR-022) y el registro solo lleva códigos.
+// es el único importador de `#server/ai`; el SQL vive en `prayer-requests.ts`, `prayer-gallery.ts` y `prayer-collections.ts`.
+// Al proveedor solo viajan los textos y la plantilla (FR-022) y el registro solo lleva códigos.
 import { createError } from 'h3'
 import { generatePrayerImage } from '#server/ai'
 import type { PrayerImageErrorCode } from '#server/ai'
@@ -18,6 +18,7 @@ const STATUS: Record<PrayerErrorCode, [number, string]> = {
   invalid_output: [502, 'Bad Gateway'],
   too_large: [502, 'Bad Gateway'],
   timeout: [504, 'Gateway Timeout'],
+  save_failed: [502, 'Bad Gateway'],
 }
 
 /** Error de Peticiones con su código (`data.code`) y el texto en español. */

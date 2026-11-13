@@ -15,6 +15,7 @@ import { note, senderName } from '#shared/validation/submissions'
 import { parseYoutubeUrl, playlistName, YOUTUBE_URL_MESSAGES } from '#shared/validation/youtube'
 import { SONG_URL_MESSAGES } from '#shared/constants/songs'
 import { parseLetrasUrl, songCollectionName } from '#shared/validation/songs'
+import { prayerCollectionName } from '#shared/validation/prayers'
 import { useFormSchema } from '~/utils/form-schema'
 import {
   changePasswordSchema,
@@ -30,6 +31,7 @@ import {
   profileNameSchema,
   registerSchema,
   resetSchema,
+  prayerCollectionSchema,
   songCollectionSchema,
   songUrlSchema,
   youtubePlaylistSchema,
@@ -174,6 +176,12 @@ const cases: Case[] = [
     name: 'nombre de colección de canciones',
     validator: object({ name: songCollectionName() }),
     schema: songCollectionSchema,
+    samples: [{ name: 'Domingo' }, { name: '' }, { name: '   ' }, { name: pad(L(80)) }, { name: L(81) }],
+  },
+  {
+    name: 'nombre de colección de imágenes de Peticiones',
+    validator: object({ name: prayerCollectionName() }),
+    schema: prayerCollectionSchema,
     samples: [{ name: 'Domingo' }, { name: '' }, { name: '   ' }, { name: pad(L(80)) }, { name: L(81) }],
   },
   {

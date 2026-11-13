@@ -14,6 +14,8 @@ export type Action =
   | 'youtube.moderate'
   /** Renombrar o eliminar una colección de canciones ajena (feature 006, research D17). */
   | 'songs.moderate'
+  /** Eliminar una imagen de peticiones ajena o renombrar/eliminar una colección de imágenes ajena (feature 007). */
+  | 'prayers.moderate'
 
 const ADMIN_ONLY: ReadonlySet<Action> = new Set<Action>([
   'trash.empty',
@@ -22,6 +24,7 @@ const ADMIN_ONLY: ReadonlySet<Action> = new Set<Action>([
   'comments.moderate',
   'youtube.moderate',
   'songs.moderate',
+  'prayers.moderate',
 ])
 
 export function can(role: Role | null | undefined, action: Action): boolean {

@@ -8,6 +8,20 @@
 
 **Input**: User description: "New Nuxt page as feature named Peticiones. On the peticiones i require to display the uploaded requests from @app/pages/upload.vue and link shared upload as multiselect radio buttons cards arranged in a grid of cols and rows, no table, then the selected cards transcription goes to api where consume the openrouter client in order to generate an image or images where each image maximum margin of upload content description can include 4 parragaphs, then the 5th will be placed in a second image displaying the pray requests of the day. the llm is a custom image type llm with system prompt and, part of the input goes a image as template where simply the llm will fill the empty indicated body space with the selected card content. Add filters by date, sorter asc and desc, infinite scrolling, responsive grid and search input. Include in the card the submitted image and make the ai transcript content editable so, if includes a [unlegible] like text, the user can update it before generate the image."
 
+> **Enmienda (2026-11-12) — historial y colecciones de imágenes generadas.** Las imágenes generadas **ya se guardan**: cada
+> una se sube al bucket (`peticiones/<id>.<ext>`) con una fila en `prayer_images` (los ids de sus 1–4 peticiones, nunca su
+> texto) y aparece en una sección nueva, **Historial de imágenes generadas**, compartida por el equipo, la más reciente
+> primero y con desplazamiento infinito. La página queda en tres secciones, en este orden: **Colecciones** (fila
+> desplazable de colecciones con nombre que agrupan imágenes generadas, como en Canciones), **Peticiones aprobadas** (lo
+> que ya existía) e **Historial**. Desde el historial cada imagen se descarga (enlace con `Content-Disposition`), se amplía,
+> se guarda en una colección, se **genera de nuevo** con las mismas peticiones (el servidor relee su texto actual) o se
+> **elimina** (solo su autora o un administrador). Las imágenes se conservan **30 días** salvo las que estén en una
+> colección; la limpieza diaria borra las demás. La cola en curso (en cola, generándose, fallida o cancelada) se muestra
+> arriba del historial y el aviso al salir solo cuenta lo que está en curso. Quedan **sin efecto** FR-026 («no guardarlas»
+> y «avisar si hay imágenes sin descargar») y el supuesto «Persistencia de las imágenes»; FR-023 y FR-024 pasan a
+> referirse a la cola en curso y al historial. Ver `data-model.md` § Historial, `contracts/api.md` § 5–6 y
+> `contracts/ui.md` § Estructura.
+
 ## Contexto
 
 Los invitados de la iglesia envían sus peticiones de oración desde la página pública `/upload`: normalmente una foto de
@@ -340,8 +354,11 @@ el filtro y comprobar que el contador de la barra no cambia.
 - **FR-025**: Los errores (sin configurar, sin crédito, límite de uso, proveedor sin respuesta, plantilla ausente o
   resultado inválido) MUST llegar al usuario con un mensaje en español que diga qué hacer, y MUST NOT dejar imágenes a
   medias; los mensajes MUST vivir en el catálogo central de mensajes de la interfaz.
-- **FR-026**: Las imágenes generadas MUST NOT guardarse en el drive ni en la base de datos; MUST descargarse desde el
-  navegador, y la página MUST avisar antes de salir si hay una generación en curso o imágenes sin descargar.
+- **FR-026** *(enmendado 2026-11-12)*: ~~Las imágenes generadas MUST NOT guardarse en el drive ni en la base de datos; MUST
+  descargarse desde el navegador, y la página MUST avisar antes de salir si hay una generación en curso o imágenes sin
+  descargar.~~ Las imágenes generadas MUST guardarse en el bucket con su fila en `prayer_images` (no en el drive) y
+  aparecer en el **Historial de imágenes generadas**; MUST conservarse 30 días salvo las que estén en una colección; la
+  página MUST avisar antes de salir solo si hay una generación en cola o en curso.
 - **FR-027**: Cada imagen MUST usar el texto de sus peticiones tal como está guardado cuando **empieza** a generarse
   (el servidor lo lee en ese momento; el navegador solo indica qué peticiones van en la imagen).
 
@@ -422,7 +439,11 @@ el filtro y comprobar que el contador de la barra no cambia.
   600 caracteres son valores iniciales; los dos últimos se ajustan al validar con la plantilla real.
 - **Marca de ilegible**: la IA puede devolver `[ilegible]` o variantes; la detección es por patrón y no depende de un
   texto exacto.
-- **Persistencia de las imágenes**: no se guardan; si más adelante el equipo las quiere en el drive, es otra feature.
+- **Persistencia de las imágenes** *(enmendado 2026-11-12)*: ~~no se guardan~~ se guardan en el bucket y en tablas propias
+  (no en el drive); el historial es global del equipo (como Canciones): cualquier editor ve y descarga, solo la autora o
+  un administrador elimina; las colecciones guardan imágenes ya generadas (no generan) y son lo que se conserva más allá
+  de 30 días. Sin portadas de colección, selección múltiple en el historial ni miniaturas (YAGNI). El nombre de descarga
+  usa la fecha en UTC.
 - **Tiempo**: el equipo usa la zona horaria de su navegador para «Hoy» y los rangos de fechas.
 - **Costo**: cada imagen generada consume crédito del proveedor, por eso hay confirmación, tope por generación y
   límite de uso; reutilizar imágenes ya generadas (caché) queda fuera de alcance.
