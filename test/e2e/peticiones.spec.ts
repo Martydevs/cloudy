@@ -1,8 +1,8 @@
 // T033 / T051 / T066 / T077 — Página Peticiones (feature 007, quickstart § 3): tarjetas de peticiones aprobadas, selección,
-// generación de imágenes contra el stub de OpenRouter (guardadas en el historial, enmienda de historial), corrección de
-// transcripciones y filtros. Los datos se siembran en la
-// rama de pruebas con `seedPrayerRequest`; las aprobaciones de esta corrida son las más recientes (otros archivos e2e corren
-// antes, uno a la vez), así que salen primero en la rejilla.
+// el diálogo donde se escribe el texto de cada una, generación de imágenes contra el stub de OpenRouter (guardadas en el
+// historial, enmienda de historial) y filtros. Los datos se siembran en la rama de pruebas con `seedPrayerRequest`; las
+// aprobaciones de esta corrida son las más recientes (otros archivos e2e corren antes, uno a la vez), así que salen primero
+// en la rejilla. El texto ya no se guarda: cada prueba lo escribe en el diálogo.
 import { createPage, setup } from '@nuxt/test-utils/e2e'
 import type { Cookie, Page } from 'playwright-core'
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest'
@@ -48,20 +48,23 @@ async function seedMany(prefix: string, count: number, extra: PrayerSeed = {}): 
   const base = Date.now()
   for (let i = 0; i < count; i++) {
     const senderName = `${prefix} ${String(i + 1).padStart(2, '0')} ${runId()}`
-    await seedPrayerRequest(owner, { senderName, text: `Petición ${i + 1} de ${prefix}`, reviewedAt: new Date(base - i * 1000), ...extra })
+    await seedPrayerRequest(owner, { senderName, reviewedAt: new Date(base - i * 1000), ...extra })
     names.push(senderName)
   }
   return names
 }
 
-/** Siembra una petición por texto; la primera queda como la aprobada más reciente (sale primero en la rejilla y última en las imágenes). */
-async function seedTexts(prefix: string, texts: string[], extra: PrayerSeed = {}): Promise<{ name: string, fileId: string }[]> {
+/**
+ * Siembra una petición por cada texto; la primera queda como la aprobada más reciente (sale primero en la rejilla y última
+ * en las imágenes). El texto no se guarda en la base: viaja de vuelta para escribirlo en el diálogo de generación.
+ */
+async function seedTexts(prefix: string, texts: string[], extra: PrayerSeed = {}): Promise<{ name: string, fileId: string, text: string }[]> {
   const base = Date.now()
-  const seeded: { name: string, fileId: string }[] = []
+  const seeded: { name: string, fileId: string, text: string }[] = []
   for (const [i, text] of texts.entries()) {
     const name = `${prefix} ${String(i + 1).padStart(2, '0')} ${runId()}`
-    const { fileId } = await seedPrayerRequest(owner, { senderName: name, text, reviewedAt: new Date(base - i * 1000), ...extra })
-    seeded.push({ name, fileId })
+    const { fileId } = await seedPrayerRequest(owner, { senderName: name, reviewedAt: new Date(base - i * 1000), ...extra })
+    seeded.push({ name, fileId, text })
   }
   return seeded
 }
@@ -124,20 +127,20 @@ describe('US1 · ver las peticiones y elegir cuáles proyectar', () => {
     expect(await box(page, names[3]!).isChecked()).toBe(false)
     await expect.poll(() => bar(page).innerText()).toContain('2 peticiones → 1 imagen')
 
-    await bar(page).getByRole('button', { name: 'Ver elegidas' }).click()
-    const dialog = page.getByRole('dialog', { name: 'Peticiones elegidas' })
+    await bar(page).getByRole('button', { name: 'Escribir textos y generar' }).click()
+    const dialog = page.getByRole('dialog', { name: 'Escribe el texto de cada petición' })
     await expect.poll(() => dialog.innerText()).toContain(names[0])
     expect(await dialog.innerText()).toContain(names[2])
     await dialog.getByRole('button', { name: 'Cerrar' }).first().click()
     await page.close()
   })
 
-  it('una tarjeta sin texto no se puede marcar y dice por qué', async () => {
-    const [name] = await seedMany('Sin texto', 1, { textStatus: 'empty', text: null })
+  it('cualquier petición aprobada se puede marcar: el texto se escribe al generar', async () => {
+    const [name] = await seedMany('Sin texto', 1)
     const page = await editorPage()
     await openPage(page)
-    expect(await box(page, name!).isDisabled()).toBe(true)
-    expect(await card(page, name!).innerText()).toContain('Sin texto: escríbelo primero')
+    expect(await box(page, name!).isDisabled()).toBe(false)
+    expect(await card(page, name!).innerText()).not.toContain('Sin texto')
     await page.close()
   })
 
@@ -197,12 +200,20 @@ describe('US2 · generar las imágenes de peticiones del día', () => {
     return ids
   }
 
-  /** Elige las tarjetas, pulsa **Generar imágenes** y acepta la confirmación con `confirmLabel`. */
-  async function generate(page: Page, names: string[], confirmLabel = 'Generar') {
+  /** Abre el diálogo con las tarjetas elegidas (sin escribir nada todavía). */
+  async function openCompose(page: Page, names: string[]) {
     for (const name of names) await box(page, name).check()
-    await bar(page).getByRole('button', { name: 'Generar imágenes' }).click()
-    const dialog = page.getByRole('dialog', { name: 'Generar imágenes' })
-    await dialog.getByRole('button', { name: confirmLabel, exact: true }).click()
+    await bar(page).getByRole('button', { name: 'Escribir textos y generar' }).click()
+    const dialog = page.getByRole('dialog', { name: 'Escribe el texto de cada petición' })
+    await expect.poll(() => dialog.isVisible()).toBe(true)
+    return dialog
+  }
+
+  /** Elige las tarjetas, escribe el texto de cada una en el diálogo y genera. */
+  async function generate(page: Page, entries: { name: string, text: string }[]) {
+    const dialog = await openCompose(page, entries.map(e => e.name))
+    for (const { name, text } of entries) await dialog.getByLabel(name, { exact: true }).fill(text)
+    await dialog.getByRole('button', { name: 'Generar imágenes', exact: true }).click()
     await expect.poll(() => dialog.isVisible()).toBe(false)
   }
 
@@ -216,7 +227,7 @@ describe('US2 · generar las imágenes de peticiones del día', () => {
     const page = await editorPage()
     const ids = trackSaved(page)
     await openPage(page)
-    await generate(page, seeded.map(s => s.name))
+    await generate(page, seeded)
 
     await expect.poll(() => ids.length, { timeout: 30_000 }).toBe(2)
     for (const { id } of ids) await expect.poll(() => saved(page, id).isVisible(), { timeout: 10_000 }).toBe(true)
@@ -259,31 +270,28 @@ describe('US2 · generar las imágenes de peticiones del día', () => {
     await preview.getByRole('button', { name: 'Cerrar' }).first().click()
     await expect.poll(() => preview.isVisible()).toBe(false)
 
-    // **Generar de nuevo** desde el historial: las mismas peticiones, otra imagen guardada; las anteriores siguen.
+    // El menú del historial ya no ofrece **Generar de nuevo**: el texto no se guarda en ningún lado.
     await saved(page, one.id).getByRole('button', { name: 'Opciones de la imagen' }).click()
-    await page.getByRole('menuitem', { name: 'Generar de nuevo' }).click()
-    await expect.poll(async () => (await prayerCalls()).length, { timeout: 30_000 }).toBe(3)
-    expect((await prayerCalls())[2]!.texts).toEqual([texts[0]])
-    await expect.poll(() => ids.length, { timeout: 30_000 }).toBe(3)
-    expect(ids[2]!.fileIds).toEqual(one.fileIds)
-    await expect.poll(() => saved(page, ids[2]!.id).isVisible(), { timeout: 10_000 }).toBe(true)
-    expect(await saved(page, one.id).isVisible()).toBe(true)
+    expect(await page.getByRole('menuitem', { name: 'Generar de nuevo' }).count()).toBe(0)
+    await page.keyboard.press('Escape')
     await page.close()
   })
 
-  it('con texto [ilegible] la confirmación avisa y ofrece «Generar de todos modos»', async () => {
-    const [unreadable] = await seedTexts('Ilegible', [`Oremos por [ilegible] ${runId()}`])
+  it('sin escribir el texto no se puede generar, y el diálogo dice cuántos faltan', async () => {
+    const seeded = await seedTexts('Falta texto', [`Uno ${runId()}`, `Dos ${runId()}`])
     const page = await editorPage()
-    const ids = trackSaved(page)
     await openPage(page)
-    await box(page, unreadable!.name).check()
-    await expect.poll(() => bar(page).innerText()).toContain('1 petición todavía tiene texto ilegible')
-    await bar(page).getByRole('button', { name: 'Generar imágenes' }).click()
-    const dialog = page.getByRole('dialog', { name: 'Generar imágenes' })
-    await expect.poll(() => dialog.innerText()).toContain('1 petición todavía tiene texto ilegible')
-    await dialog.getByRole('button', { name: 'Generar de todos modos' }).click()
-    await expect.poll(() => ids.length, { timeout: 30_000 }).toBe(1)
-    expect((await prayerCalls()).map(c => c.texts)).toEqual([[`Oremos por [ilegible] ${runId()}`]])
+    const dialog = await openCompose(page, seeded.map(s => s.name))
+    const generar = dialog.getByRole('button', { name: 'Generar imágenes', exact: true })
+    await expect.poll(() => dialog.innerText()).toContain('Falta el texto de 2 peticiones')
+    expect(await generar.isDisabled()).toBe(true)
+    // Con una escrita sigue faltando la otra.
+    await dialog.getByLabel(seeded[0]!.name, { exact: true }).fill(seeded[0]!.text)
+    await expect.poll(() => dialog.innerText()).toContain('Falta el texto de 1 petición')
+    expect(await generar.isDisabled()).toBe(true)
+    await dialog.getByLabel(seeded[1]!.name, { exact: true }).fill(seeded[1]!.text)
+    await expect.poll(() => generar.isDisabled()).toBe(false)
+    expect(await prayerCalls()).toHaveLength(0)
     await page.close()
   })
 
@@ -294,7 +302,7 @@ describe('US2 · generar las imágenes de peticiones del día', () => {
     const page = await editorPage()
     const ids = trackSaved(page)
     await openPage(page)
-    await generate(page, seeded.map(s => s.name))
+    await generate(page, seeded)
 
     await expect.poll(() => result(page, 1).getByRole('alert').isVisible(), { timeout: 30_000 }).toBe(true)
     expect(await result(page, 1).getByRole('alert').innerText()).toBe(PRAYER_ERROR_MESSAGES.provider)
@@ -313,7 +321,7 @@ describe('US2 · generar las imágenes de peticiones del día', () => {
     const page = await editorPage()
     const ids = trackSaved(page)
     await openPage(page)
-    await generate(page, [request!.name])
+    await generate(page, [request!])
     await expect.poll(() => result(page, 1).getByRole('alert').isVisible(), { timeout: 30_000 }).toBe(true)
     expect(await result(page, 1).getByRole('alert').innerText()).toBe(PRAYER_ERROR_MESSAGES.quota_exceeded)
     expect(await result(page, 1).getByRole('button', { name: 'Reintentar' }).count()).toBe(0)
@@ -331,8 +339,10 @@ describe('US2 · generar las imágenes de peticiones del día', () => {
     // Otra persona la envía a la papelera mientras tanto (rama de pruebas, como `seedPrayerRequest({ deleted: true })`).
     await testSql()`UPDATE files SET deleted_at = now(), deleted_by = ${owner}, trash_root_id = id WHERE id = ${trashed!.fileId}`
 
-    await bar(page).getByRole('button', { name: 'Generar imágenes' }).click()
-    await page.getByRole('dialog', { name: 'Generar imágenes' }).getByRole('button', { name: 'Generar', exact: true }).click()
+    const dialog = page.getByRole('dialog', { name: 'Escribe el texto de cada petición' })
+    await bar(page).getByRole('button', { name: 'Escribir textos y generar' }).click()
+    for (const entry of [kept!, trashed!]) await dialog.getByLabel(entry.name, { exact: true }).fill(entry.text)
+    await dialog.getByRole('button', { name: 'Generar imágenes', exact: true }).click()
     await expect.poll(() => page.getByText('Quitamos 1 petición que ya no está disponible').isVisible(), { timeout: 30_000 }).toBe(true)
     expect(await result(page, 1).getByRole('alert').innerText()).toBe(PRAYER_ERROR_MESSAGES.request_unavailable)
     expect(await result(page, 1).getByRole('button', { name: 'Reintentar' }).count()).toBe(0)
@@ -356,7 +366,7 @@ describe('US2 · generar las imágenes de peticiones del día', () => {
     const dialog = page.getByRole('dialog', { name: '¿Salir de Peticiones?' })
 
     // Guardada: salir no pregunta (se vuelve a la página para la segunda parte).
-    await generate(page, [quick!.name])
+    await generate(page, [quick!])
     await expect.poll(() => ids.length, { timeout: 30_000 }).toBe(1)
     await leave()
     await page.waitForURL(url => url.pathname === '/')
@@ -364,7 +374,7 @@ describe('US2 · generar las imágenes de peticiones del día', () => {
     await openPage(page)
 
     // Generándose (el stub tarda con «lento»): pregunta; Cancelar se queda.
-    await generate(page, [slow!.name])
+    await generate(page, [slow!])
     await expect.poll(() => result(page, 1).getByRole('status').isVisible()).toBe(true)
     await leave()
     await expect.poll(() => dialog.isVisible()).toBe(true)
@@ -387,9 +397,11 @@ describe('US2 · generar las imágenes de peticiones del día', () => {
     const ids = trackSaved(page)
     await openPage(page)
     await box(page, request!.name).check()
+    await bar(page).getByRole('button', { name: 'Escribir textos y generar' }).click()
+    const dialog = page.getByRole('dialog', { name: 'Escribe el texto de cada petición' })
+    await dialog.getByLabel(request!.name, { exact: true }).fill(request!.text)
     await page.context().setOffline(true)
-    await bar(page).getByRole('button', { name: 'Generar imágenes' }).click()
-    await page.getByRole('dialog', { name: 'Generar imágenes' }).getByRole('button', { name: 'Generar', exact: true }).click()
+    await dialog.getByRole('button', { name: 'Generar imágenes', exact: true }).click()
 
     await expect.poll(() => result(page, 1).getByRole('alert').isVisible(), { timeout: 30_000 }).toBe(true)
     expect(await result(page, 1).getByRole('alert').innerText()).toContain('Se perdió la conexión al generar la imagen')
@@ -403,126 +415,8 @@ describe('US2 · generar las imágenes de peticiones del día', () => {
   })
 })
 
-describe('US3 · corregir la transcripción antes de generar', () => {
-  const textDialog = (page: Page, sender: string) => page.getByRole('dialog', { name: `Transcripción de ${sender}` })
-  const textbox = (page: Page, sender: string) => textDialog(page, sender).getByRole('textbox', { name: 'Texto de la imagen' })
-
-  /** Abre el diálogo desde la tarjeta con `button` y entra en edición con `edit` («Editar» o «Escribir el texto»). */
-  async function openEditor(page: Page, sender: string, button: string, edit = 'Editar') {
-    await card(page, sender).getByRole('button', { name: button }).click()
-    const dialog = textDialog(page, sender)
-    await expect.poll(() => dialog.isVisible()).toBe(true)
-    await dialog.getByRole('button', { name: edit }).click()
-    await expect.poll(() => textbox(page, sender).isVisible()).toBe(true)
-    return dialog
-  }
-
-  async function closeDialog(page: Page, sender: string) {
-    await textDialog(page, sender).getByRole('button', { name: 'Cerrar' }).first().click()
-    await expect.poll(() => textDialog(page, sender).isVisible()).toBe(false)
-  }
-
-  beforeEach(async () => {
-    await resetStub()
-  })
-
-  it('[ilegible] → Corregir texto → la tarjeta queda Editada y sin aviso; recargar lo conserva; genera con el texto nuevo', async () => {
-    const name = `Corregir ${runId()}`
-    const fixed = `Oremos por la familia Pérez ${runId()}`
-    await seedPrayerRequest(owner, { senderName: name, text: `Oremos por la familia [ilegible] ${runId()}` })
-    const page = await editorPage()
-    await openPage(page)
-    expect(await card(page, name).innerText()).toContain('Texto por corregir')
-    await box(page, name).check()
-    await expect.poll(() => bar(page).innerText()).toContain('1 petición todavía tiene texto ilegible')
-
-    const dialog = await openEditor(page, name, 'Corregir texto')
-    await expect.poll(() => dialog.getByRole('img', { name: `Foto enviada por ${name}` }).isVisible()).toBe(true)
-    await textbox(page, name).fill(fixed)
-    await dialog.getByRole('button', { name: 'Guardar' }).click()
-    await expect.poll(() => page.getByText('Texto guardado').isVisible()).toBe(true)
-    await closeDialog(page, name)
-
-    await expect.poll(() => card(page, name).innerText()).toContain(fixed)
-    const text = await card(page, name).innerText()
-    expect(text).toContain('Editada')
-    expect(text).not.toContain('Texto por corregir')
-    // La copia elegida también tomó el texto: la barra ya no avisa y genera con el texto corregido.
-    expect(await box(page, name).isChecked()).toBe(true)
-    await expect.poll(() => bar(page).innerText()).not.toContain('ilegible')
-    await bar(page).getByRole('button', { name: 'Generar imágenes' }).click()
-    await page.getByRole('dialog', { name: 'Generar imágenes' }).getByRole('button', { name: 'Generar', exact: true }).click()
-    await expect.poll(async () => (await prayerCalls()).length, { timeout: 30_000 }).toBe(1)
-    expect((await prayerCalls())[0]!.texts).toEqual([fixed])
-
-    await page.reload()
-    await waitForHydration(page)
-    await expect.poll(() => card(page, name).innerText()).toContain(fixed)
-    expect(await card(page, name).innerText()).toContain('Editada')
-    await page.close()
-  })
-
-  it('una tarjeta sin texto: Escribir transcripción → guardar → ya se puede marcar', async () => {
-    const name = `Escribir ${runId()}`
-    await seedPrayerRequest(owner, { senderName: name, textStatus: 'empty', text: null })
-    const page = await editorPage()
-    await openPage(page)
-    expect(await box(page, name).isDisabled()).toBe(true)
-
-    const dialog = await openEditor(page, name, 'Escribir transcripción', 'Escribir el texto')
-    await textbox(page, name).fill(`Escrito a mano ${runId()}`)
-    await dialog.getByRole('button', { name: 'Guardar' }).click()
-    await expect.poll(() => card(page, name).innerText()).toContain(`Escrito a mano ${runId()}`)
-    await closeDialog(page, name)
-    expect(await box(page, name).isDisabled()).toBe(false)
-    await box(page, name).check()
-    await expect.poll(() => bar(page).innerText()).toContain('1 petición → 1 imagen')
-    await page.close()
-  })
-
-  it('vacío o de más de 10 000 caracteres no se puede guardar y lo indica', async () => {
-    const name = `Validar ${runId()}`
-    await seedPrayerRequest(owner, { senderName: name, text: `Texto original ${runId()}` })
-    const page = await editorPage()
-    await openPage(page)
-    const dialog = await openEditor(page, name, 'Corregir texto')
-    const save = dialog.getByRole('button', { name: 'Guardar' })
-
-    await textbox(page, name).fill('   ')
-    expect(await save.isDisabled()).toBe(true)
-    expect(await textbox(page, name).getAttribute('aria-invalid')).toBe('true')
-
-    await textbox(page, name).fill('a'.repeat(10_001))
-    expect(await save.isDisabled()).toBe(true)
-    expect(await dialog.innerText()).toContain('10 001 / 10 000')
-    await closeDialog(page, name)
-    expect(await card(page, name).innerText()).toContain(`Texto original ${runId()}`)
-    await page.close()
-  })
-
-  it('sin red, Guardar avisa y conserva lo escrito; al volver la red, guardar funciona', async () => {
-    const name = `Sin red texto ${runId()}`
-    const typed = `Escrito sin conexión ${runId()}`
-    await seedPrayerRequest(owner, { senderName: name, text: `Antes ${runId()}` })
-    const page = await editorPage()
-    await openPage(page)
-    const dialog = await openEditor(page, name, 'Corregir texto')
-    await textbox(page, name).fill(typed)
-
-    await page.context().setOffline(true)
-    await dialog.getByRole('button', { name: 'Guardar' }).click()
-    await expect.poll(() => page.getByText('No pudimos guardar el texto').isVisible()).toBe(true)
-    expect(await textbox(page, name).inputValue()).toBe(typed)
-
-    await page.context().setOffline(false)
-    await dialog.getByRole('button', { name: 'Guardar' }).click()
-    await expect.poll(() => card(page, name).innerText()).toContain(typed)
-    await page.close()
-  })
-})
-
 describe('US4 · buscar, filtrar por fecha y ordenar', () => {
-  const searchBox = (page: Page) => page.getByRole('searchbox', { name: 'Buscar por nombre, nota o texto' })
+  const searchBox = (page: Page) => page.getByRole('searchbox', { name: 'Buscar por nombre o nota' })
   const preset = (page: Page, label: string) => page.getByRole('group', { name: 'Fecha de aprobación' }).getByRole('button', { name: label, exact: true })
   const visibleNames = (page: Page) => page.getByRole('list', { name: 'Peticiones aprobadas' }).getByRole('heading', { level: 3 }).allInnerTexts()
 
@@ -538,10 +432,10 @@ describe('US4 · buscar, filtrar por fecha y ordenar', () => {
     await expect.poll(() => page.getByRole('search').getByRole('status').innerText()).toContain(text)
   }
 
-  it('la búsqueda no distingue tildes y un nombre muestra solo sus tarjetas', async () => {
+  it('la búsqueda no distingue tildes y cubre el nombre y la nota', async () => {
     const token = `tk${runId()}`
-    const [withAccent] = await seedTexts('Busqueda', [`Una oración especial ${token}`])
-    const [named] = await seedTexts(`Lucía ${token}`, [`Otra cosa ${token}`])
+    const [withAccent] = await seedTexts('Busqueda', ['n/a'], { note: `Una oración especial ${token}` })
+    const [named] = await seedTexts(`Lucía ${token}`, ['n/a'], { note: `Otra cosa ${token}` })
     const page = await editorPage()
     await openPage(page)
 

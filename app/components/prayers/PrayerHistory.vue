@@ -10,8 +10,6 @@ const emit = defineEmits<{ collection: [image: PrayerGeneratedImage] }>()
 const images = usePrayerImages()
 const history = usePrayerHistory()
 const { items, firstPage, error, loading, loadingMore, moreFailed, done } = history
-const toast = useToast()
-const m = messages.prayers
 const h = messages.prayers.history
 const { timeAgo } = useRelativeTime()
 const headingId = useId()
@@ -20,10 +18,6 @@ const previewing = ref<{ url: string, title: string } | null>(null)
 
 function preview(image: PrayerGeneratedImage) {
   previewing.value = { url: image.previewUrl, title: h.alt(h.count(image.requestCount), timeAgo(image.createdAt)) }
-}
-
-function regenerate(image: PrayerGeneratedImage) {
-  if (images.regenerateFrom(image.fileIds) > 0) toast.info(m.regenerateQueued)
 }
 
 // Página siguiente cuando el centinela se acerca a la pantalla.
@@ -69,7 +63,6 @@ watch(sentinelVisible, (visible) => {
             :can-remove="history.canRemove(image)"
             @preview="preview(image)"
             @collection="emit('collection', image)"
-            @regenerate="regenerate(image)"
             @remove="history.remove(image)"
           />
         </li>

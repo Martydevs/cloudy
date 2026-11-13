@@ -7,7 +7,7 @@ import type { PrayerImageItem } from '~/composables/usePrayerImages'
 import { buttonsWithText } from './helpers/api'
 
 const item = (changes: Partial<PrayerImageItem> = {}): PrayerImageItem =>
-  ({ key: 'img-1', index: 1, fileIds: ['a', 'b'], status: 'running', ...changes })
+  ({ key: 'img-1', index: 1, requests: [{ fileId: 'a', text: 'Ana' }, { fileId: 'b', text: 'Luis' }], status: 'running', ...changes })
 
 const labels = (wrapper: { findAll: (s: string) => { text: () => string }[] }) => wrapper.findAll('button').map(b => b.text().trim())
 
@@ -36,15 +36,15 @@ describe('PrayerResultCard', () => {
     expect(wrapper.text()).toContain('No pudimos generar la imagen.')
   })
 
-  it('cancelada: Generar de nuevo y Descartar; una sola petición dice «1 petición»', async () => {
-    const wrapper = await mountSuspended(PrayerResultCard, { props: { item: item({ status: 'canceled', fileIds: ['a'] }) } })
-    expect(labels(wrapper)).toEqual(['Generar de nuevo', 'Descartar'])
+  it('cancelada: Volver a poner en cola y Descartar; una sola petición dice «1 petición»', async () => {
+    const wrapper = await mountSuspended(PrayerResultCard, { props: { item: item({ status: 'canceled', requests: [{ fileId: 'a', text: 'Ana' }] }) } })
+    expect(labels(wrapper)).toEqual(['Volver a poner en cola', 'Descartar'])
     expect(wrapper.text()).toContain('1 petición')
   })
 
-  it('cancelada: Generar de nuevo y Descartar emiten', async () => {
+  it('cancelada: Volver a poner en cola y Descartar emiten', async () => {
     const wrapper = await mountSuspended(PrayerResultCard, { props: { item: item({ status: 'canceled' }) } })
-    await buttonsWithText(wrapper, 'Generar de nuevo')[0]!.trigger('click')
+    await buttonsWithText(wrapper, 'Volver a poner en cola')[0]!.trigger('click')
     await buttonsWithText(wrapper, 'Descartar')[0]!.trigger('click')
     expect(wrapper.emitted('regenerate')).toHaveLength(1)
     expect(wrapper.emitted('dismiss')).toHaveLength(1)

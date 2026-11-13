@@ -1,13 +1,13 @@
 <script setup lang="ts">
 // Una imagen del historial (feature 007, enmienda de historial): la imagen guardada en una caja con la proporción de la
 // plantilla (1376×768), cuántas peticiones lleva, cuándo y quién la generó, **Descargar** (un enlace: el servidor redirige a
-// la URL firmada con `Content-Disposition`), **Ver en grande** y el menú con **Guardar en colección**, **Generar de nuevo** y
-// **Eliminar** (solo su autora o un administrador). No hay miniatura: el `src` llega cuando la tarjeta se acerca a la pantalla.
+// la URL firmada con `Content-Disposition`), **Ver en grande** y el menú con **Guardar en colección** y **Eliminar** (solo su
+// autora o un administrador). No hay miniatura: el `src` llega cuando la tarjeta se acerca a la pantalla.
 import type { PrayerGeneratedImage } from '#shared/types/api'
 import type { ActionMenuItem } from '~/components/ui/ActionMenu.vue'
 
 const props = withDefaults(defineProps<{ image: PrayerGeneratedImage, canRemove?: boolean }>(), { canRemove: false })
-const emit = defineEmits<{ preview: [], collection: [], regenerate: [], remove: [] }>()
+const emit = defineEmits<{ preview: [], collection: [], remove: [] }>()
 
 const m = messages.prayers
 const h = messages.prayers.history
@@ -25,13 +25,11 @@ const alt = computed(() => h.alt(count.value, ago.value))
 
 const menu = computed<ActionMenuItem[]>(() => [
   { key: 'collection', label: h.saveTo, icon: 'lucide:list-plus' },
-  { key: 'regenerate', label: m.regenerate, icon: 'lucide:refresh-cw' },
   ...(props.canRemove ? [{ key: 'remove', label: h.remove, icon: 'lucide:trash-2', danger: true }] : []),
 ])
 
 function onSelect(key: string) {
   if (key === 'collection') emit('collection')
-  else if (key === 'regenerate') emit('regenerate')
   else if (key === 'remove') emit('remove')
 }
 </script>

@@ -16,8 +16,6 @@ import * as fileAccess from '../../../server/utils/file-access'
 import * as fileSignature from '../../../server/utils/file-signature'
 import * as files from '../../../server/utils/files'
 import * as guestSubmissions from '../../../server/utils/guest-submissions'
-import * as imageText from '../../../server/utils/image-text'
-import * as imageTextStore from '../../../server/utils/image-text-store'
 import * as naming from '../../../server/utils/naming'
 import * as pagination from '../../../server/utils/pagination'
 import * as prayerCollections from '../../../server/utils/prayer-collections'
@@ -71,8 +69,6 @@ export function installNitro(results: unknown[] = [], overrides: Record<string, 
     ...fileSignature,
     ...files,
     ...guestSubmissions,
-    ...imageText,
-    ...imageTextStore,
     ...naming,
     ...pagination,
     ...prayerCollections,

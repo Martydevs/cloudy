@@ -5,7 +5,6 @@
 // botones y enlaces quedan por encima y no cambian la selección. La foto no tiene miniatura: recibe su `src` solo al
 // acercarse al viewport, dentro de una caja de proporción fija.
 import type { PrayerRequest } from '#shared/types/api'
-import { hasIllegibleMark, isLongText, splitIllegible } from '#shared/prayers'
 
 const props = withDefaults(defineProps<{
   request: PrayerRequest
@@ -18,7 +17,7 @@ const props = withDefaults(defineProps<{
   /** Contenedor desplazable de la fila: la foto se pide al acercarse a su borde y no solo al de la pantalla. */
   scrollRoot?: HTMLElement | null
 }>(), { selected: false, disabled: false, disabledReason: null, priority: false, scrollRoot: null })
-const emit = defineEmits<{ toggle: [], fix: [] }>()
+const emit = defineEmits<{ toggle: [] }>()
 
 const m = messages.prayers
 const { timeAgo } = useRelativeTime()
@@ -28,26 +27,6 @@ const reasonId = useId()
 const root = useTemplateRef<HTMLElement>('root')
 const near = useElementVisibility(root, { scrollTarget: () => props.scrollRoot, rootMargin: '200px', once: true })
 const photoFailed = ref(false)
-
-const text = computed(() => props.request.text)
-const chunks = computed(() => (text.value.status === 'ready' && text.value.text ? splitIllegible(text.value.text) : []))
-const toFix = computed(() => hasIllegibleMark(text.value.text))
-const long = computed(() => isLongText(text.value.text))
-const hasText = computed(() => text.value.status === 'ready' && !!text.value.text?.trim())
-/** «Corregir texto» con texto o tras un fallo; «Escribir transcripción» sin texto; nada mientras se lee o sin lectura posible (409). */
-const fixLabel = computed(() => {
-  if (hasText.value || text.value.status === 'failed') return m.fix
-  if (text.value.status === 'ready' || text.value.status === 'empty' || text.value.status === 'pending') return m.write
-  return null
-})
-
-const failedMessage = computed(() => {
-  switch (text.value.error) {
-    case 'quota_exceeded': return messages.imageText.failedQuota
-    case 'invalid_input': return messages.imageText.failedPermanent
-    default: return messages.imageText.failedRetryable
-  }
-})
 </script>
 
 <template>
@@ -97,43 +76,13 @@ const failedMessage = computed(() => {
       </div>
       <p v-if="request.note" class="break-words text-sm italic text-base-content/80">{{ request.note }}</p>
 
-      <div v-if="selected || text.editedAt || toFix || long" class="flex flex-wrap gap-1">
-        <span v-if="selected" class="badge badge-primary">{{ m.chosen }}</span>
-        <span v-if="text.editedAt" class="badge badge-ghost">{{ m.edited }}</span>
-        <!-- `text-base-content`: el texto de `badge-soft` en `warning` no llega a AA en `cloudy-light` (1,77:1). -->
-        <span v-if="toFix" class="badge badge-warning badge-soft text-base-content">
-          <Icon name="lucide:triangle-alert" class="size-4" aria-hidden="true" />
-          {{ m.toFix }}
-        </span>
-        <span v-if="long" class="badge badge-info badge-soft">{{ m.long }}</span>
+      <div v-if="selected" class="flex flex-wrap gap-1">
+        <span class="badge badge-primary">{{ m.chosen }}</span>
       </div>
-
-      <!-- Transcripción como texto (nunca v-html); las marcas de ilegible resaltadas sin depender del color. -->
-      <p v-if="hasText" class="whitespace-pre-line break-words text-sm">
-        <template v-for="(chunk, i) in chunks" :key="i">
-          <span v-if="chunk.mark" class="badge badge-warning badge-soft h-auto whitespace-normal align-baseline text-base-content">
-            <Icon name="lucide:triangle-alert" class="size-3.5 shrink-0" aria-hidden="true" />{{ chunk.text }}
-          </span>
-          <template v-else>{{ chunk.text }}</template>
-        </template>
-      </p>
-      <div v-else-if="text.status === 'reading'" class="flex flex-col gap-2" role="status">
-        <span class="text-sm text-base-content/70">{{ messages.imageText.reading }}</span>
-        <div class="skeleton h-4 w-full motion-reduce:animate-none" />
-        <div class="skeleton h-4 w-2/3 motion-reduce:animate-none" />
-      </div>
-      <p v-else-if="text.status === 'pending'" class="text-sm text-base-content/70">{{ messages.imageText.notRead }}</p>
-      <p v-else-if="text.status === 'failed'" class="text-sm text-base-content/70">{{ failedMessage }}</p>
-      <p v-else-if="text.status === 'unavailable'" class="text-sm text-base-content/70">{{ messages.imageText.unavailable }}</p>
-      <p v-else class="text-sm text-base-content/70">{{ messages.imageText.empty }}</p>
 
       <p v-if="disabled && disabledReason" :id="reasonId" class="text-sm text-base-content/70">{{ disabledReason }}</p>
 
       <div class="relative z-10 mt-1 flex flex-wrap gap-2">
-        <button v-if="fixLabel" type="button" class="btn lg:btn-sm" @click="emit('fix')">
-          <Icon name="lucide:pencil" class="size-4" aria-hidden="true" />
-          {{ fixLabel }}
-        </button>
         <a :href="request.previewUrl" target="_blank" rel="noopener" class="btn btn-ghost lg:btn-sm">
           <Icon name="lucide:external-link" class="size-4" aria-hidden="true" />
           {{ m.openPhoto }}

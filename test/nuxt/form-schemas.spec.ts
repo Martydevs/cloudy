@@ -10,7 +10,6 @@ import { changePasswordInput, forgotInput, loginInput, profileNameInput, registe
 import { commentInput } from '#shared/validation/comments'
 import { object } from '#shared/validation/core'
 import { fileName, folderName } from '#shared/validation/files'
-import { imageTextEditInput } from '#shared/validation/image-text'
 import { note, senderName } from '#shared/validation/submissions'
 import { parseYoutubeUrl, playlistName, YOUTUBE_URL_MESSAGES } from '#shared/validation/youtube'
 import { SONG_URL_MESSAGES } from '#shared/constants/songs'
@@ -25,7 +24,6 @@ import {
   folderNameSchema,
   forgotSchema,
   guestSubmissionSchema,
-  imageTextSchema,
   loginSchema,
   noteSchema,
   profileNameSchema,
@@ -150,12 +148,6 @@ const cases: Case[] = [
     validator: commentInput,
     schema: commentSchema,
     samples: [{ body: 'Hola' }, { body: '\n  ' }, { body: pad(L(2000)) }, { body: L(2001) }],
-  },
-  {
-    name: 'texto de la imagen',
-    validator: imageTextEditInput,
-    schema: imageTextSchema,
-    samples: [{ text: 'Oremos' }, { text: '' }, { text: L(10_000) }, { text: L(10_001) }],
   },
   {
     name: 'envío del invitado',

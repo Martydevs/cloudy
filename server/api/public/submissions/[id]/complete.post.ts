@@ -60,16 +60,13 @@ export default defineEventHandler(async (event): Promise<{ status: 'pending', ac
     db.update(guestSubmissions).set({ completedAt: new Date() }).where(and(eq(guestSubmissions.id, id), isNull(guestSubmissions.completedAt))),
   ])
 
-  // Texto de las imágenes (feature 002, FR-009): las copias JPEG de las HEIC se validan aquí y las lecturas
-  // corren en segundo plano; la respuesta no las espera y ningún fallo de lectura la cambia (FR-004).
-  // Las copias se validan todas a la vez para no sumar viajes al bucket a la latencia de la respuesta.
-  const readable = await Promise.all(files.filter(f => accepted.includes(f.id)).map(async (file) => {
-    const image = { category: file.category, extension: file.extension, sizeBytes: Number(file.sizeBytes) }
-    const heic = file.extension === 'heic' && isImageTextEligible({ ...image, size: image.sizeBytes })
-    const hasTextSource = heic && await checkTextSourceCopy({ table: 'guest_submission_files', id: file.id })
-    return canReadImageText(image, hasTextSource)
-  }))
-  if (readable.some(Boolean)) runInBackground(() => readSubmissionImages(id, { concurrency: 4 }))
+  // Copias JPEG de las HEIC: se validan aquí para que la limpieza diaria pueda borrarlas junto al original, todas a la
+  // vez para no sumar viajes al bucket a la latencia de la respuesta. Ningún fallo suyo cambia la respuesta.
+  await Promise.all(files
+    .filter(f => accepted.includes(f.id)
+      && f.extension === 'heic'
+      && isImageTextEligible({ category: f.category, extension: f.extension, size: Number(f.sizeBytes) }))
+    .map(f => checkTextSourceCopy({ table: 'guest_submission_files', id: f.id })))
 
   return { status: 'pending', accepted: accepted.length, rejected: rejected.length }
 })

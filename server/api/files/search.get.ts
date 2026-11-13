@@ -1,5 +1,4 @@
-// Búsqueda por nombre (FR-012) y por el texto leído de las imágenes (feature 002, FR-015): ILIKE apoyado en
-// los índices trigram; carpetas y archivos con su ruta y, en archivos, dónde coincidió.
+// Búsqueda por nombre (FR-012): ILIKE apoyado en los índices trigram; carpetas y archivos con su ruta.
 import { and, asc, eq, isNull, sql } from 'drizzle-orm'
 import type { FileItem, FolderItem } from '#shared/types/api'
 import { searchQuery } from '#shared/validation/files'
@@ -22,13 +21,12 @@ export default defineEventHandler(async (event): Promise<SearchResult> => {
     .select({
       ...fileColumns,
       commentCount: commentCountSql(),
-      matchedIn: sql<'name' | 'text'>`CASE WHEN ${files.name} ILIKE ${pattern} THEN 'name' ELSE 'text' END`,
     })
     .from(files)
     .leftJoin(profiles, eq(files.uploadedBy, profiles.userId))
     .where(and(
       visibleFilesWhere(),
-      sql`(${files.name} ILIKE ${pattern} OR ${files.textContent} ILIKE ${pattern})`,
+      sql`${files.name} ILIKE ${pattern}`,
       type ? eq(files.category, type) : undefined,
       keyset.where,
     ))
@@ -50,7 +48,6 @@ export default defineEventHandler(async (event): Promise<SearchResult> => {
     files: fileRows.map(row => toFileItem(row, {
       commentCount: row.commentCount,
       path: row.folderId ? paths.get(row.folderId) ?? [] : [],
-      matchedIn: row.matchedIn,
     })),
     nextCursor: keyset.nextCursor(fileRows),
   }

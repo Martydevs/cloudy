@@ -1,6 +1,6 @@
 // T029 / T072 — Selección de Peticiones (feature 007, research D10).
 import { beforeEach, describe, expect, it } from 'vitest'
-import { prayer, prayerText } from './prayer-fixtures'
+import { prayer } from './prayer-fixtures'
 
 beforeEach(() => {
   usePrayerSelection().clear()
@@ -14,16 +14,39 @@ describe('usePrayerSelection', () => {
     expect(selection.isSelected(request.id)).toBe(true)
     expect(selection.count.value).toBe(1)
     request.senderName = 'cambiado'
-    expect(selection.ordered.value[0]!.senderName).toBe('Invitado 1')
+    expect(selection.ordered.value[0]!.request.senderName).toBe('Invitado 1')
     expect(selection.toggle(request)).toBe(false)
     expect(selection.count.value).toBe(0)
   })
 
-  it('solo marca tarjetas con texto', () => {
+  it('cualquier petición aprobada se elige y nace sin texto', () => {
     const selection = usePrayerSelection()
-    expect(selection.toggle(prayer(1, { text: prayerText({ status: 'empty', text: null }) }))).toBe(false)
-    expect(selection.toggle(prayer(2, { text: prayerText({ text: '   ' }) }))).toBe(false)
-    expect(selection.count.value).toBe(0)
+    expect(selection.toggle(prayer(1))).toBe(true)
+    expect(selection.ordered.value[0]!.text).toBe('')
+    expect(selection.missingText.value).toBe(1)
+    expect(selection.ready.value).toBe(false)
+  })
+
+  it('setText guarda el texto; con todos escritos queda lista para generar', () => {
+    const selection = usePrayerSelection()
+    selection.toggle(prayer(1))
+    selection.toggle(prayer(2))
+    selection.setText(prayer(1).id, 'Oremos por Ana')
+    expect(selection.missingText.value).toBe(1)
+    expect(selection.ready.value).toBe(false)
+    selection.setText(prayer(2).id, '  Oremos por Luis  ')
+    expect(selection.missingText.value).toBe(0)
+    expect(selection.ready.value).toBe(true)
+    // Un texto en blanco vuelve a faltar.
+    selection.setText(prayer(2).id, '   ')
+    expect(selection.ready.value).toBe(false)
+    // Un id que no está elegido no agrega nada.
+    selection.setText(prayer(9).id, 'x')
+    expect(selection.count.value).toBe(2)
+  })
+
+  it('sin nada elegido no se puede generar', () => {
+    expect(usePrayerSelection().ready.value).toBe(false)
   })
 
   it('con 40 elegidas llega al tope y no agrega más, pero sí quita', () => {
@@ -41,23 +64,16 @@ describe('usePrayerSelection', () => {
     const selection = usePrayerSelection()
     for (const n of [3, 1, 5, 2, 4]) selection.toggle(prayer(n))
     // `prayer(n)`: mayor n = aprobada antes.
-    expect(selection.ordered.value.map(r => r.senderName)).toEqual(['Invitado 5', 'Invitado 4', 'Invitado 3', 'Invitado 2', 'Invitado 1'])
+    expect(selection.ordered.value.map(e => e.request.senderName)).toEqual(['Invitado 5', 'Invitado 4', 'Invitado 3', 'Invitado 2', 'Invitado 1'])
     expect(selection.groups.value.map(g => g.length)).toEqual([4, 1])
-    expect(selection.groups.value[1]![0]!.senderName).toBe('Invitado 1')
-  })
-
-  it('unreadable lista las elegidas con marcas de ilegible', () => {
-    const selection = usePrayerSelection()
-    selection.toggle(prayer(1, { text: prayerText({ text: 'Por [ilegible]' }) }))
-    selection.toggle(prayer(2))
-    expect(selection.unreadable.value.map(r => r.id)).toEqual([prayer(1).id])
+    expect(selection.groups.value[1]![0]!.request.senderName).toBe('Invitado 1')
   })
 
   it('remove y clear', () => {
     const selection = usePrayerSelection()
     for (const n of [1, 2, 3]) selection.toggle(prayer(n))
     selection.remove([prayer(1).id, prayer(3).id, 'otro'])
-    expect(selection.ordered.value.map(r => r.id)).toEqual([prayer(2).id])
+    expect(selection.ordered.value.map(e => e.request.id)).toEqual([prayer(2).id])
     selection.clear()
     expect(selection.count.value).toBe(0)
   })
@@ -71,14 +87,12 @@ describe('usePrayerSelection', () => {
     expect(usePrayerSelection().count.value).toBe(0)
   })
 
-  it('sync reemplaza la copia elegida y la quita si se queda sin texto', () => {
+  it('el texto escrito se conserva al cambiar otra entrada', () => {
     const selection = usePrayerSelection()
     selection.toggle(prayer(1))
-    selection.sync(prayer(1, { text: prayerText({ text: 'Texto corregido', editedAt: '2026-11-07T11:00:00.000Z' }) }))
-    expect(selection.ordered.value[0]!.text.text).toBe('Texto corregido')
-    selection.sync(prayer(2))
-    expect(selection.isSelected(prayer(2).id)).toBe(false)
-    selection.sync(prayer(1, { text: prayerText({ status: 'empty', text: null }) }))
-    expect(selection.count.value).toBe(0)
+    selection.toggle(prayer(2))
+    selection.setText(prayer(1).id, 'Primero')
+    selection.setText(prayer(2).id, 'Segundo')
+    expect(selection.ordered.value.map(e => e.text)).toEqual(['Segundo', 'Primero'])
   })
 })

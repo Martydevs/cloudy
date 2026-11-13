@@ -152,12 +152,6 @@ describe('US6 · protección de rutas', () => {
       ['DELETE', `/api/comments/${id}`],
       // Selección múltiple de Archivos.
       ['POST', '/api/items/trash'],
-      // Texto de las imágenes (feature 002).
-      ['GET', `/api/files/${id}/text`],
-      ['POST', `/api/files/${id}/text`],
-      ['PATCH', `/api/files/${id}/text`],
-      ['GET', `/api/submissions/${id}/files/${id}/text`],
-      ['POST', `/api/submissions/${id}/files/${id}/text`],
       // Página YouTube (feature 005).
       ['GET', '/api/youtube/health'],
       ['GET', '/api/youtube/videos/okShortVid1'],

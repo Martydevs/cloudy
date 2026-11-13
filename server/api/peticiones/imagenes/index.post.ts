@@ -1,14 +1,14 @@
-// Generar una imagen de peticiones (feature 007, contracts/api.md § 2, enmienda de historial): 1–4 ids → una imagen sobre la
-// plantilla. El servidor relee los textos, sube la imagen al bucket (`peticiones/<id>.<ext>`), guarda su fila y responde
-// `201` con el JSON de la imagen: el binario ya no vuelve por esta función. Si no se puede guardar, `502 save_failed` sin
-// dejar el objeto suelto.
+// Generar una imagen de peticiones (feature 007, contracts/api.md § 2, enmienda de historial): 1–4 peticiones con su texto
+// → una imagen sobre la plantilla. El servidor comprueba que sigan disponibles, sube la imagen al bucket
+// (`peticiones/<id>.<ext>`), guarda su fila y responde `201` con el JSON de la imagen: el binario ya no vuelve por esta
+// función. Si no se puede guardar, `502 save_failed` sin dejar el objeto suelto.
 import { setResponseHeader, setResponseStatus } from 'h3'
 import type { PrayerGeneratedImage } from '#shared/types/api'
 import { prayerImageInput } from '#shared/validation/prayers'
 
 export default defineEventHandler(async (event): Promise<PrayerGeneratedImage> => {
   const { profile } = requireRole(event, 'editor')
-  const { fileIds } = await readValid(event, prayerImageInput)
+  const { requests } = await readValid(event, prayerImageInput)
   // Cada imagen gasta crédito: el límite va antes de leer nada.
   try {
     await hitRateLimit(event, `peticiones-img:${profile.userId}`, { limit: 60, windowSec: 3600 })
@@ -25,8 +25,13 @@ export default defineEventHandler(async (event): Promise<PrayerGeneratedImage> =
     if (!event.node.res.writableFinished) controller.abort()
   })
 
-  const image = await createPrayerImage(fileIds, { abortSignal: controller.signal })
-  const saved = await savePrayerImage({ fileIds, mediaType: image.mediaType, data: image.data, author: profile })
+  const image = await createPrayerImage(requests, { abortSignal: controller.signal })
+  const saved = await savePrayerImage({
+    fileIds: requests.map(request => request.fileId),
+    mediaType: image.mediaType,
+    data: image.data,
+    author: profile,
+  })
   setResponseHeader(event, 'Cache-Control', 'no-store')
   setResponseStatus(event, 201)
   return saved

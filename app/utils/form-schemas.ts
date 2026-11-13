@@ -3,7 +3,6 @@
 // coinciden. Mensajes y límites salen de `shared/validation`, los mismos que usa el servidor.
 import { FetchError } from 'ofetch'
 import * as z from 'zod/mini'
-import { MAX_IMAGE_TEXT_LENGTH } from '#shared/constants/image-text'
 import { NAME_MAX, PASSWORD_MAX, PASSWORD_MIN } from '#shared/validation/auth'
 import { COMMENT_MAX_LENGTH } from '#shared/validation/comments'
 import {
@@ -85,8 +84,6 @@ export const fileNameSchema = z.object({ name: z.string().check(filled, maxChars
 export type NameSchema = typeof folderNameSchema | typeof fileNameSchema
 
 export const commentSchema = z.object({ body: z.string().check(filled, maxChars(COMMENT_MAX_LENGTH)) })
-
-export const imageTextSchema = z.object({ text: z.string().check(filled, maxChars(MAX_IMAGE_TEXT_LENGTH)) })
 
 /** Nombre del invitado en su envío. */
 export const senderNameSchema = z.string().check(filled, maxChars(SENDER_NAME_MAX))

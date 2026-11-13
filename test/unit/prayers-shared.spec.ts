@@ -1,4 +1,4 @@
-// T005 — Reglas puras de la página Peticiones (feature 007, research D7 y D10; data-model § Constantes).
+// T005 — Reglas puras de la página Peticiones (feature 007, research D10; data-model § Constantes).
 import { describe, expect, it } from 'vitest'
 import {
   PRAYER_ERROR_CODES,
@@ -13,12 +13,9 @@ import {
   PRAYER_MAX_SELECTION,
   PRAYER_PAGE_SIZE,
   PRAYER_PER_IMAGE,
+  PRAYER_TEXT_MAX_LENGTH,
 } from '../../shared/constants/prayers'
-import { chunkRequests, hasIllegibleMark, isLongText, isSelectable, orderForImages, splitIllegible } from '../../shared/prayers'
-import type { ImageText } from '../../shared/types/api'
-
-const text = (changes: Partial<ImageText> = {}): ImageText =>
-  ({ status: 'ready', text: 'Oremos por Ana', error: null, readAt: null, editedAt: null, editedBy: null, ...changes })
+import { chunkRequests, isLongText, orderForImages } from '../../shared/prayers'
 
 describe('constantes', () => {
   it('límites de la feature', () => {
@@ -26,6 +23,7 @@ describe('constantes', () => {
     expect(PRAYER_MAX_SELECTION).toBe(40)
     expect(PRAYER_PAGE_SIZE).toBe(12)
     expect(PRAYER_LONG_TEXT_CHARS).toBe(600)
+    expect(PRAYER_TEXT_MAX_LENGTH).toBe(10_000)
     expect(PRAYER_IMAGE_CONCURRENCY).toBe(2)
     expect(PRAYER_IMAGE_TIMEOUT_MS).toBe(110_000)
     expect(PRAYER_IMAGE_MAX_BYTES).toBe(4_000_000)
@@ -46,53 +44,7 @@ describe('constantes', () => {
   })
 })
 
-describe('hasIllegibleMark', () => {
-  it.each(['[ilegible]', '[unlegible]', '[illegible]', '[texto ilegible]', '[ILEGIBLE]', '[Ilégible]', '[ILÉGIBLE]', 'Oremos por [ilegible] y su familia'])(
-    '%s → true',
-    value => expect(hasIllegibleMark(value)).toBe(true),
-  )
-
-  it.each(['legible', 'texto legible sin corchetes', '[nombre]', '[ile\ngible]', '[ilegible\n]', '', null, undefined])(
-    '%j → false',
-    value => expect(hasIllegibleMark(value)).toBe(false),
-  )
-
-  it('no arrastra estado entre llamadas', () => {
-    for (let i = 0; i < 4; i++) expect(hasIllegibleMark('[ilegible]')).toBe(true)
-  })
-})
-
-describe('splitIllegible', () => {
-  it('separa las marcas y reproduce el texto original', () => {
-    const value = 'Oremos por [ilegible] y por [Texto ILÉGIBLE].'
-    const chunks = splitIllegible(value)
-    expect(chunks).toEqual([
-      { text: 'Oremos por ', mark: false },
-      { text: '[ilegible]', mark: true },
-      { text: ' y por ', mark: false },
-      { text: '[Texto ILÉGIBLE]', mark: true },
-      { text: '.', mark: false },
-    ])
-    expect(chunks.map(c => c.text).join('')).toBe(value)
-  })
-
-  it('sin marcas devuelve un solo trozo; con solo una marca, uno marcado; vacío, ninguno', () => {
-    expect(splitIllegible('Gracias')).toEqual([{ text: 'Gracias', mark: false }])
-    expect(splitIllegible('[ilegible]')).toEqual([{ text: '[ilegible]', mark: true }])
-    expect(splitIllegible('')).toEqual([])
-  })
-})
-
-describe('isSelectable e isLongText', () => {
-  it('solo un texto ready no vacío se puede elegir', () => {
-    expect(isSelectable({ text: text() })).toBe(true)
-    expect(isSelectable({ text: text({ text: '   ' }) })).toBe(false)
-    expect(isSelectable({ text: text({ text: null }) })).toBe(false)
-    for (const status of ['pending', 'reading', 'empty', 'failed', 'unavailable'] as const) {
-      expect(isSelectable({ text: text({ status }) }), status).toBe(false)
-    }
-  })
-
+describe('isLongText', () => {
   it('largo con más de 600 caracteres', () => {
     expect(isLongText('a'.repeat(600))).toBe(false)
     expect(isLongText('a'.repeat(601))).toBe(true)

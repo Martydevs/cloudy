@@ -12,11 +12,13 @@ const { createPrayerImage } = await import('../../server/utils/prayer-images')
 const TEMPLATE = new Uint8Array([0xFF, 0xD8, 0xFF, 0xE0])
 const PNG = new Uint8Array([0x89, 0x50, 0x4E, 0x47])
 
-const row = (id: string, text: string, changes: Partial<PrayerRow> = {}): PrayerRow => ({
+const row = (id: string, changes: Partial<PrayerRow> = {}): PrayerRow => ({
   id, name: 'x.jpg', senderName: 'Ana Secreta', note: 'nota privada', sentAt: created, approvedAt: created,
-  textStatus: 'ready', textContent: text, textError: null, textStartedAt: null, textReadAt: created, textEditedAt: null, editedByName: null,
   ...changes,
 })
+
+/** Una petición tal como la manda el navegador: el texto lo escribió el equipo. */
+const req = (fileId: string, text = 'Oremos por Ana') => ({ fileId, text })
 
 let getItemRaw: ReturnType<typeof vi.fn>
 let warn: ReturnType<typeof vi.spyOn>
@@ -43,10 +45,11 @@ afterEach(() => {
 })
 
 describe('createPrayerImage', () => {
-  it('éxito: pasa solo los textos recortados, en el orden de la consulta, con la plantilla', async () => {
-    install([row(UUID2, '  Primera  '), row(UUID, 'Segunda\n')])
+  it('éxito: pasa solo los textos recortados, en el orden de la consulta (no el del navegador), con la plantilla', async () => {
+    install([row(UUID2), row(UUID)])
     const signal = new AbortController().signal
-    const result = await createPrayerImage([UUID, UUID2], { abortSignal: signal })
+    // El navegador los manda al revés: el orden de los párrafos lo fija la consulta.
+    const result = await createPrayerImage([req(UUID, 'Segunda\n'), req(UUID2, '  Primera  ')], { abortSignal: signal })
     expect(result).toEqual({ mediaType: 'image/png', data: PNG, count: 2 })
     expect(ai.generatePrayerImage).toHaveBeenCalledWith({ paragraphs: ['Primera', 'Segunda'], template: TEMPLATE, abortSignal: signal })
     const sent = JSON.stringify(ai.generatePrayerImage.mock.calls[0]![0].paragraphs)
@@ -56,14 +59,14 @@ describe('createPrayerImage', () => {
   })
 
   it('acepta la plantilla como ArrayBuffer', async () => {
-    install([row(UUID, 'a')], { template: TEMPLATE.buffer as unknown as Uint8Array })
-    await createPrayerImage([UUID])
+    install([row(UUID)], { template: TEMPLATE.buffer as unknown as Uint8Array })
+    await createPrayerImage([req(UUID)])
     expect(ai.generatePrayerImage.mock.calls[0]![0].template).toEqual(TEMPLATE)
   })
 
   it('una petición que falta → 409 request_unavailable con sus ids, sin leer la plantilla ni llamar al modelo', async () => {
-    install([row(UUID, 'a')])
-    const err = await expectStatus(createPrayerImage([UUID, UUID2]), 409)
+    install([row(UUID)])
+    const err = await expectStatus(createPrayerImage([req(UUID), req(UUID2)]), 409)
     expect(err.data).toEqual({ code: 'request_unavailable', ids: [UUID2] })
     expect(getItemRaw).not.toHaveBeenCalled()
     expect(ai.generatePrayerImage).not.toHaveBeenCalled()
@@ -75,17 +78,17 @@ describe('createPrayerImage', () => {
     ['sin plantilla', { template: null }],
     ['plantilla vacía', { template: new Uint8Array() }],
   ])('%s → 503 not_configured sin llamar al modelo', async (_, options) => {
-    install([row(UUID, 'a')], options)
-    const err = await expectStatus(createPrayerImage([UUID]), 503)
+    install([row(UUID)], options)
+    const err = await expectStatus(createPrayerImage([req(UUID)]), 503)
     expect(err.data).toEqual({ code: 'not_configured' })
     expect(err.message).toBe('La generación de imágenes no está configurada. Avisa a un administrador.')
     expect(ai.generatePrayerImage).not.toHaveBeenCalled()
   })
 
   it('la plantilla que no se puede leer cuenta como sin configurar', async () => {
-    install([row(UUID, 'a')])
+    install([row(UUID)])
     getItemRaw.mockRejectedValue(new Error('sin asset'))
-    await expectStatus(createPrayerImage([UUID]), 503)
+    await expectStatus(createPrayerImage([req(UUID)]), 503)
   })
 
   it.each([
@@ -97,19 +100,19 @@ describe('createPrayerImage', () => {
     ['timeout', 504, 'timeout'],
     ['invalid_input', 502, 'provider'],
   ] as const)('fallo %s → %i %s', async (failure, status, code) => {
-    install([row(UUID, 'a')])
+    install([row(UUID)])
     ai.generatePrayerImage.mockResolvedValue({ status: 'failed', error: failure })
-    const err = await expectStatus(createPrayerImage([UUID]), status)
+    const err = await expectStatus(createPrayerImage([req(UUID)]), status)
     expect(err.data).toEqual({ code })
   })
 
   it('los registros solo llevan [prayer-image] <código>', async () => {
-    install([row(UUID, 'Oremos por Ana')])
+    install([row(UUID)])
     ai.generatePrayerImage.mockResolvedValue({ status: 'failed', error: 'provider' })
-    await createPrayerImage([UUID]).catch(() => {})
-    install([row(UUID, 'Oremos por Ana')])
+    await createPrayerImage([req(UUID, 'Oremos por Ana')]).catch(() => {})
+    install([row(UUID)])
     ai.generatePrayerImage.mockResolvedValue({ status: 'failed', error: 'quota_exceeded' })
-    await createPrayerImage([UUID]).catch(() => {})
+    await createPrayerImage([req(UUID)]).catch(() => {})
     expect(warn).toHaveBeenCalledWith('[prayer-image] provider')
     expect(error).toHaveBeenCalledWith('[prayer-image] quota_exceeded')
     const logged = [...warn.mock.calls, ...error.mock.calls].flat().join(' ')

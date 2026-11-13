@@ -1,15 +1,10 @@
-// Stub local de la API de chat completions de OpenRouter para los e2e (feature 002, research A9). La app de
-// pruebas lo usa vía `NUXT_OPENROUTER_BASE_URL`; los e2e nunca llaman a OpenRouter.
-// Lectura de texto (feature 002): distingue las imágenes por sus bytes, que llegan tal como están en `test/fixtures/files/`.
-// Generación de imágenes de peticiones (feature 007, research D15): se reconoce **antes** que la lectura (el preset o
-// `modalities` con `image`), responde `message.images` con un PNG y se registra aparte (`prayer`), sin sumar a `total`.
-import { createHash } from 'node:crypto'
-import { existsSync, readFileSync } from 'node:fs'
+// Stub local de la API de chat completions de OpenRouter para los e2e. La app de pruebas lo usa vía
+// `NUXT_OPENROUTER_BASE_URL`; los e2e nunca llaman a OpenRouter.
+// Generación de imágenes de peticiones (feature 007, research D15): se reconoce por el preset o por `modalities` con
+// `image`, responde `message.images` con un PNG y se registra en `prayer`. Es el único caso de uso de IA que queda.
+import { readFileSync } from 'node:fs'
 import { createServer } from 'node:http'
 import type { AddressInfo } from 'node:net'
-
-/** Texto que el stub "lee" en las notas (y en cualquier imagen que no reconoce). */
-export const NOTE_TEXT = 'Oremos por la familia Méndez\nGracias por el campamento'
 
 /** Preset de la generación (`OPENROUTER_PRAY_REQUESTS_MODEL`). */
 export const PRAYER_PRESET = '@preset/pray-requests-image-generation'
@@ -42,31 +37,19 @@ export interface PrayerCall {
   status: number
 }
 
-/** Imágenes sin texto: el stub responde `hasText: false`. */
-const EMPTY_FIXTURES = ['paisaje.jpg']
-const KNOWN_FIXTURES = ['nota.jpg', 'nota.png', 'paisaje.jpg', 'foto.jpg', 'imagen.png']
-
 export interface StubMode {
-  /** Responde 500 a toda imagen (solo lectura de texto). */
-  fail: boolean
-  /** Retraso de cada respuesta, para observar "Leyendo texto…" (solo lectura de texto). */
-  delayMs: number
   /** Retraso de una generación con `lento`. */
   prayerDelayMs: number
 }
 
-const DEFAULT_MODE: StubMode = { fail: false, delayMs: 0, prayerDelayMs: 4000 }
+const DEFAULT_MODE: StubMode = { prayerDelayMs: 4000 }
 
 export interface StubCalls {
-  /** Lecturas de texto (las generaciones no cuentan). */
-  total: number
-  /** Llamadas por fixture (`other` si no es ninguno conocido). */
-  byImage: Record<string, number>
   /** Generaciones de imágenes de peticiones, en orden de llegada. */
   prayer: PrayerCall[]
 }
 
-const emptyCalls = (): StubCalls => ({ total: 0, byImage: {}, prayer: [] })
+const emptyCalls = (): StubCalls => ({ prayer: [] })
 
 interface ChatBody {
   model?: unknown
@@ -124,41 +107,7 @@ function imageCompletion(model: unknown, image: string | null) {
   }
 }
 
-const hash = (data: Buffer | Uint8Array) => createHash('sha256').update(data).digest('hex')
-
-function fixtureHashes(): Map<string, string> {
-  const byHash = new Map<string, string>()
-  for (const name of KNOWN_FIXTURES) {
-    const path = new URL(`../../fixtures/files/${name}`, import.meta.url)
-    if (existsSync(path)) byHash.set(hash(readFileSync(path)), name)
-  }
-  return byHash
-}
-
-/** La primera imagen del cuerpo de `POST /chat/completions` (`data:<mime>;base64,<bytes>`). */
-function imageOf(body: unknown): Buffer | null {
-  const text = JSON.stringify(body)
-  const match = /data:image\/[a-z]+;base64,([A-Za-z0-9+/=]+)/.exec(text)
-  return match ? Buffer.from(match[1]!, 'base64') : null
-}
-
-function chatCompletion(model: unknown, output: { hasText: boolean, text: string }) {
-  return {
-    id: `gen-${Date.now()}`,
-    object: 'chat.completion',
-    created: Math.floor(Date.now() / 1000),
-    model: typeof model === 'string' ? model : 'stub',
-    choices: [{
-      index: 0,
-      message: { role: 'assistant', content: JSON.stringify(output) },
-      finish_reason: 'stop',
-    }],
-    usage: { prompt_tokens: 100, completion_tokens: 20, total_tokens: 120 },
-  }
-}
-
 export async function startAiStub(): Promise<{ url: string, close: () => Promise<void> }> {
-  const byHash = fixtureHashes()
   const png = `data:image/png;base64,${readFileSync(new URL('../../fixtures/files/imagen.png', import.meta.url)).toString('base64')}`
   let mode: StubMode = { ...DEFAULT_MODE }
   let calls: StubCalls = emptyCalls()
@@ -210,14 +159,8 @@ export async function startAiStub(): Promise<{ url: string, close: () => Promise
         return json(200, imageCompletion(body.model, has('sin-imagen') ? null : png))
       }
 
-      const image = imageOf(body)
-      const name = image ? byHash.get(hash(image)) ?? 'other' : 'none'
-      calls.total++
-      calls.byImage[name] = (calls.byImage[name] ?? 0) + 1
-      if (mode.delayMs > 0) await new Promise(r => setTimeout(r, mode.delayMs))
-      if (mode.fail) return json(500, { error: { code: 500, message: 'stub failure' } })
-      const empty = EMPTY_FIXTURES.includes(name)
-      return json(200, chatCompletion(body?.model, empty ? { hasText: false, text: '' } : { hasText: true, text: NOTE_TEXT }))
+      // Ya no hay otro caso de uso: cualquier otra llamada es un error de la prueba.
+      return json(400, { error: { code: 400, message: 'unexpected non-generation call' } })
     }
 
     json(404, { error: { code: 404, message: 'not found' } })

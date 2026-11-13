@@ -75,24 +75,20 @@ describe('PrayerHistoryCard', () => {
     expect(wrapper.text()).toContain('Usuario que ya no está activo')
   })
 
-  it('el menú ofrece guardar y generar de nuevo; eliminar solo si puede', async () => {
+  it('el menú ofrece guardar; eliminar solo si puede (ya no hay «Generar de nuevo»: el texto no se guarda)', async () => {
     const reader = await mountSuspended(PrayerHistoryCard, { props: { image: generated(1) }, attachTo: document.body })
     await reader.get('button[aria-label="Opciones de la imagen"]').trigger('click')
     await flush()
-    expect(menuItems().map(i => i.text())).toEqual(['Guardar en colección', 'Generar de nuevo'])
+    expect(menuItems().map(i => i.text())).toEqual(['Guardar en colección'])
     await menuItems()[0]!.trigger('click')
     expect(reader.emitted('collection')).toHaveLength(1)
-    await reader.get('button[aria-label="Opciones de la imagen"]').trigger('click')
-    await flush()
-    await menuItems()[1]!.trigger('click')
-    expect(reader.emitted('regenerate')).toHaveLength(1)
     reader.unmount()
 
     const owner = await mountSuspended(PrayerHistoryCard, { props: { image: generated(1), canRemove: true }, attachTo: document.body })
     await owner.get('button[aria-label="Opciones de la imagen"]').trigger('click')
     await flush()
-    expect(menuItems().map(i => i.text())).toEqual(['Guardar en colección', 'Generar de nuevo', 'Eliminar'])
-    await menuItems()[2]!.trigger('click')
+    expect(menuItems().map(i => i.text())).toEqual(['Guardar en colección', 'Eliminar'])
+    await menuItems()[1]!.trigger('click')
     expect(owner.emitted('remove')).toHaveLength(1)
     owner.unmount()
   })
@@ -157,7 +153,7 @@ describe('PrayerHistory', () => {
   })
 
   it('la cola en curso va arriba, y una imagen recién guardada entra primera sin repetirse', async () => {
-    useState<PrayerImageItem[]>('prayer-images').value = [{ key: 'img-1', index: 1, fileIds: ['a'], status: 'running' }]
+    useState<PrayerImageItem[]>('prayer-images').value = [{ key: 'img-1', index: 1, requests: [{ fileId: 'a', text: 'Ana' }], status: 'running' }]
     const wrapper = await mountSuspended(PrayerHistory)
     await flush(10)
     const html = wrapper.html()
@@ -173,7 +169,7 @@ describe('PrayerHistory', () => {
 
   it('sin historial pero con una imagen en curso no muestra el vacío', async () => {
     mockApi('GET', '/api/peticiones/imagenes', { items: [], nextCursor: null })
-    useState<PrayerImageItem[]>('prayer-images').value = [{ key: 'img-1', index: 1, fileIds: ['a'], status: 'failed', retryable: false, error: 'x' }]
+    useState<PrayerImageItem[]>('prayer-images').value = [{ key: 'img-1', index: 1, requests: [{ fileId: 'a', text: 'Ana' }], status: 'failed', retryable: false, error: 'x' }]
     const wrapper = await mountSuspended(PrayerHistory)
     await flush(10)
     expect(wrapper.text()).not.toContain('Aún no hay imágenes generadas')
@@ -238,19 +234,10 @@ describe('PrayerHistory', () => {
     wrapper.unmount()
   })
 
-  it('Generar de nuevo encola los mismos ids; Guardar en colección se emite con la imagen; Ver en grande abre el modal', async () => {
+  it('Guardar en colección se emite con la imagen; Ver en grande abre el modal', async () => {
     mockApi('GET', '/api/peticiones/imagenes', { items: [generated(1)], nextCursor: null })
-    mockApi('POST', '/api/peticiones/imagenes', () => new Promise(() => {}))
     const wrapper = await mountSuspended(PrayerHistory, { attachTo: document.body })
     await flush(10)
-    await wrapper.get('button[aria-label="Opciones de la imagen"]').trigger('click')
-    await flush()
-    await menuItems().find(i => i.text() === 'Generar de nuevo')!.trigger('click')
-    await flush(5)
-    expect(calls.find(c => c.method === 'POST' && c.url === '/api/peticiones/imagenes')?.body).toEqual({ fileIds: generated(1).fileIds })
-    expect(toasts()).toContain('Generando de nuevo con el texto actual de sus peticiones')
-    expect(wrapper.find('[aria-label="Imágenes en curso"]').exists()).toBe(true)
-
     await wrapper.get('button[aria-label="Opciones de la imagen"]').trigger('click')
     await flush()
     await menuItems().find(i => i.text() === 'Guardar en colección')!.trigger('click')

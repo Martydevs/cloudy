@@ -6,7 +6,7 @@ import { readBody, setResponseStatus } from 'h3'
 import type { H3Event } from 'h3'
 import { mockNuxtImport } from '@nuxt/test-utils/runtime'
 import { PRAYER_IMAGE_TIMEOUT_MS } from '#shared/constants/prayers'
-import type { PrayerGeneratedImage } from '#shared/types/api'
+import type { PrayerGeneratedImage, PrayerRequest } from '#shared/types/api'
 import { calls, flush, mockApi, resetCalls } from './helpers/api'
 
 // Sin red el transporte rechaza sin respuesta: se simula por encima de `$api`.
@@ -26,9 +26,9 @@ const saved = (fileIds: string[]): PrayerGeneratedImage => ({
   createdAt: '2026-11-12T10:00:00.000Z',
 })
 const png: Reply = async (event) => {
-  const body = await readBody<{ fileIds: string[] }>(event)
+  const body = await readBody<{ requests: { fileId: string }[] }>(event)
   setResponseStatus(event, 201)
-  return saved(body.fileIds)
+  return saved(body.requests.map(r => r.fileId))
 }
 const fail = (status: number, data?: Record<string, unknown>): Reply => (event) => {
   setResponseStatus(event, status)
@@ -47,7 +47,9 @@ function hold(id: string, reply: Reply = png) {
 const release = (id: string) => gates.get(id)?.()
 
 const posts = () => calls.filter(c => c.method === 'POST' && c.url === '/api/peticiones/imagenes')
-const group = (...ids: string[]) => ids.map(id => ({ id }))
+/** Peticiones elegidas con su texto, tal como las guarda `usePrayerSelection`. */
+const group = (...ids: string[]) => ids.map(id => ({ request: { id } as PrayerRequest, text: `texto ${id}` }))
+const sent = (...ids: string[]) => ids.map(fileId => ({ fileId, text: `texto ${fileId}` }))
 
 const added = () => useState<PrayerGeneratedImage[]>(PRAYER_HISTORY_ADDED_KEY, () => []).value
 
@@ -59,8 +61,8 @@ beforeEach(() => {
   useState<PrayerGeneratedImage[]>(PRAYER_HISTORY_ADDED_KEY).value = []
   useToast().toasts.value = []
   mockApi('POST', '/api/peticiones/imagenes', async (event: H3Event) => {
-    const body = await readBody<{ fileIds: string[] }>(event)
-    return (replies.get(body.fileIds[0]!) ?? png)(event)
+    const body = await readBody<{ requests: { fileId: string }[] }>(event)
+    return (replies.get(body.requests[0]!.fileId) ?? png)(event)
   })
 })
 
@@ -70,16 +72,16 @@ afterEach(() => {
 })
 
 describe('usePrayerImages', () => {
-  it('un elemento por grupo, con índice 1-based y los ids en orden', async () => {
+  it('un elemento por grupo, con índice 1-based y las peticiones con su texto en orden', async () => {
     const images = usePrayerImages()
     expect(images.enqueue([group('a', 'b', 'c', 'd'), group('e')])).toBe(2)
-    expect(images.items.value.map(i => [i.key, i.index, i.fileIds])).toEqual([
-      ['img-1', 1, ['a', 'b', 'c', 'd']],
-      ['img-2', 2, ['e']],
+    expect(images.items.value.map(i => [i.key, i.index, i.requests])).toEqual([
+      ['img-1', 1, sent('a', 'b', 'c', 'd')],
+      ['img-2', 2, sent('e')],
     ])
     expect(images.hasItems.value).toBe(true)
     await flush(10)
-    expect(posts().map(c => c.body)).toEqual([{ fileIds: ['a', 'b', 'c', 'd'] }, { fileIds: ['e'] }])
+    expect(posts().map(c => c.body)).toEqual([{ requests: sent('a', 'b', 'c', 'd') }, { requests: sent('e') }])
   })
 
   it('nunca más de 2 a la vez; la tercera arranca cuando termina una', async () => {
@@ -222,19 +224,11 @@ describe('usePrayerImages', () => {
     images.regenerate('img-2')
     await flush(10)
     expect(posts().length).toBe(before + 1)
-    expect(posts().at(-1)!.body).toEqual({ fileIds: ['b'] })
+    expect(posts().at(-1)!.body).toEqual({ requests: sent('b') })
     expect(images.items.value).toEqual([])
     // Reintentar algo que no falló no hace nada.
     images.retry('img-1')
     expect(posts().length).toBe(before + 1)
-  })
-
-  it('Generar de nuevo desde el historial encola los mismos ids', async () => {
-    const images = usePrayerImages()
-    expect(images.regenerateFrom(['x', 'y'])).toBe(1)
-    await flush(10)
-    expect(posts().at(-1)!.body).toEqual({ fileIds: ['x', 'y'] })
-    expect(added()[0]!.id).toBe('saved-x-y')
   })
 
   it('una fallida no reintentable no vuelve a la cola', async () => {

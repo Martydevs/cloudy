@@ -1,8 +1,5 @@
 // Peticiones de prueba para las pruebas de componente de la feature 007.
-import type { ImageText, PrayerGeneratedImage, PrayerImageCollection, PrayerImageCollectionItem, PrayerRequest } from '#shared/types/api'
-
-export const prayerText = (changes: Partial<ImageText> = {}): ImageText =>
-  ({ status: 'ready', text: 'Oremos por la salud de mi mamá', error: null, readAt: '2026-11-07T10:00:00.000Z', editedAt: null, editedBy: null, ...changes })
+import type { PrayerGeneratedImage, PrayerImageCollection, PrayerImageCollectionItem, PrayerRequest } from '#shared/types/api'
 
 /** `n` da un id estable y una aprobación más antigua cuanto mayor es. */
 export const prayer = (n: number, changes: Partial<PrayerRequest> = {}): PrayerRequest => ({
@@ -13,9 +10,11 @@ export const prayer = (n: number, changes: Partial<PrayerRequest> = {}): PrayerR
   sentAt: new Date(Date.UTC(2026, 10, 6, 12) - n * 60_000).toISOString(),
   approvedAt: new Date(Date.UTC(2026, 10, 7, 12) - n * 60_000).toISOString(),
   previewUrl: `/api/files/00000000-0000-4000-8000-${String(n).padStart(12, '0')}/content`,
-  text: prayerText({ text: `Petición número ${n}` }),
   ...changes,
 })
+
+/** Una petición elegida con el texto que el equipo escribió en el diálogo de generación. */
+export const chosen = (n: number, text = `Petición número ${n}`) => ({ request: prayer(n), text })
 
 const imageId = (n: number) => `10000000-0000-4000-8000-${String(n).padStart(12, '0')}`
 

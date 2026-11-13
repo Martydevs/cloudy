@@ -19,13 +19,6 @@ const row = (n: number, changes: Partial<PrayerRow> = {}): PrayerRow => ({
   note: null,
   sentAt: minutes(n + 600),
   approvedAt: minutes(n),
-  textStatus: 'ready',
-  textContent: `Oremos por ${n}`,
-  textError: null,
-  textStartedAt: null,
-  textReadAt: created,
-  textEditedAt: null,
-  editedByName: null,
   ...changes,
 })
 
@@ -65,8 +58,6 @@ describe('listPrayerRequests', () => {
     await listPrayerRequests({})
     const columns = Object.keys(fake.calls.find(c => c.method === 'select')!.args[0] as object)
     for (const heavy of ['storageKey', 'thumbKey', 'sizeBytes', 'mimeType', 'textSourceKey', 'guestName']) expect(columns).not.toContain(heavy)
-    expect(sqlText((fake.calls.find(c => c.method === 'select')!.args[0] as Record<string, unknown>).editedByName))
-      .toContain('(SELECT p.name FROM profiles p WHERE p.user_id = "files"."text_edited_by")')
   })
 
   it('orden desc por defecto y asc a pedido, sobre (reviewed_at en ms, id)', async () => {
@@ -88,11 +79,12 @@ describe('listPrayerRequests', () => {
     expect(where).toContain('2026-11-08T06:00:00.000Z')
   })
 
-  it('búsqueda sin tildes sobre nombre, nota y transcripción', async () => {
+  it('búsqueda sin tildes sobre nombre y nota', async () => {
     const fake = installNitro([[]])
     await listPrayerRequests({ q: ' Oración 100% ' })
     const where = whereOf(fake)
-    expect(where).toContain('translate(lower("guest_submissions"."sender_name" || \' \' || coalesce("guest_submissions"."note", \'\') || \' \' || coalesce("files"."text_content", \'\'))')
+    expect(where).toContain('translate(lower("guest_submissions"."sender_name" || \' \' || coalesce("guest_submissions"."note", \'\'))')
+    expect(where).not.toContain('text_content')
     expect(where).toMatch(/LIKE \$\d+ ESCAPE '\\'/)
     expect(where).toContain('"áéíóúüñ","aeiouun"')
     expect(where).toContain('"%oracion 100\\\\%%"')
@@ -143,8 +135,8 @@ describe('listPrayerRequests', () => {
     expect(page.nextCursor).toBeNull()
   })
 
-  it('mapea la fila al DTO con ImageText y la URL de vista previa', async () => {
-    installNitro([[row(1, { id: UUID, note: 'para el domingo', textEditedAt: created, editedByName: 'Luis' })]])
+  it('mapea la fila al DTO y la URL de vista previa, sin transcripción', async () => {
+    installNitro([[row(1, { id: UUID, note: 'para el domingo' })]])
     const page = await listPrayerRequests({})
     expect(page.items[0]).toEqual({
       id: UUID,
@@ -154,35 +146,20 @@ describe('listPrayerRequests', () => {
       sentAt: minutes(601).toISOString(),
       approvedAt: minutes(1).toISOString(),
       previewUrl: `/api/files/${UUID}/content`,
-      text: { status: 'ready', text: 'Oremos por 1', error: null, readAt: created.toISOString(), editedAt: created.toISOString(), editedBy: 'Luis' },
     })
-  })
-
-  it('una lectura reading vencida sale failed/timeout y el texto solo viaja con ready', async () => {
-    installNitro([[
-      row(1, { textStatus: 'reading', textContent: null, textStartedAt: new Date(Date.now() - 10 * 60_000) }),
-      row(2, { textStatus: 'failed', textContent: 'resto', textError: 'provider' }),
-      row(3, { textStatus: null, textContent: null }),
-    ]])
-    const page = await listPrayerRequests({})
-    expect(page.items.map(i => [i.text.status, i.text.text, i.text.error])).toEqual([
-      ['failed', null, 'timeout'],
-      ['failed', null, 'provider'],
-      ['pending', null, null],
-    ])
   })
 })
 
 describe('loadEligibleRequests', () => {
-  it('exige texto listo y no vacío además de las condiciones del listado, y ordena para las imágenes', async () => {
+  it('aplica las condiciones del listado (ya no el texto) y ordena para las imágenes', async () => {
     const fake = installNitro([[row(1, { id: UUID })]])
     const result = await loadEligibleRequests([UUID2, UUID])
     const where = whereOf(fake)
     expect(where).toContain('"guest_submissions"."status" = $1')
     expect(where).toContain('"files"."deleted_at" IS NULL')
     expect(where).toMatch(/"files"\."id" in \(\$\d+, \$\d+\)/)
-    expect(where).toMatch(/"files"\."text_status" = \$\d+/)
-    expect(where).toContain('btrim(coalesce("files"."text_content", \'\')) <> \'\'')
+    expect(where).not.toContain('text_status')
+    expect(where).not.toContain('text_content')
     expect(orderOf(fake)).toBe('"guest_submissions"."reviewed_at" asc [] "guest_submissions"."created_at" asc [] "files"."id" asc []')
     expect(fake.calls.filter(c => c.method === 'select')).toHaveLength(1)
     expect(result.found.map(r => r.id)).toEqual([UUID])
