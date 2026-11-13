@@ -2,7 +2,7 @@
 // Cada página muestra el skeleton mientras espera, el `EmptyState` sin datos, el `ErrorState`
 // con "Reintentar" ante un 500 y, al reintentar, vuelve a pedir los datos y sale del error.
 // Las pruebas por página (pages-*.spec) siguen cubriendo sus textos y acciones específicas.
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { mountSuspended } from '@nuxt/test-utils/runtime'
 import { nextTick } from 'vue'
 import type { Component } from 'vue'
@@ -114,6 +114,15 @@ const rows: Row[] = [
     errorCopy: 'No pudimos cargar el historial',
     emptyCopy: 'Todavía no hay canciones',
   },
+  // /peticiones tiene tres vistas con datos (feature 007, enmienda de historial); las otras dos se simulan con contenido.
+  {
+    name: 'Peticiones · Colecciones',
+    page: PeticionesPage,
+    endpoint: '/api/peticiones/colecciones',
+    emptyPayload: { items: [] },
+    errorCopy: 'No pudimos cargar las colecciones',
+    emptyCopy: 'Aún no hay colecciones',
+  },
   {
     name: 'Peticiones',
     page: PeticionesPage,
@@ -121,6 +130,14 @@ const rows: Row[] = [
     emptyPayload: { items: [], nextCursor: null },
     errorCopy: 'No pudimos cargar las peticiones',
     emptyCopy: 'Todavía no hay peticiones aprobadas',
+  },
+  {
+    name: 'Peticiones · Historial',
+    page: PeticionesPage,
+    endpoint: '/api/peticiones/imagenes',
+    emptyPayload: { items: [], nextCursor: null },
+    errorCopy: 'No pudimos cargar el historial de imágenes',
+    emptyCopy: 'Aún no hay imágenes generadas',
   },
 ]
 
@@ -145,6 +162,33 @@ beforeEach(() => {
   })
 })
 
+const PRAYER_IMAGE = {
+  id: '10000000-0000-4000-8000-000000000001',
+  previewUrl: '/api/peticiones/imagenes/10000000-0000-4000-8000-000000000001/content',
+  downloadUrl: '/api/peticiones/imagenes/10000000-0000-4000-8000-000000000001/content?download=1',
+  fileIds: ['00000000-0000-4000-8000-000000000001'],
+  requestCount: 1,
+  author: { userId: 'u1', name: 'Ana', active: true },
+  createdAt: '2026-11-05T10:00:00.000Z',
+}
+
+beforeEach(() => {
+  // /peticiones: las vistas que no se prueban responden con contenido.
+  useState('prayer-history-added').value = []
+  mockApi('GET', '/api/peticiones/colecciones', {
+    items: [{ id: 'c1', name: 'Domingo', author: { userId: 'u1', name: 'Ana', active: true }, itemCount: 1, createdAt: '2026-11-05T10:00:00.000Z', updatedAt: '2026-11-05T10:00:00.000Z' }],
+  })
+  mockApi('GET', '/api/peticiones/imagenes', { items: [PRAYER_IMAGE], nextCursor: null })
+  mockApi('GET', '/api/peticiones', {
+    items: [{
+      id: '00000000-0000-4000-8000-000000000001', name: 'a.jpg', senderName: 'Eva', note: null, sentAt: '2026-11-05T10:00:00.000Z', approvedAt: '2026-11-05T10:00:00.000Z',
+      previewUrl: '/api/files/00000000-0000-4000-8000-000000000001/content',
+      text: { status: 'ready', text: 'Oremos', error: null, readAt: null, editedAt: null, editedBy: null },
+    }],
+    nextCursor: null,
+  })
+})
+
 describe.each(rows)('$name · los cuatro estados', ({ page, route, endpoint, emptyPayload, errorCopy, emptyCopy }) => {
   const mount = () => mountSuspended(page, route ? { route } : undefined)
   const requests = () => calls.filter(c => c.url === endpoint).length
@@ -153,7 +197,8 @@ describe.each(rows)('$name · los cuatro estados', ({ page, route, endpoint, emp
     mockApi('GET', endpoint, () => new Promise(() => {}))
     const wrapper = await mount()
     await nextTick()
-    expect(wrapper.find('[aria-busy="true"]').exists()).toBe(true)
+    // Una vista diferida (`Lazy*`) llega con su chunk: se espera a que aparezca su skeleton.
+    await vi.waitFor(() => expect(wrapper.find('[aria-busy="true"]').exists()).toBe(true), { timeout: 5000 })
     expect(wrapper.find('[role="alert"]').exists()).toBe(false)
   })
 
@@ -161,7 +206,7 @@ describe.each(rows)('$name · los cuatro estados', ({ page, route, endpoint, emp
     mockApi('GET', endpoint, emptyPayload)
     const wrapper = await mount()
     await flush()
-    expect(wrapper.text()).toContain(emptyCopy)
+    await vi.waitFor(() => expect(wrapper.text()).toContain(emptyCopy), { timeout: 5000 })
     expect(wrapper.find('[aria-busy="true"]').exists()).toBe(false)
     expect(wrapper.find('[role="alert"]').exists()).toBe(false)
   })
@@ -170,6 +215,7 @@ describe.each(rows)('$name · los cuatro estados', ({ page, route, endpoint, emp
     mockApi('GET', endpoint, failWith(500))
     const wrapper = await mount()
     await flush()
+    await vi.waitFor(() => expect(wrapper.find('[role="alert"]').exists()).toBe(true), { timeout: 5000 })
     expect(wrapper.get('[role="alert"]').text()).toContain(errorCopy)
     expect(buttonsWithText(wrapper, 'Reintentar')).toHaveLength(1)
     expect(wrapper.find('[aria-busy="true"]').exists()).toBe(false)
@@ -179,6 +225,7 @@ describe.each(rows)('$name · los cuatro estados', ({ page, route, endpoint, emp
     mockApi('GET', endpoint, failWith(500))
     const wrapper = await mount()
     await flush()
+    await vi.waitFor(() => expect(buttonsWithText(wrapper, 'Reintentar')).toHaveLength(1), { timeout: 5000 })
     const before = requests()
 
     mockApi('GET', endpoint, emptyPayload)

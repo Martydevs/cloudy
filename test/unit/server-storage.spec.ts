@@ -77,6 +77,15 @@ describe('storage', () => {
     expect(send).toHaveBeenCalledTimes(3)
   })
 
+  it('putObject sube los bytes con su tipo y tamaño (la imagen generada de Peticiones)', async () => {
+    send.mockResolvedValueOnce({})
+    const body = new Uint8Array([0x89, 0x50, 0x4E, 0x47])
+    await storage.putObject('e2e/run/peticiones/a.png', body, 'image/png')
+    expect(send.mock.calls[0]![0].input).toEqual({ Bucket: 'bucket', Key: 'e2e/run/peticiones/a.png', Body: body, ContentType: 'image/png', ContentLength: 4 })
+    send.mockRejectedValueOnce(new Error('boom'))
+    await expect(storage.putObject('k', body, 'image/png')).rejects.toThrow('boom')
+  })
+
   it('listPrefix recorre todas las páginas', async () => {
     send
       .mockResolvedValueOnce({ Contents: [{ Key: 'a' }, {}], IsTruncated: true, NextContinuationToken: 't' })

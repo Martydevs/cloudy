@@ -6,6 +6,41 @@ de selección ni de filtros.
 
 ## Estructura de la página (orden de arriba abajo)
 
+> **Enmienda (2026-11-12)** — la página tiene tres secciones, en este orden (reordenada el mismo día: las aprobadas primero):
+>
+> ```text
+> ┌ Encabezado ── h1 · descripción · [Ver imágenes generadas → #historial] [Copiar enlace para invitados] ┐
+> ├ Peticiones aprobadas (h2) ── PrayerToolbar + PrayerGrid: UNA fila desplazable en horizontal          ┤
+> │ PrayerCard w-72 (sm: w-80), snap · centinela al final de la fila · [‹ ›] desde sm                   │
+> ├ Colecciones (PrayerCollectionRow, SSR, alto mínimo fijo) ── fila desplazable · [Nueva colección]     ┤
+> ├ Historial de imágenes generadas (LazyPrayerHistory hydrate-on-idle, id="historial") ────────────────┤
+> │ «Se conservan 30 días, salvo las que estén en una colección.» · región aria-live                     │
+> │ cola en curso (PrayerResultCard: en cola · generándose · fallida · cancelada)                        │
+> │ PrayerHistoryCard × 12 por página (1 col · 2 sm · 3 xl), scroll infinito con sus 4 estados            │
+> └──────────────────────────────────────────────────────────────────────────────────────────────────────┘
+> ```
+>
+> - **Generar** desplaza a la sección Historial. Una imagen lista sale de la cola y entra primera en el historial (sin volver a
+>   pedir la lista) con el toast «Imagen N lista y guardada en el historial».
+> - `PrayerResults` se retiró; `PrayerResultCard` solo muestra estados en curso. `PrayerHistoryCard`: imagen (`src` al acercarse,
+>   `decoding="async"`, caja `aspect-[1376/768]`), «N peticiones · Generada hace… por <autora>», **Descargar** (enlace),
+>   **Ver en grande** y `ActionMenu` con **Guardar en colección**, **Generar de nuevo** y **Eliminar** (con `ConfirmDialog`,
+>   solo autora o admin).
+> - `PrayerCollectionRow` / `PrayerCollectionCard` / `LazyPrayerCollectionDialog` (crear vacía · guardar una imagen nueva o
+>   existente · ver con ampliar/descargar/quitar, renombrar y eliminar), forma de Canciones sin «Generar».
+> - Composables nuevos: `usePrayerHistory` (lista keyset `server: false`, `loadMore`, `remove`, `canRemove`),
+>   `usePrayerCollections` + `usePrayerCollectionList` (`prayer-collections`). `usePrayerImages` ya no usa blob ni objectURL ni
+>   `downloaded`; `usePrayerLeaveGuard` solo protege lo que está en cola o generándose.
+> - Las aprobadas son **una sola fila** (máximo una fila de tarjetas a cualquier ancho): `PrayerGrid` desplaza en horizontal
+>   (`overflow-x-auto`, `snap-x`, tarjetas `w-72 sm:w-80` que asoman la siguiente a 360 px) y su scroll infinito vive dentro de la
+>   fila (centinela al final, observado con la fila como raíz; **Cargar más** para teclado). Como la fila no crece hacia abajo, ya no
+>   empuja colecciones ni historial (se retiró `PrayerGrid :auto-load`). Desde `sm`, dos botones **‹ ›** recorren la fila (con
+>   ratón no hay gesto). La foto de cada tarjeta se pide al acercarse a la fila (`PrayerCard :scroll-root`). El botón del encabezado
+>   **Ver imágenes generadas** salta al historial. El historial se hidrata con `hydrate-on-idle` (no al verse) para que la cola en
+>   curso esté viva al pulsar **Generar**.
+>
+> El diagrama de abajo es el original (registro histórico).
+
 ```text
 ┌ Encabezado ───────────────────────────────────────────────────────────────┐
 │ h1 «Peticiones»  · descripción  ·  [Copiar enlace para invitados]          │
@@ -29,7 +64,7 @@ Se nombran por archivo (`components: [{ pathPrefix: false }]`). Cada uno tiene u
 | Componente | Props → eventos | Notas |
 |------------|-----------------|-------|
 | `PrayerToolbar` | `v-model:q`, `v-model:preset`, `v-model:from`, `v-model:to`, `v-model:dir` | Búsqueda (`label.input` + icono + botón limpiar), `join` de presets, dos `input type="date"` solo con **Rango**, `select` de orden. Todo `min-h-11`. Resumen del filtro activo con botón **Quitar filtros** |
-| `PrayerGrid` | `items`, `loadingMore`, `moreError`, `done` → `retry-more` | `ul` en rejilla CSS; sentinela con `PrayerCardSkeleton ×3`, aviso «Ya viste todas las peticiones» o `ErrorState` de «más» con **Reintentar** |
+| `PrayerGrid` | `items`, `loadingMore`, `moreError`, `done` → `retry-more` | *(Enmienda: una sola fila `ul` desplazable en horizontal, centinela al final de la fila, botones ‹ › desde `sm`)* `ul` en rejilla CSS; sentinela con `PrayerCardSkeleton ×3`, aviso «Ya viste todas las peticiones» o `ErrorState` de «más» con **Reintentar** |
 | `PrayerCard` | `request`, `selected`, `disabled` → `toggle`, `fix`, `open` | `article` + casilla (ver abajo). Foto con carga diferida, nombre, «Aprobada hace…», «Enviada el…», nota, transcripción con marcas resaltadas, insignias (**Editada**, **Texto por corregir**, **Texto largo**), botón **Corregir texto** |
 | `PrayerCardSkeleton` | `rows?` | Misma caja que `PrayerCard` (foto `aspect-[4/3]` + 3 líneas) con `skeleton` de daisyUI; `motion-reduce:` sin animación. Sin CLS |
 | `PrayerSelectionBar` | `count`, `images`, `unreadable`, `limit` → `generate`, `review`, `clear` | Barra fija abajo (forma de `SongSelectionBar`, `--app-sidebar-w`, área segura): «N peticiones → M imágenes», advertencia de ilegibles, **Generar imágenes**, **Ver elegidas**, **Limpiar** |

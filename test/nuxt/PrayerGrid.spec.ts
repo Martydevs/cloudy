@@ -1,5 +1,5 @@
-// Rejilla de Peticiones (feature 007, contracts/ui.md: `PrayerGrid`): motivo de las tarjetas que no se pueden elegir y el
-// centinela del desplazamiento infinito.
+// Fila de Peticiones (feature 007, contracts/ui.md: `PrayerGrid`): motivo de las tarjetas que no se pueden elegir, la fila
+// única desplazable en horizontal y el centinela del desplazamiento infinito.
 import { describe, expect, it, vi } from 'vitest'
 import { mockNuxtImport, mountSuspended } from '@nuxt/test-utils/runtime'
 import { nextTick } from 'vue'
@@ -47,6 +47,23 @@ describe('PrayerGrid', () => {
       await nextTick()
       expect(other.emitted('load-more'), JSON.stringify(state)).toBeUndefined()
     }
+  })
+
+  it('Cargar más pide la página siguiente con el teclado; al final, el aviso de fin en su lugar', async () => {
+    const wrapper = await mount()
+    await wrapper.findAll('button').find(b => b.text() === 'Cargar más')!.trigger('click')
+    expect(wrapper.emitted('load-more')).toHaveLength(1)
+    await wrapper.setProps({ done: true })
+    expect(wrapper.findAll('button').some(b => b.text() === 'Cargar más')).toBe(false)
+    expect(wrapper.text()).toContain('Ya viste todas las peticiones')
+  })
+
+  it('una sola fila: cada tarjeta tiene ancho fijo y no se encoge, el contenedor se desplaza en horizontal', async () => {
+    const wrapper = await mount()
+    const list = wrapper.get('ul[aria-label="Peticiones aprobadas"]')
+    expect(list.classes()).toContain('flex')
+    expect(list.element.parentElement!.classList).toContain('overflow-x-auto')
+    for (const item of list.findAll(':scope > li')) expect(item.classes()).toEqual(expect.arrayContaining(['shrink-0', 'w-72']))
   })
 
   it('solo la primera tarjeta lleva la foto con prioridad (las demás esperan a acercarse)', async () => {

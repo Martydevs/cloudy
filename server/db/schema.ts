@@ -344,6 +344,51 @@ export const songCollectionItems = pgTable('song_collection_items', {
   index('song_collection_items_song_idx').on(t.songId),
 ])
 
+// ---------------------------------------------------------------- peticiones (feature 007, enmienda de historial)
+
+/**
+ * Imagen de «peticiones del día» ya generada y guardada en el bucket. Guarda los ids de sus peticiones (para «Generar de
+ * nuevo»), nunca su texto. Sin colección, la limpieza diaria la borra a los 30 días.
+ */
+export const prayerImages = pgTable('prayer_images', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  storageKey: text('storage_key').notNull(),
+  mediaType: text('media_type').notNull(),
+  sizeBytes: integer('size_bytes').notNull(),
+  /** 1–4 ids de `files` (sin FK: la petición puede ir a la papelera y la imagen sigue siendo válida). */
+  fileIds: uuid('file_ids').array().notNull(),
+  createdBy: text('created_by').notNull().references(() => profiles.userId),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, t => [
+  uniqueIndex('prayer_images_storage_key_key').on(t.storageKey),
+  index('prayer_images_history_idx').on(t.createdAt.desc(), t.id.desc()),
+  check('prayer_images_file_ids_count', sql`cardinality(${t.fileIds}) BETWEEN 1 AND 4`),
+  check('prayer_images_size', sql`${t.sizeBytes} BETWEEN 1 AND 4000000`),
+])
+
+/** Colección global del equipo de imágenes generadas; los nombres pueden repetirse. */
+export const prayerImageCollections = pgTable('prayer_image_collections', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  /** 1–80 car., sin espacios al borde */
+  name: text('name').notNull(),
+  createdBy: text('created_by').notNull().references(() => profiles.userId),
+  ...timestamps,
+}, t => [
+  index('prayer_image_collections_updated_idx').on(t.updatedAt.desc(), t.id),
+  check('prayer_image_collections_name_length', sql`char_length(${t.name}) BETWEEN 1 AND 80 AND ${t.name} = btrim(${t.name})`),
+])
+
+/** Una imagen una sola vez por colección. Borrar la colección o la imagen borra el elemento. */
+export const prayerImageCollectionItems = pgTable('prayer_image_collection_items', {
+  collectionId: uuid('collection_id').notNull().references(() => prayerImageCollections.id, { onDelete: 'cascade' }),
+  imageId: uuid('image_id').notNull().references(() => prayerImages.id, { onDelete: 'cascade' }),
+  addedBy: text('added_by').notNull().references(() => profiles.userId),
+  addedAt: timestamp('added_at', { withTimezone: true }).notNull().defaultNow(),
+}, t => [
+  primaryKey({ columns: [t.collectionId, t.imageId] }),
+  index('prayer_image_collection_items_image_idx').on(t.imageId),
+])
+
 // ---------------------------------------------------------------- relations
 
 export const profilesRelations = relations(profiles, ({ many }) => ({

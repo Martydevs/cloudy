@@ -1,5 +1,6 @@
 // T033 / T051 / T066 / T077 — Página Peticiones (feature 007, quickstart § 3): tarjetas de peticiones aprobadas, selección,
-// generación de imágenes contra el stub de OpenRouter, corrección de transcripciones y filtros. Los datos se siembran en la
+// generación de imágenes contra el stub de OpenRouter (guardadas en el historial, enmienda de historial), corrección de
+// transcripciones y filtros. Los datos se siembran en la
 // rama de pruebas con `seedPrayerRequest`; las aprobaciones de esta corrida son las más recientes (otros archivos e2e corren
 // antes, uno a la vez), así que salen primero en la rejilla.
 import { createPage, setup } from '@nuxt/test-utils/e2e'
@@ -29,6 +30,12 @@ async function openPage(page: Page) {
   await page.goto(`${E2E_URL}/peticiones`)
   await waitForHydration(page)
   await expect.poll(() => page.getByRole('list', { name: 'Peticiones aprobadas' }).isVisible()).toBe(true)
+}
+
+/** Recorre la fila (horizontal) hasta la última tarjeta cargada, como quien desliza; su centinela va justo después. */
+async function scrollToGridEnd(page: Page) {
+  await page.getByRole('list', { name: 'Peticiones aprobadas' }).getByRole('listitem').last().scrollIntoViewIfNeeded()
+  await page.mouse.wheel(0, 300)
 }
 
 const card = (page: Page, sender: string) => page.getByRole('article', { name: `Petición de ${sender}`, exact: true })
@@ -143,9 +150,10 @@ describe('US1 · ver las peticiones y elegir cuáles proyectar', () => {
     await box(page, names[0]!).check()
     await expect.poll(() => bar(page).innerText()).toContain('1 petición → 1 imagen')
 
-    // Hasta el aviso de fin (detrás de las de esta corrida pueden venir las aprobadas por otros archivos e2e).
+    // Hasta el aviso de fin (detrás de las de esta corrida pueden venir las aprobadas por otros archivos e2e). La fila es
+    // una sola y horizontal: se recorre hasta la última tarjeta, no hasta el fondo de la página.
     await expect.poll(async () => {
-      await page.mouse.wheel(0, 20_000)
+      await scrollToGridEnd(page)
       return page.getByText('Ya viste todas las peticiones').isVisible()
     }, { timeout: 60_000 }).toBe(true)
     for (const name of names) expect(await card(page, name).count(), name).toBe(1)
@@ -173,8 +181,21 @@ describe('US1 · ver las peticiones y elegir cuáles proyectar', () => {
 })
 
 describe('US2 · generar las imágenes de peticiones del día', () => {
+  /** Tarjeta en curso de la cola (en cola, generándose, fallida o cancelada). */
   const result = (page: Page, n: number) => page.getByRole('article', { name: `Imagen de peticiones ${n}`, exact: true })
-  const ready = (page: Page, n: number) => result(page, n).getByRole('img', { name: `Imagen de peticiones ${n}` })
+  const history = (page: Page) => page.getByRole('list', { name: 'Imágenes generadas', exact: true })
+  /** La tarjeta del historial de una imagen guardada (por su enlace de descarga). */
+  const saved = (page: Page, id: string) => history(page).getByRole('listitem').filter({ has: page.locator(`a[href="/api/peticiones/imagenes/${id}/content?download=1"]`) })
+
+  /** Ids de las imágenes que el servidor guardó (respuestas 201 de `POST /api/peticiones/imagenes`), en orden de llegada. */
+  function trackSaved(page: Page): { id: string, fileIds: string[], createdAt: string }[] {
+    const ids: { id: string, fileIds: string[], createdAt: string }[] = []
+    page.on('response', async (response) => {
+      if (response.request().method() !== 'POST' || new URL(response.url()).pathname !== '/api/peticiones/imagenes' || response.status() !== 201) return
+      ids.push(await response.json())
+    })
+    return ids
+  }
 
   /** Elige las tarjetas, pulsa **Generar imágenes** y acepta la confirmación con `confirmLabel`. */
   async function generate(page: Page, names: string[], confirmLabel = 'Generar') {
@@ -185,25 +206,22 @@ describe('US2 · generar las imágenes de peticiones del día', () => {
     await expect.poll(() => dialog.isVisible()).toBe(false)
   }
 
-  /** `AAAA-MM-DD` en la zona del navegador, como el nombre de la descarga. */
-  const browserToday = (page: Page) => page.evaluate(() => {
-    const now = new Date()
-    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
-  })
-
   beforeEach(async () => {
     await resetStub()
   })
 
-  it('5 → 2 imágenes: la plantilla y los textos (sin nombres ni notas) viajan al stub; descargar, ver en grande y generar de nuevo', async () => {
+  it('5 → 2 imágenes: la plantilla y los textos (sin nombres ni notas) viajan al stub; se guardan en el historial, sobreviven a una recarga, se descargan, se amplían y se generan de nuevo', async () => {
     const texts = ['Uno', 'Dos', 'Tres', 'Cuatro', 'Cinco'].map(word => `Petición ${word} ${runId()}`)
     const seeded = await seedTexts('Generar', texts, { note: `Nota privada ${runId()}` })
     const page = await editorPage()
+    const ids = trackSaved(page)
     await openPage(page)
     await generate(page, seeded.map(s => s.name))
 
-    await expect.poll(() => ready(page, 1).isVisible(), { timeout: 30_000 }).toBe(true)
-    await expect.poll(() => ready(page, 2).isVisible(), { timeout: 30_000 }).toBe(true)
+    await expect.poll(() => ids.length, { timeout: 30_000 }).toBe(2)
+    for (const { id } of ids) await expect.poll(() => saved(page, id).isVisible(), { timeout: 10_000 }).toBe(true)
+    // Lo guardado sale de la cola: ya no hay tarjetas en curso.
+    await expect.poll(() => page.getByRole('list', { name: 'Imágenes en curso' }).count()).toBe(0)
     // La selección se conserva para corregir y volver a generar.
     expect(await bar(page).innerText()).toContain('5 peticiones → 2 imágenes')
 
@@ -218,32 +236,45 @@ describe('US2 · generar las imágenes de peticiones del día', () => {
       for (const { name } of seeded) expect(call.prompt).not.toContain(name)
       expect(call.prompt).not.toContain('Nota privada')
     }
+    // La fila guarda los ids de sus peticiones, nunca su texto.
+    const four = ids.find(i => i.fileIds.length === 4)!
+    const one = ids.find(i => i.fileIds.length === 1)!
+    expect(one.fileIds).toEqual([seeded[0]!.fileId])
+    expect(await saved(page, four.id).innerText()).toContain('4 peticiones')
 
-    const today = await browserToday(page)
-    for (const n of [1, 2]) {
-      const download = page.waitForEvent('download')
-      await result(page, n).getByRole('button', { name: 'Descargar' }).click()
-      expect((await download).suggestedFilename()).toBe(`peticiones-${today}-${n}.png`)
-    }
+    // Sobreviven a una recarga.
+    await page.reload()
+    await waitForHydration(page)
+    await page.locator('#historial').scrollIntoViewIfNeeded()
+    for (const { id } of ids) await expect.poll(() => saved(page, id).isVisible(), { timeout: 10_000 }).toBe(true)
 
-    await result(page, 1).getByRole('button', { name: 'Ver en grande' }).click()
-    const preview = page.getByRole('dialog', { name: 'Imagen de peticiones 1' })
-    await expect.poll(() => preview.getByRole('img').getAttribute('src')).toMatch(/^blob:/)
+    // Descargar: enlace con el nombre `peticiones-AAAA-MM-DD-<6 del id>.png` (fecha UTC).
+    const download = page.waitForEvent('download')
+    await saved(page, one.id).getByRole('link', { name: 'Descargar' }).click()
+    expect((await download).suggestedFilename()).toBe(`peticiones-${one.createdAt.slice(0, 10)}-${one.id.slice(0, 6)}.png`)
+
+    await saved(page, one.id).getByRole('button', { name: 'Ver en grande' }).click()
+    const preview = page.getByRole('dialog', { name: /^Imagen de peticiones con 1 petición/ })
+    await expect.poll(() => preview.getByRole('img').getAttribute('src')).toBe(`/api/peticiones/imagenes/${one.id}/content`)
     await preview.getByRole('button', { name: 'Cerrar' }).first().click()
     await expect.poll(() => preview.isVisible()).toBe(false)
 
-    // **Generar de nuevo** repite solo esa imagen; la otra sigue lista.
-    await result(page, 2).getByRole('button', { name: 'Generar de nuevo' }).click()
+    // **Generar de nuevo** desde el historial: las mismas peticiones, otra imagen guardada; las anteriores siguen.
+    await saved(page, one.id).getByRole('button', { name: 'Opciones de la imagen' }).click()
+    await page.getByRole('menuitem', { name: 'Generar de nuevo' }).click()
     await expect.poll(async () => (await prayerCalls()).length, { timeout: 30_000 }).toBe(3)
-    await expect.poll(() => ready(page, 2).isVisible(), { timeout: 30_000 }).toBe(true)
     expect((await prayerCalls())[2]!.texts).toEqual([texts[0]])
-    expect(await ready(page, 1).isVisible()).toBe(true)
+    await expect.poll(() => ids.length, { timeout: 30_000 }).toBe(3)
+    expect(ids[2]!.fileIds).toEqual(one.fileIds)
+    await expect.poll(() => saved(page, ids[2]!.id).isVisible(), { timeout: 10_000 }).toBe(true)
+    expect(await saved(page, one.id).isVisible()).toBe(true)
     await page.close()
   })
 
   it('con texto [ilegible] la confirmación avisa y ofrece «Generar de todos modos»', async () => {
     const [unreadable] = await seedTexts('Ilegible', [`Oremos por [ilegible] ${runId()}`])
     const page = await editorPage()
+    const ids = trackSaved(page)
     await openPage(page)
     await box(page, unreadable!.name).check()
     await expect.poll(() => bar(page).innerText()).toContain('1 petición todavía tiene texto ilegible')
@@ -251,39 +282,43 @@ describe('US2 · generar las imágenes de peticiones del día', () => {
     const dialog = page.getByRole('dialog', { name: 'Generar imágenes' })
     await expect.poll(() => dialog.innerText()).toContain('1 petición todavía tiene texto ilegible')
     await dialog.getByRole('button', { name: 'Generar de todos modos' }).click()
-    await expect.poll(() => ready(page, 1).isVisible(), { timeout: 30_000 }).toBe(true)
+    await expect.poll(() => ids.length, { timeout: 30_000 }).toBe(1)
     expect((await prayerCalls()).map(c => c.texts)).toEqual([[`Oremos por [ilegible] ${runId()}`]])
     await page.close()
   })
 
-  it('un fallo del servicio muestra el motivo y Reintentar solo en esa imagen; la otra sigue disponible', async () => {
+  it('un fallo del servicio muestra el motivo y Reintentar solo en esa imagen; la otra se guarda', async () => {
     // La más antigua (última) cae en la imagen 1 junto con otras tres; la más reciente sola en la 2.
     const texts = [`Sigue bien ${runId()}`, `B ${runId()}`, `C ${runId()}`, `D ${runId()}`, `falla-una-vez ${runId()}`]
     const seeded = await seedTexts('Falla', texts)
     const page = await editorPage()
+    const ids = trackSaved(page)
     await openPage(page)
     await generate(page, seeded.map(s => s.name))
 
     await expect.poll(() => result(page, 1).getByRole('alert').isVisible(), { timeout: 30_000 }).toBe(true)
     expect(await result(page, 1).getByRole('alert').innerText()).toBe(PRAYER_ERROR_MESSAGES.provider)
-    await expect.poll(() => ready(page, 2).isVisible(), { timeout: 30_000 }).toBe(true)
-    expect(await result(page, 2).getByRole('button', { name: 'Reintentar' }).count()).toBe(0)
+    await expect.poll(() => ids.length, { timeout: 30_000 }).toBe(1)
+    expect(ids[0]!.fileIds).toEqual([seeded[0]!.fileId])
+    expect(await result(page, 2).count()).toBe(0)
 
     await result(page, 1).getByRole('button', { name: 'Reintentar' }).click()
-    await expect.poll(() => ready(page, 1).isVisible(), { timeout: 30_000 }).toBe(true)
-    expect(await ready(page, 2).isVisible()).toBe(true)
+    await expect.poll(() => ids.length, { timeout: 30_000 }).toBe(2)
+    await expect.poll(() => result(page, 1).count()).toBe(0)
     await page.close()
   })
 
-  it('sin crédito: el motivo sin Reintentar', async () => {
+  it('sin crédito: el motivo sin Reintentar y nada se guarda', async () => {
     const [request] = await seedTexts('Sin credito', [`sin-credito ${runId()}`])
     const page = await editorPage()
+    const ids = trackSaved(page)
     await openPage(page)
     await generate(page, [request!.name])
     await expect.poll(() => result(page, 1).getByRole('alert').isVisible(), { timeout: 30_000 }).toBe(true)
     expect(await result(page, 1).getByRole('alert').innerText()).toBe(PRAYER_ERROR_MESSAGES.quota_exceeded)
     expect(await result(page, 1).getByRole('button', { name: 'Reintentar' }).count()).toBe(0)
     expect(await result(page, 1).getByRole('button', { name: 'Descartar' }).isVisible()).toBe(true)
+    expect(ids).toHaveLength(0)
     await page.close()
   })
 
@@ -308,34 +343,48 @@ describe('US2 · generar las imágenes de peticiones del día', () => {
     await page.close()
   })
 
-  it('salir con imágenes sin descargar pide confirmación', async () => {
-    const [request] = await seedTexts('Salir', [`Antes de salir ${runId()}`])
+  it('salir con una imagen generándose pide confirmación; una ya guardada no', async () => {
+    const [slow, quick] = await seedTexts('Salir', [`lento antes de salir ${runId()}`, `Rápida ${runId()}`])
     const page = await editorPage()
+    const ids = trackSaved(page)
     await openPage(page)
-    await generate(page, [request!.name])
-    await expect.poll(() => ready(page, 1).isVisible(), { timeout: 30_000 }).toBe(true)
 
     const leave = () => page.evaluate(() => {
       const app = (document.querySelector('#__nuxt') as unknown as { __vue_app__: { config: { globalProperties: { $router: { push: (to: string) => Promise<unknown> } } } } }).__vue_app__
       void app.config.globalProperties.$router.push('/')
     })
     const dialog = page.getByRole('dialog', { name: '¿Salir de Peticiones?' })
+
+    // Guardada: salir no pregunta (se vuelve a la página para la segunda parte).
+    await generate(page, [quick!.name])
+    await expect.poll(() => ids.length, { timeout: 30_000 }).toBe(1)
+    await leave()
+    await page.waitForURL(url => url.pathname === '/')
+    expect(await dialog.count()).toBe(0)
+    await openPage(page)
+
+    // Generándose (el stub tarda con «lento»): pregunta; Cancelar se queda.
+    await generate(page, [slow!.name])
+    await expect.poll(() => result(page, 1).getByRole('status').isVisible()).toBe(true)
     await leave()
     await expect.poll(() => dialog.isVisible()).toBe(true)
     await dialog.getByRole('button', { name: 'Cancelar' }).click()
     await expect.poll(() => dialog.isVisible()).toBe(false)
     expect(new URL(page.url()).pathname).toBe('/peticiones')
-    expect(await ready(page, 1).isVisible()).toBe(true)
 
     await leave()
     await dialog.getByRole('button', { name: 'Salir' }).click()
     await page.waitForURL(url => url.pathname === '/')
+    // Si la llamada lenta llegó al stub antes de cancelarse, el stub la registra al terminar su espera (4 s): se deja pasar
+    // ese plazo para que no se cuele en las cuentas de la prueba siguiente.
+    await page.waitForTimeout(5_000)
     await page.close()
   })
 
   it('con la red cortada la imagen queda en error reintentable con un mensaje accionable y la selección se conserva', async () => {
     const [request] = await seedTexts('Sin red', [`Sin conexión ${runId()}`])
     const page = await editorPage()
+    const ids = trackSaved(page)
     await openPage(page)
     await box(page, request!.name).check()
     await page.context().setOffline(true)
@@ -349,7 +398,7 @@ describe('US2 · generar las imágenes de peticiones del día', () => {
 
     await page.context().setOffline(false)
     await result(page, 1).getByRole('button', { name: 'Reintentar' }).click()
-    await expect.poll(() => ready(page, 1).isVisible(), { timeout: 30_000 }).toBe(true)
+    await expect.poll(() => ids.length, { timeout: 30_000 }).toBe(1)
     await page.close()
   })
 })
@@ -547,7 +596,7 @@ describe('US4 · buscar, filtrar por fecha y ordenar', () => {
     await page.getByRole('combobox', { name: 'Orden' }).selectOption('asc')
     await expect.poll(async () => (await visibleNames(page))[0]).toBe(names[13])
     await expect.poll(async () => {
-      await page.mouse.wheel(0, 20_000)
+      await scrollToGridEnd(page)
       return page.getByText('Ya viste todas las peticiones').isVisible()
     }, { timeout: 60_000 }).toBe(true)
     expect(await visibleNames(page)).toEqual([...names].reverse())

@@ -4,9 +4,9 @@ import { can } from '../../shared/permissions'
 
 const ACTIONS: Action[] = [
   'content.read', 'content.write', 'submissions.review', 'trash.empty',
-  'users.manage', 'activity.read', 'comments.moderate', 'youtube.moderate', 'songs.moderate',
+  'users.manage', 'activity.read', 'comments.moderate', 'youtube.moderate', 'songs.moderate', 'prayers.moderate',
 ]
-const ADMIN_ONLY = new Set<Action>(['trash.empty', 'users.manage', 'activity.read', 'comments.moderate', 'youtube.moderate', 'songs.moderate'])
+const ADMIN_ONLY = new Set<Action>(['trash.empty', 'users.manage', 'activity.read', 'comments.moderate', 'youtube.moderate', 'songs.moderate', 'prayers.moderate'])
 
 describe('can(role, action)', () => {
   it.each(ACTIONS)('admin puede %s', (action) => {
@@ -22,6 +22,12 @@ describe('can(role, action)', () => {
     expect(can('editor', 'youtube.moderate')).toBe(false)
     expect(can(null, 'youtube.moderate')).toBe(false)
     expect(can(undefined, 'youtube.moderate')).toBe(false)
+  })
+
+  it('prayers.moderate (eliminar una imagen ajena o cambiar una colección de imágenes ajena) es solo del admin (feature 007)', () => {
+    expect(can('admin', 'prayers.moderate')).toBe(true)
+    expect(can('editor', 'prayers.moderate')).toBe(false)
+    expect(can(null, 'prayers.moderate')).toBe(false)
   })
 
   it('songs.moderate (renombrar o eliminar una colección ajena) es solo del admin (feature 006)', () => {

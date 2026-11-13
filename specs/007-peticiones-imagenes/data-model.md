@@ -3,6 +3,9 @@
 **Feature**: `007-peticiones-imagenes` · Esta feature **no crea tablas ni enums**: lee `files` y `guest_submissions` y reutiliza el texto de
 imágenes de la feature 002. Lo único que cambia en la base son **dos índices** (migración `0009`).
 
+> **Enmienda (2026-11-12)**: el historial y las colecciones de imágenes generadas agregan **tres tablas** (migración aditiva
+> `0010`, sin enums nuevos ni borrados). Ver § Historial y colecciones (migración `0010`) al final.
+
 ## Origen de los datos
 
 ```text
@@ -126,3 +129,58 @@ LIMIT 13                                           -- página de 12 + 1 para sab
 `PRAYER_PER_IMAGE = 4` · `PRAYER_MAX_SELECTION = 40` · `PRAYER_PAGE_SIZE = 12` · `PRAYER_LONG_TEXT_CHARS = 600` ·
 `PRAYER_IMAGE_CONCURRENCY = 2` · `PRAYER_IMAGE_TIMEOUT_MS = 110_000` · `PRAYER_IMAGE_MAX_BYTES = 4_000_000` ·
 `PRAYER_ERROR_CODES` y sus mensajes por código.
+
+
+## Historial y colecciones (migración `0010`, enmienda 2026-11-12)
+
+Aditiva: `CREATE TABLE` × 3, índices y claves foráneas; nada se borra ni se cambia. La aplica **la persona** con
+`bun run db:migrate` (desarrollo), `bun run db:migrate:test` (pruebas; `bun run test:e2e` también la aplica a su rama aislada)
+y `bun run db:migrate:prod` (producción).
+
+### `prayer_images`
+
+| Columna | Tipo | Notas |
+|---------|------|-------|
+| `id` | `uuid` PK | `gen_random_uuid()`; el servidor lo genera antes de subir |
+| `storage_key` | `text` UNIQUE | `key('peticiones/<id>.<png\|jpg\|webp>')` (prefijo `e2e/<runId>/` en pruebas) |
+| `media_type` | `text` | `image/png`, `image/jpeg` o `image/webp` |
+| `size_bytes` | `integer` | CHECK 1–4 000 000 (`PRAYER_IMAGE_MAX_BYTES`) |
+| `file_ids` | `uuid[]` | CHECK `cardinality` 1–4; sin FK (la petición puede ir a la papelera); nunca el texto |
+| `created_by` | `text` → `profiles.user_id` | autora |
+| `created_at` | `timestamptz` | hora del servidor en milisegundos (el cursor compara con la misma precisión) |
+
+Índice `prayer_images_history_idx (created_at DESC, id DESC)` para el keyset del historial.
+
+### `prayer_image_collections`
+
+Igual que `song_collections`: `id`, `name` (CHECK 1–80 tras `btrim`), `created_by` → `profiles`, `created_at`, `updated_at`;
+índice `(updated_at DESC, id)`. Los nombres pueden repetirse.
+
+### `prayer_image_collection_items`
+
+`collection_id` (FK `ON DELETE CASCADE`), `image_id` (FK `ON DELETE CASCADE`), `added_by` → `profiles`, `added_at`. PK
+`(collection_id, image_id)`: una imagen una sola vez por colección (`ON CONFLICT DO NOTHING RETURNING`). Índice por `image_id`.
+
+### Reglas
+
+- **Guardar** (`savePrayerImage`, `server/utils/prayer-gallery.ts`): subir con `putObject` → insertar la fila; si el insert
+  falla, se borra el objeto (sin huérfanos) y se responde `502 save_failed`.
+- **Eliminar** (autora o `prayers.moderate` = admin): borrar la fila (los elementos caen en cascada) y luego el objeto.
+- **Eliminar una colección** no borra imágenes.
+- **Retención**: la limpieza diaria (`/api/cron/cleanup`, paso 7) borra en lotes de 500 las imágenes con más de
+  `PRAYER_IMAGE_RETENTION_DAYS` (30) días que no están en ninguna colección; primero las filas y después los objetos.
+- El SQL vive solo en `prayer-gallery.ts` y `prayer-collections.ts` (los endpoints no tocan drizzle; `architecture.spec.ts`).
+
+### DTOs (`shared/types/api.ts`)
+
+- `PrayerGeneratedImage`: `{ id, previewUrl, downloadUrl, fileIds, requestCount, author: PrayerPerson, createdAt }`; las URLs
+  pasan por `/api/peticiones/imagenes/:id/content` (302 firmado), así que no caducan.
+- `PrayerImageCollection`: `{ id, name, author, itemCount, createdAt, updatedAt }`; `PrayerImageCollectionDetail` agrega `items`
+  (`PrayerGeneratedImage` + `addedAt`, `addedBy`). `PrayerPerson` es un alias de `SongPerson`.
+
+### Constantes y validación
+
+`PRAYER_IMAGE_RETENTION_DAYS = 30`, `PRAYER_HISTORY_PAGE = 12`, `PRAYER_HISTORY_MAX_LIMIT = 48` y el código de error
+`save_failed` en `shared/constants/prayers.ts`. `prayerHistoryQuery`, `prayerCollectionInput` (`name`, `imageId?`),
+`prayerCollectionRename` y `prayerCollectionItemInput` en `shared/validation/prayers.ts`; el nombre reutiliza
+`songCollectionName()` y `prayerCollectionSchema` (`app/utils/form-schemas.ts`) lo espeja.

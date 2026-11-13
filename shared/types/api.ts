@@ -232,6 +232,37 @@ export interface PrayerRequest {
   text: ImageText
 }
 
+/** Quien generó una imagen, creó una colección o agregó una imagen: la misma forma que en Canciones. */
+export type PrayerPerson = SongPerson
+
+/** Una imagen de peticiones ya generada y guardada (historial). Las URLs pasan por `/content`: no caducan. */
+export interface PrayerGeneratedImage {
+  id: string
+  /** `/api/peticiones/imagenes/:id/content` → 302 a una URL firmada. */
+  previewUrl: string
+  /** Lo mismo con `?download=1` (`Content-Disposition: attachment`). */
+  downloadUrl: string
+  /** Ids de las peticiones (para «Generar de nuevo»); el texto se relee en el servidor. */
+  fileIds: string[]
+  requestCount: number
+  author: PrayerPerson
+  /** ISO */
+  createdAt: string
+}
+
+/** Colección del equipo con imágenes generadas. */
+export interface PrayerImageCollection {
+  id: string
+  name: string
+  author: PrayerPerson
+  /** Conteo por subconsulta en el mismo select (sin N+1). */
+  itemCount: number
+  createdAt: string
+  updatedAt: string
+}
+export interface PrayerImageCollectionItem extends PrayerGeneratedImage { addedAt: string, addedBy: PrayerPerson }
+export interface PrayerImageCollectionDetail extends PrayerImageCollection { items: PrayerImageCollectionItem[] }
+
 // ---------------------------------------------------------------- YouTube (feature 005, data-model § DTOs)
 
 export type { YoutubeBlockReason, YoutubeEngine, YoutubeFormat } from '../constants/youtube'

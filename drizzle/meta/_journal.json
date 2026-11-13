@@ -71,6 +71,13 @@
       "when": 1794440293590,
       "tag": "0009_striped_photon",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1794538584416,
+      "tag": "0010_ambitious_rhodey",
+      "breakpoints": true
     }
   ]
 }

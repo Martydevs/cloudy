@@ -9,7 +9,9 @@ Todos los endpoints: `requireRole(event, 'editor')` (editores y administradores)
 | # | Método y ruta | Historia | Qué hace |
 |---|---------------|----------|----------|
 | 1 | `GET /api/peticiones` | US1, US4 | Página de peticiones aprobadas (keyset), con búsqueda, rango de fechas y orden |
-| 2 | `POST /api/peticiones/imagenes` | US2 | Genera **una** imagen con hasta 4 peticiones sobre la plantilla y la devuelve |
+| 2 | `POST /api/peticiones/imagenes` | US2 | Genera **una** imagen con hasta 4 peticiones sobre la plantilla, la guarda y devuelve su JSON *(enmendado, § 5)* |
+| 5 | `GET /api/peticiones/imagenes` · `GET …/imagenes/:id/content` · `DELETE …/imagenes/:id` | Historial | Historial keyset, ver/descargar por 302 firmado, eliminar (autora o admin) |
+| 6 | `GET`/`POST /api/peticiones/colecciones` · `GET`/`PATCH`/`DELETE …/colecciones/:id` · `POST …/:id/items` · `DELETE …/:id/items/:imageId` | Colecciones | Colecciones de imágenes generadas (forma de `songs/collections`) |
 | — | `PATCH /api/files/:id/text` | US3 | **Existente** (feature 002): corrige la transcripción. Gana un límite de tasa (ver § 3) |
 | — | `GET`/`POST /api/files/:id/text` | US3 | **Existentes**: estado y relectura que usa `ImageTextPanel` |
 | — | `GET /api/files/:id/content` | US1 | **Existente**: 302 a la foto firmada (vista previa de la tarjeta) |
@@ -68,8 +70,8 @@ Flujo (`server/utils/prayer-images.ts`):
 5. `generatePrayerImage({ paragraphs, template })` (`#server/ai`): 1 llamada, intento de 90 s, tope duro de 105 s, 1 reintento solo en 429/5xx.
 6. Valida `mediaType` `image/*` y `bytes ≤ 4 000 000`; responde el binario.
 
-Respuesta `200`: cuerpo = bytes de la imagen · `Content-Type: image/png|image/jpeg` · `Content-Disposition: inline; filename="peticiones.<ext>"` ·
-`Cache-Control: no-store` · `X-Peticiones-Count: <n>` (párrafos incluidos). **No se guarda nada** en el bucket ni en la base.
+~~Respuesta `200`: cuerpo = bytes de la imagen · `Content-Type: image/png|image/jpeg` · `Content-Disposition: inline; filename="peticiones.<ext>"` ·
+`Cache-Control: no-store` · `X-Peticiones-Count: <n>` (párrafos incluidos). **No se guarda nada** en el bucket ni en la base.~~ *Enmendado (2026-11-12)*: ver § 5.
 
 Errores (JSON; el cliente que pide `blob` lo lee de `response._data` como en `useSongPresentations`):
 
@@ -85,6 +87,7 @@ Errores (JSON; el cliente que pide `blob` lo lee de `response._data` como en `us
 | `503` | `not_configured` | Sin clave de OpenRouter o sin plantilla | No |
 | `503` | `quota_exceeded` | OpenRouter 402 (sin saldo) | No |
 | `504` | `timeout` | Plazo de 105 s (o 504 de la plataforma) | Sí |
+| `502` | `save_failed` | *(enmienda)* La imagen se generó pero no se pudo subir al bucket o guardar su fila (sin objeto suelto) | Sí |
 
 Mensajes en español por código: `PRAYER_ERROR_MESSAGES` (`shared/constants/prayers.ts`), usados por `usePrayerImages` y compartidos con las pruebas.
 Registro del servidor: solo `[prayer-image] <código>`; nunca el texto, el nombre ni la respuesta del modelo.
@@ -94,6 +97,40 @@ Registro del servidor: solo `[prayer-image] <código>`; nunca el texto, el nombr
 - `PATCH /api/files/:id/text` (feature 002): se agrega `hitRateLimit(event, 'text-edit:<userId>', { limit: 120, windowSec: 3600 })` antes de guardar (FR-033).
   Sin otro cambio de comportamiento; la respuesta, `409` y la actividad `file.text_edit` siguen igual.
 - Sin cambios en `POST /api/submissions/:id/approve`: sigue copiando el texto a `files`, que es lo que lista esta feature.
+
+## 5. Historial de imágenes generadas (enmienda 2026-11-12)
+
+**`POST /api/peticiones/imagenes`** (cambia la respuesta): tras validar el tipo (`image/png|jpeg|webp`, si no `502 invalid_output`) sube
+la imagen con `putObject` (`server/utils/storage.ts`) a `key('peticiones/<id>.<ext>')`, inserta la fila en `prayer_images` y responde
+**`201`** con `PrayerGeneratedImage` (`Cache-Control: no-store`). Si el insert falla se borra el objeto subido y responde `502 save_failed`.
+El binario ya no vuelve por la función: sube **al bucket** desde el servidor (≤ 4 MB, acotado por `PRAYER_IMAGE_MAX_BYTES`). El límite
+de 60 por hora y el resto de errores no cambian.
+
+**`GET /api/peticiones/imagenes`** (`prayerHistoryQuery`: `limit` 1–48, 12 por defecto; `cursor`): `{ items: PrayerGeneratedImage[], nextCursor }`,
+keyset sobre `(created_at, id)` descendente, `Cache-Control: no-store`. Global del equipo. Cursor manipulado ⇒ `422`.
+
+**`GET /api/peticiones/imagenes/:id/content`**: `302` a `presignGet` (`Cache-Control: private, max-age=600`). Con `?download=1`,
+`Content-Disposition: attachment` con el nombre `peticiones-AAAA-MM-DD-<6 del id>.<ext>` (fecha UTC). `404` si ya no existe.
+
+**`DELETE /api/peticiones/imagenes/:id`**: autora o `prayers.moderate` (admin); si no, `403` «Solo quien la generó o un administrador
+puede eliminar esta imagen.». Borra la fila (sus elementos de colección caen en cascada) y después el objeto. `204`; `404` si no existe.
+
+## 6. Colecciones de imágenes (enmienda 2026-11-12)
+
+Misma forma que `/api/songs/collections` (feature 006); el SQL vive en `server/utils/prayer-collections.ts`.
+
+| Método y ruta | Quién | Respuesta |
+|---------------|-------|-----------|
+| `GET /api/peticiones/colecciones` | equipo | `{ items: PrayerImageCollection[] }`, conteo por subconsulta en la misma sentencia, `updated_at` desc |
+| `POST /api/peticiones/colecciones` `{ name, imageId? }` | equipo | `201` `PrayerImageCollection`; con `imageId` crea colección + elemento en un `db.batch`; imagen inexistente ⇒ `404` sin crear nada |
+| `GET /api/peticiones/colecciones/:id` | equipo | `PrayerImageCollectionDetail` (colección + imágenes en un `db.batch`); `404` |
+| `PATCH /api/peticiones/colecciones/:id` `{ name }` | autora o admin | `PrayerImageCollection`; `403`/`404`/`422` |
+| `DELETE /api/peticiones/colecciones/:id` | autora o admin | `204`; las imágenes siguen en el historial |
+| `POST /api/peticiones/colecciones/:id/items` `{ imageId }` | equipo | `{ added }` idempotente (`ON CONFLICT DO NOTHING`); `404` colección o imagen |
+| `DELETE /api/peticiones/colecciones/:id/items/:imageId` | equipo | `204` idempotente |
+
+Limpieza diaria (`GET /api/cron/cleanup`, paso 7): `expiredPrayerImages` = imágenes de más de 30 días fuera de toda colección,
+borradas en lotes de 500 (filas, luego objetos).
 
 ## 4. Frontera con el proveedor (`server/ai/prayer-image/`)
 

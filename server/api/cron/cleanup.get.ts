@@ -15,13 +15,15 @@ export interface CleanupReport {
   orphanVideos: number
   /** Canciones sin historial ni colecciones y sin cambios en 30 días (feature 006). */
   orphanSongs: number
+  /** Imágenes de peticiones de más de 30 días que no están en ninguna colección (feature 007). */
+  expiredPrayerImages: number
 }
 
 export default defineEventHandler(async (event): Promise<CleanupReport> => {
   requireCron(event)
   const db = useDb()
   const now = Date.now()
-  const report: CleanupReport = { purgedTrash: 0, expiredSubmissions: 0, orphanUploads: 0, rateLimitRows: 0, orphanVideos: 0, orphanSongs: 0 }
+  const report: CleanupReport = { purgedTrash: 0, expiredSubmissions: 0, orphanUploads: 0, rateLimitRows: 0, orphanVideos: 0, orphanSongs: 0, expiredPrayerImages: 0 }
 
   // 0. Raíces con más de 30 días en la papelera: filas y objetos, en lotes de 500.
   report.purgedTrash = await purgeAll(new Date(now - TRASH_RETENTION_DAYS * 86_400_000))
@@ -117,6 +119,10 @@ export default defineEventHandler(async (event): Promise<CleanupReport> => {
     report.orphanSongs += orphans.length
     if (orphans.length < BATCH) break
   }
+
+  // 7. Imágenes de peticiones generadas hace más de 30 días y en ninguna colección (feature 007): filas y objetos, en lotes
+  // de 500. Las colecciones son lo que el equipo conserva.
+  report.expiredPrayerImages = await purgeExpiredPrayerImages()
 
   return report
 })

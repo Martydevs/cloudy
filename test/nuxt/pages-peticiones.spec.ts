@@ -1,19 +1,21 @@
-// T031 — Página Peticiones (feature 007, contracts/ui.md): encabezado, cuatro estados, desplazamiento infinito y selección.
+// T031 — Página Peticiones (feature 007, contracts/ui.md, enmienda de historial): encabezado, orden de las tres secciones
+// (aprobadas en una sola fila → colecciones → historial), cuatro estados, desplazamiento infinito y selección.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { enableAutoUnmount } from '@vue/test-utils'
 import { mockNuxtImport, mountSuspended } from '@nuxt/test-utils/runtime'
 import { nextTick } from 'vue'
-import { getQuery, setResponseHeader, setResponseStatus } from 'h3'
+import { getQuery, readBody, setResponseStatus } from 'h3'
 import type { H3Event } from 'h3'
-import type { Me, Paginated, PrayerRequest } from '#shared/types/api'
+import type { Me, Paginated, PrayerGeneratedImage, PrayerRequest } from '#shared/types/api'
 import PeticionesPage from '~/pages/peticiones.vue'
 import { buttonsWithText, calls, failWith, flush, mockApi, resetCalls } from './helpers/api'
-import { prayer, prayerText } from './prayer-fixtures'
+import { generated, imageCollection, prayer, prayerText } from './prayer-fixtures'
 
 const { visible, copyGuestLink } = await vi.hoisted(async () => {
   const { ref } = await import('vue')
   return { visible: ref(false), copyGuestLink: vi.fn() }
 })
+// happy-dom no tiene IntersectionObserver: centinelas y fotos de las tarjetas se controlan a mano.
 mockNuxtImport('useElementVisibility', () => () => visible)
 mockNuxtImport('useGuestLink', () => () => ({ link: { value: 'http://localhost/upload' }, copyGuestLink }))
 
@@ -41,6 +43,9 @@ beforeEach(() => {
   mockApi('GET', '/api/peticiones', (event) => {
     return getQuery(event).cursor ? page(13, 14, null) : page(1, 12, 'c1')
   })
+  mockApi('GET', '/api/peticiones/colecciones', { items: [] })
+  mockApi('GET', '/api/peticiones/imagenes', { items: [], nextCursor: null })
+  useState(PRAYER_HISTORY_ADDED_KEY).value = []
 })
 
 describe('/peticiones', () => {
@@ -52,13 +57,56 @@ describe('/peticiones', () => {
     expect(copyGuestLink).toHaveBeenCalledOnce()
   })
 
-  it('cargando: seis esqueletos con aria-busy', async () => {
+  it('las tres secciones van en orden: peticiones aprobadas → colecciones → historial', async () => {
+    mockApi('GET', '/api/peticiones/colecciones', { items: [imageCollection(1)] })
+    mockApi('GET', '/api/peticiones/imagenes', { items: [generated(1)], nextCursor: null })
+    const wrapper = await mountSuspended(PeticionesPage)
+    // El historial es un componente diferido (`import()`).
+    await vi.waitFor(() => expect(wrapper.find('ul[aria-label="Imágenes generadas"]').exists()).toBe(true), { timeout: 5000 })
+    expect(wrapper.findAll('h2').map(h => h.text())).toEqual(['Peticiones aprobadas', 'Colecciones', 'Historial de imágenes generadas'])
+    const html = wrapper.html()
+    const order = ['aria-label="Peticiones aprobadas"', 'aria-label="Colecciones de imágenes del equipo"', 'aria-label="Imágenes generadas"'].map(s => html.indexOf(s))
+    expect(order.every(i => i > -1)).toBe(true)
+    expect([...order].sort((a, b) => a - b)).toEqual(order)
+    // El atajo del encabezado lleva al historial.
+    expect(wrapper.findAll('a').find(a => a.text().includes('Ver imágenes generadas'))!.attributes('href')).toBe('#historial')
+    expect(wrapper.find('#historial').exists()).toBe(true)
+  })
+
+  it('Nueva colección, abrir y eliminar desde la fila', async () => {
+    mockApi('GET', '/api/peticiones/colecciones', { items: [imageCollection(1)] })
+    mockApi('DELETE', `/api/peticiones/colecciones/${imageCollection(1).id}`, () => null)
+    mockApi('GET', `/api/peticiones/colecciones/${imageCollection(1).id}`, { ...imageCollection(1), items: [] })
+    const wrapper = await mountSuspended(PeticionesPage, { attachTo: document.body })
+    await flush()
+    await buttonsWithText(wrapper, 'Nueva colección')[0]!.trigger('click')
+    await vi.waitFor(() => expect(document.body.querySelector('dialog h2')?.textContent).toBe('Nueva colección'), { timeout: 5000 })
+    await wrapper.get('dialog button[aria-label="Cerrar"]').trigger('click')
+    await flush()
+    await wrapper.get('button[aria-label^="Abrir la colección Colección 1"]').trigger('click')
+    await vi.waitFor(() => expect(document.body.querySelector('dialog')?.textContent).toContain('Esta colección no tiene imágenes todavía.'), { timeout: 5000 })
+    await wrapper.get('dialog button[aria-label="Cerrar"]').trigger('click')
+    await flush()
+    await wrapper.get('button[aria-label="Opciones de Colección 1"]').trigger('click')
+    await flush()
+    const remove = Array.from(document.body.querySelectorAll<HTMLElement>('[role="menuitem"]')).find(el => el.textContent?.includes('Eliminar colección'))!
+    remove.click()
+    await flush()
+    expect(useConfirm().options.value?.title).toBe('¿Eliminar la colección «Colección 1»?')
+    useConfirm().accept()
+    await flush()
+    expect(calls.some(c => c.method === 'DELETE' && c.url === `/api/peticiones/colecciones/${imageCollection(1).id}`)).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('cargando: una fila de esqueletos con aria-busy, del mismo ancho que las tarjetas', async () => {
     mockApi('GET', '/api/peticiones', () => new Promise(() => {}))
     const wrapper = await mountSuspended(PeticionesPage)
     await nextTick()
-    const busy = wrapper.get('[aria-busy="true"]')
-    expect(busy.findAll('.card')).toHaveLength(6)
-    expect(busy.text()).toContain('Cargando peticiones…')
+    const busy = wrapper.findAll('[aria-busy="true"]').find(b => b.text().includes('Cargando peticiones…'))!
+    const skeletons = busy.findAll('.card')
+    expect(skeletons).toHaveLength(5)
+    for (const skeleton of skeletons) expect(skeleton.classes()).toEqual(expect.arrayContaining(['w-72', 'sm:w-80', 'shrink-0']))
   })
 
   it('vacío: EmptyState con Ir a Solicitudes y Copiar enlace', async () => {
@@ -98,13 +146,22 @@ describe('/peticiones', () => {
     expect(wrapper.text()).toContain('Ya viste todas las peticiones')
   })
 
-  it('Cargar más (teclado) muestra tres esqueletos mientras llega la página', async () => {
+  it('la fila no crece hacia abajo: tras saltar al historial sigue cargando sola al llegar a su final', async () => {
+    const wrapper = await mountSuspended(PeticionesPage)
+    await flush()
+    await wrapper.findAll('a').find(a => a.text().includes('Ver imágenes generadas'))!.trigger('click')
+    visible.value = true
+    await flush(10)
+    expect(wrapper.findAll('ul[aria-label="Peticiones aprobadas"] > li')).toHaveLength(14)
+  })
+
+  it('Cargar más (teclado) muestra un esqueleto al final de la fila mientras llega la página', async () => {
     const wrapper = await mountSuspended(PeticionesPage)
     await flush()
     mockApi('GET', '/api/peticiones', event => (getQuery(event).cursor ? new Promise(() => {}) : page(1, 12, 'c1')))
     await buttonsWithText(wrapper, 'Cargar más')[0]!.trigger('click')
     await nextTick()
-    expect(wrapper.get('[aria-label="Cargando más peticiones…"]').findAll('.card')).toHaveLength(3)
+    expect(wrapper.get('[aria-label="Cargando más peticiones…"]').findAll('.card')).toHaveLength(1)
   })
 
   it('un fallo de una página posterior muestra el error compacto sin perder lo cargado, y Reintentar sigue', async () => {
@@ -163,17 +220,16 @@ describe('/peticiones', () => {
   })
 
   describe('US2 · generar', () => {
-    const png = (event: H3Event) => {
-      setResponseHeader(event, 'content-type', 'image/png')
-      return Buffer.from([0x89, 0x50, 0x4E, 0x47])
+    const saved = async (event: H3Event): Promise<PrayerGeneratedImage> => {
+      const { fileIds } = await readBody<{ fileIds: string[] }>(event)
+      setResponseStatus(event, 201)
+      return generated(fileIds.length === 4 ? 1 : 2, { fileIds, requestCount: fileIds.length })
     }
 
     beforeEach(() => {
       usePrayerImages().reset()
       useToast().toasts.value = []
-      vi.spyOn(URL, 'createObjectURL').mockImplementation(() => 'blob:x')
-      vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {})
-      mockApi('POST', '/api/peticiones/imagenes', png)
+      mockApi('POST', '/api/peticiones/imagenes', saved)
     })
 
     async function choose(n: number, list: PrayerRequest[] = []) {
@@ -198,11 +254,11 @@ describe('/peticiones', () => {
       useConfirm().cancel()
       await flush()
       expect(posts()).toHaveLength(0)
-      expect(wrapper.text()).not.toContain('Imágenes generadas')
+      expect(wrapper.find('[aria-label="Imágenes en curso"]').exists()).toBe(false)
       wrapper.unmount()
     })
 
-    it('al confirmar encola los grupos, muestra los resultados arriba y conserva la selección', async () => {
+    it('al confirmar encola los grupos, las imágenes guardadas entran al historial (abajo) y se conserva la selección', async () => {
       const scroll = vi.fn()
       Element.prototype.scrollIntoView = scroll
       const wrapper = await choose(5)
@@ -211,14 +267,14 @@ describe('/peticiones', () => {
       useConfirm().accept()
       await flush(15)
       expect(posts().map(c => (c.body as { fileIds: string[] }).fileIds.length)).toEqual([4, 1])
-      // `LazyPrayerResults` es un `import()`: con la suite completa su chunk puede tardar más que unos ticks.
-      await vi.waitFor(() => expect(wrapper.findAll('img[alt^="Imagen de peticiones"]')).toHaveLength(2), { timeout: 5000 })
-      expect(wrapper.text()).toContain('Imágenes generadas')
+      // `LazyPrayerHistory` es un `import()`: con la suite completa su chunk puede tardar más que unos ticks.
+      await vi.waitFor(() => expect(wrapper.findAll('ul[aria-label="Imágenes generadas"] > li')).toHaveLength(2), { timeout: 5000 })
+      expect(wrapper.find('[aria-label="Imágenes en curso"]').exists()).toBe(false)
       expect(usePrayerSelection().count.value).toBe(5)
       expect(scroll).toHaveBeenCalled()
-      // Los resultados van antes de la rejilla.
+      // El historial va después de la rejilla.
       const html = wrapper.html()
-      expect(html.indexOf('Imágenes generadas')).toBeLessThan(html.indexOf('aria-label="Peticiones aprobadas"'))
+      expect(html.indexOf('aria-label="Imágenes generadas"')).toBeGreaterThan(html.indexOf('aria-label="Peticiones aprobadas"'))
       wrapper.unmount()
     })
 
@@ -249,7 +305,8 @@ describe('/peticiones', () => {
       wrapper.unmount()
     })
 
-    it('con imágenes sin descargar, salir pide confirmación; aceptarla libera todo', async () => {
+    it('con imágenes generándose, salir pide confirmación; aceptarla cancela la cola', async () => {
+      mockApi('POST', '/api/peticiones/imagenes', () => new Promise(() => {}))
       const wrapper = await choose(1)
       await buttonsWithText(wrapper, 'Generar imágenes')[0]!.trigger('click')
       await flush()
@@ -272,7 +329,19 @@ describe('/peticiones', () => {
       wrapper.unmount()
     })
 
+    it('una imagen ya guardada no pide confirmación al salir', async () => {
+      const wrapper = await choose(1)
+      await buttonsWithText(wrapper, 'Generar imágenes')[0]!.trigger('click')
+      await flush()
+      useConfirm().accept()
+      await flush(15)
+      expect(usePrayerImages().items.value).toEqual([])
+      expect(usePrayerImages().needsLeaveGuard.value).toBe(false)
+      wrapper.unmount()
+    })
+
     it('registra beforeunload, que solo avisa con trabajo pendiente', async () => {
+      mockApi('POST', '/api/peticiones/imagenes', () => new Promise(() => {}))
       const wrapper = await choose(1)
       const idle = new Event('beforeunload', { cancelable: true })
       window.dispatchEvent(idle)
@@ -365,7 +434,7 @@ describe('/peticiones', () => {
 
     const bar = (wrapper: Awaited<ReturnType<typeof mountSuspended<typeof PeticionesPage>>>) => wrapper.get('[aria-label="Selección de peticiones"]')
 
-    it('la barra de filtros va entre los resultados y la rejilla', async () => {
+    it('la barra de filtros va antes de la rejilla', async () => {
       const wrapper = await mountSuspended(PeticionesPage)
       await flush()
       const html = wrapper.html()

@@ -189,9 +189,19 @@ describe('US6 · protección de rutas', () => {
       ['DELETE', `/api/songs/collections/${id}`],
       ['POST', `/api/songs/collections/${id}/items`],
       ['DELETE', `/api/songs/collections/${id}/items/${id}`],
-      // Página Peticiones (feature 007).
+      // Página Peticiones (feature 007), con el historial y las colecciones de imágenes.
       ['GET', '/api/peticiones'],
       ['POST', '/api/peticiones/imagenes'],
+      ['GET', '/api/peticiones/imagenes'],
+      ['GET', `/api/peticiones/imagenes/${id}/content`],
+      ['DELETE', `/api/peticiones/imagenes/${id}`],
+      ['GET', '/api/peticiones/colecciones'],
+      ['POST', '/api/peticiones/colecciones'],
+      ['GET', `/api/peticiones/colecciones/${id}`],
+      ['PATCH', `/api/peticiones/colecciones/${id}`],
+      ['DELETE', `/api/peticiones/colecciones/${id}`],
+      ['POST', `/api/peticiones/colecciones/${id}/items`],
+      ['DELETE', `/api/peticiones/colecciones/${id}/items/${id}`],
     ] as const
     for (const [method, path] of commentRoutes) {
       const init: { method: string, headers: Record<string, string>, body?: string } = method === 'GET' || method === 'DELETE'

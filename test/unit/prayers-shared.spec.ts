@@ -3,8 +3,11 @@ import { describe, expect, it } from 'vitest'
 import {
   PRAYER_ERROR_CODES,
   PRAYER_ERROR_MESSAGES,
+  PRAYER_HISTORY_MAX_LIMIT,
+  PRAYER_HISTORY_PAGE,
   PRAYER_IMAGE_CONCURRENCY,
   PRAYER_IMAGE_MAX_BYTES,
+  PRAYER_IMAGE_RETENTION_DAYS,
   PRAYER_IMAGE_TIMEOUT_MS,
   PRAYER_LONG_TEXT_CHARS,
   PRAYER_MAX_SELECTION,
@@ -26,11 +29,14 @@ describe('constantes', () => {
     expect(PRAYER_IMAGE_CONCURRENCY).toBe(2)
     expect(PRAYER_IMAGE_TIMEOUT_MS).toBe(110_000)
     expect(PRAYER_IMAGE_MAX_BYTES).toBe(4_000_000)
+    expect(PRAYER_IMAGE_RETENTION_DAYS).toBe(30)
+    expect(PRAYER_HISTORY_PAGE).toBe(12)
+    expect(PRAYER_HISTORY_MAX_LIMIT).toBe(48)
   })
 
   it('cada código de error tiene un texto en español', () => {
     expect([...PRAYER_ERROR_CODES].sort()).toEqual(
-      ['invalid_output', 'not_configured', 'provider', 'quota_exceeded', 'rate_limited', 'request_unavailable', 'timeout', 'too_large'],
+      ['invalid_output', 'not_configured', 'provider', 'quota_exceeded', 'rate_limited', 'request_unavailable', 'save_failed', 'timeout', 'too_large'],
     )
     for (const code of PRAYER_ERROR_CODES) {
       expect(PRAYER_ERROR_MESSAGES[code].trim(), code).not.toBe('')

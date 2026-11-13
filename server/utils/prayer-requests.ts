@@ -97,7 +97,7 @@ export interface PrayerListQuery {
  * El cursor tal como lo escribe `encodeCursor` aquí: instante ISO exacto e id UUID. Uno manipulado responde 422 en vez de
  * llegar a Postgres como un cast inválido (500).
  */
-function decodePrayerCursor(cursor: string | undefined) {
+export function decodePrayerCursor(cursor: string | undefined) {
   const after = decodeCursor(cursor)
   if (after && (Number.isNaN(Date.parse(after.v)) || new Date(after.v).toISOString() !== after.v || !uuid()(after.id).ok)) {
     throw createError({ statusCode: 422, statusMessage: 'Validation failed', data: { errors: { cursor: 'Cursor no válido' } } })

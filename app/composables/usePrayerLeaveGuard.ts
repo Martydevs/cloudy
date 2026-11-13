@@ -1,6 +1,6 @@
-// Aviso al salir de Peticiones (feature 007, contracts/ui.md "Salir"): con imágenes generándose o sin descargar, la navegación
-// interna pide confirmación y cerrar o recargar la pestaña muestra el aviso nativo del navegador. Al aceptar, se aborta la
-// cola, se liberan las imágenes y se vacía la selección. El guardián del router vive solo mientras la página está montada
+// Aviso al salir de Peticiones (feature 007, contracts/ui.md "Salir"): con imágenes en cola o generándose, la navegación
+// interna pide confirmación y cerrar o recargar la pestaña muestra el aviso nativo del navegador (lo terminado ya está
+// guardado en el historial). Al aceptar, se aborta la cola y se vacía la selección. El guardián del router vive solo mientras la página está montada
 // (no depende de que la página sea el componente de `<RouterView>`).
 export function usePrayerLeaveGuard() {
   const images = usePrayerImages()

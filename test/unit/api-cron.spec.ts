@@ -41,7 +41,7 @@ describe('GET /api/cron/cleanup', () => {
       [{ key: 'a' }, { key: 'b' }],
     ])
     const handler = await loadHandler('api/cron/cleanup.get.ts')
-    expect(await handler(authorized())).toEqual({ purgedTrash: 0, expiredSubmissions: 1, orphanUploads: 2, rateLimitRows: 2, orphanVideos: 0, orphanSongs: 0 })
+    expect(await handler(authorized())).toEqual({ purgedTrash: 0, expiredSubmissions: 1, orphanUploads: 2, rateLimitRows: 2, orphanVideos: 0, orphanSongs: 0, expiredPrayerImages: 0 })
     // La limpieza ya no toca solicitudes de acceso (se retiraron).
     expect(fake.calls.some(c => c.method === 'where' && sqlText(c.args[0]).includes('guest_access_requests'))).toBe(false)
     expect(fake.calls.find(c => c.method === 'set')?.args[0]).toEqual({ status: 'expired' })
@@ -51,8 +51,8 @@ describe('GET /api/cron/cleanup', () => {
       [`pre/files/${UUID}`, `pre/thumbs/${UUID}.webp`, `pre/textsrc/${UUID}.jpg`],
       ['pre/guest/s2/b', 'pre/textsrc/g1.jpg'],
     ])
-    // + el paso de videos huérfanos y el de canciones huérfanas (feature 006).
-    expect(fake.calls.filter(c => c.method === 'delete')).toHaveLength(7)
+    // + el paso de videos huérfanos, el de canciones huérfanas (feature 006) y el de imágenes de peticiones (feature 007).
+    expect(fake.calls.filter(c => c.method === 'delete')).toHaveLength(8)
   })
 
   it('borra los videos de YouTube huérfanos en lotes y conserva los que tienen historial, lista o menos de 24 h', async () => {
@@ -88,8 +88,23 @@ describe('GET /api/cron/cleanup', () => {
   it('sin nada que limpiar devuelve ceros', async () => {
     installNitro([{ rows: [] }, [], [], [], [], []])
     const handler = await loadHandler('api/cron/cleanup.get.ts')
-    expect(await handler(authorized())).toEqual({ purgedTrash: 0, expiredSubmissions: 0, orphanUploads: 0, rateLimitRows: 0, orphanVideos: 0, orphanSongs: 0 })
+    expect(await handler(authorized())).toEqual({ purgedTrash: 0, expiredSubmissions: 0, orphanUploads: 0, rateLimitRows: 0, orphanVideos: 0, orphanSongs: 0, expiredPrayerImages: 0 })
     expect(s3.deleteMany).not.toHaveBeenCalled()
+  })
+
+  it('borra las imágenes de peticiones vencidas que no están en una colección y conserva las de colección (feature 007)', async () => {
+    const batch = Array.from({ length: 500 }, (_, i) => ({ storageKey: `pre/peticiones/${i}.png` }))
+    // Papelera, envíos, subidas, envíos vacíos, rate limits, videos y canciones: nada.
+    const fake = installNitro([{ rows: [] }, [], [], [], [], [], [], [], batch, [{ storageKey: 'pre/peticiones/ultima.png' }]])
+    const handler = await loadHandler('api/cron/cleanup.get.ts')
+    expect(await handler(authorized())).toMatchObject({ orphanSongs: 0, expiredPrayerImages: 501 })
+    const expired = fake.calls.filter(c => c.method === 'where').map(c => sqlText(c.args[0])).filter(text => text.includes('FROM prayer_images p'))
+    expect(expired).toHaveLength(2)
+    expect(expired[0]).toContain('p.created_at < now() - make_interval(days => $1::int)')
+    expect(expired[0]).toContain('NOT EXISTS (SELECT 1 FROM prayer_image_collection_items i WHERE i.image_id = p.id)')
+    expect(expired[0]).toContain('[30,500]')
+    expect(s3.deleteMany.mock.calls.at(-2)![0]).toHaveLength(500)
+    expect(s3.deleteMany.mock.calls.at(-1)![0]).toEqual(['pre/peticiones/ultima.png'])
   })
 
   it('purga las raíces con más de 30 días en la papelera, filas y objetos', async () => {

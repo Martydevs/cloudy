@@ -15,16 +15,18 @@ const props = withDefaults(defineProps<{
   disabledReason?: string | null
   /** Primera tarjeta: su foto es la candidata a LCP, así que sale desde el SSR con prioridad alta en vez de esperar. */
   priority?: boolean
-}>(), { selected: false, disabled: false, disabledReason: null, priority: false })
+  /** Contenedor desplazable de la fila: la foto se pide al acercarse a su borde y no solo al de la pantalla. */
+  scrollRoot?: HTMLElement | null
+}>(), { selected: false, disabled: false, disabledReason: null, priority: false, scrollRoot: null })
 const emit = defineEmits<{ toggle: [], fix: [] }>()
 
 const m = messages.prayers
 const { timeAgo } = useRelativeTime()
 const reasonId = useId()
 
-// Foto diferida: el `src` llega una vez, cuando la tarjeta se acerca a la pantalla (200 px de margen).
+// Foto diferida: el `src` llega una vez, cuando la tarjeta se acerca a la pantalla o a su fila (200 px de margen).
 const root = useTemplateRef<HTMLElement>('root')
-const near = useElementVisibility(root, { rootMargin: '200px', once: true })
+const near = useElementVisibility(root, { scrollTarget: () => props.scrollRoot, rootMargin: '200px', once: true })
 const photoFailed = ref(false)
 
 const text = computed(() => props.request.text)
