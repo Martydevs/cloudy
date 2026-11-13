@@ -170,27 +170,23 @@ const SEED_EXTENSIONS = ['jpg', 'png', 'mp3', 'wav', 'mp4', 'mov', 'pptx', 'pdf'
 /**
  * Siembra `count` filas `ready` en una sola consulta, sin bytes en el bucket. Sin `thumb_key`, las
  * tarjetas muestran el icono de la categoría y nunca piden `/thumbnail`, así que no hay 404.
- * Los nombres son `<label> <n>.<ext>` y las claves de storage van bajo `e2e/<runId>/`. Con `textContent`
- * (feature 002) cada fila con texto queda leída (`text_status = 'ready'`), como una imagen ya procesada.
+ * Los nombres son `<label> <n>.<ext>` y las claves de storage van bajo `e2e/<runId>/`.
  */
 export async function seedFiles(
   owner: string,
   folderId: string | null,
   count: number,
   label: string,
-  { textContent }: { textContent?: (index: number) => string | null } = {},
 ): Promise<string[]> {
   const ids = Array.from({ length: count }, () => randomUUID())
   const names = ids.map((_, i) => `${label} ${String(i + 1).padStart(3, '0')}.${SEED_EXTENSIONS[i % SEED_EXTENSIONS.length]}`)
   const exts = names.map(getExtension)
   const types = exts.map(ext => ALLOWED_TYPES[ext]!)
   await testSql().query(
-    `INSERT INTO files (id, folder_id, name, extension, mime_type, category, size_bytes, storage_key, upload_status, origin, uploaded_by,
-       text_content, text_status)
-     SELECT id::uuid, $2::uuid, name, extension, mime_type, category::file_category, size_bytes, storage_key, 'ready', 'team', $9,
-       text_content, CASE WHEN text_content IS NULL THEN NULL ELSE 'ready'::image_text_status END
-     FROM unnest($1::text[], $3::text[], $4::text[], $5::text[], $6::text[], $7::bigint[], $8::text[], $10::text[])
-       AS t(id, name, extension, mime_type, category, size_bytes, storage_key, text_content)`,
+    `INSERT INTO files (id, folder_id, name, extension, mime_type, category, size_bytes, storage_key, upload_status, origin, uploaded_by)
+     SELECT id::uuid, $2::uuid, name, extension, mime_type, category::file_category, size_bytes, storage_key, 'ready', 'team', $9
+     FROM unnest($1::text[], $3::text[], $4::text[], $5::text[], $6::text[], $7::bigint[], $8::text[])
+       AS t(id, name, extension, mime_type, category, size_bytes, storage_key)`,
     [
       ids,
       folderId,
@@ -201,7 +197,6 @@ export async function seedFiles(
       ids.map((_, i) => 1000 + i),
       ids.map(id => `e2e/${runId()}/files/${id}`),
       owner,
-      ids.map((_, i) => textContent?.(i) ?? null),
     ],
   )
   return ids
@@ -276,7 +271,7 @@ export async function signedInAs(page: Page, role: 'admin' | 'editor', label: st
   return creds
 }
 
-// ---------------------------------------------------------------- texto de las imágenes (feature 002)
+// ---------------------------------------------------------------- stub de OpenRouter (feature 007)
 
 /** Control del stub de OpenRouter que levanta `global-setup.ts` (research A9). */
 async function stubRequest<T>(path: string, body?: unknown): Promise<T> {
@@ -288,7 +283,7 @@ async function stubRequest<T>(path: string, body?: unknown): Promise<T> {
 
 export type { PrayerCall, StubCalls, StubMode } from './openrouter-stub'
 
-export const stubCalls = () => stubRequest<StubCalls>('/__stub/calls')
+const stubCalls = () => stubRequest<StubCalls>('/__stub/calls')
 /** Generaciones de imágenes de peticiones (feature 007) que recibió el stub, en orden. */
 export const prayerCalls = async () => (await stubCalls()).prayer
 /** Reemplaza el modo entero (lo omitido vuelve a su valor por defecto). */
@@ -366,9 +361,8 @@ export async function seedYoutubeVideo(viewer: string, videoId: string, title: s
 }
 
 /**
- * Siembra una imagen `ready` como las subidas antes de la feature (`text_status` en `NULL`): sube los
- * bytes del fixture al bucket de pruebas bajo `e2e/<runId>/` y crea la fila. Con `withBytes: false`
- * solo crea la fila (p. ej. una HEIC sin copia, que nunca se descarga).
+ * Siembra una imagen `ready`: sube los bytes del fixture al bucket de pruebas bajo `e2e/<runId>/` y crea la fila.
+ * Con `withBytes: false` solo crea la fila (p. ej. una HEIC, que nunca se descarga).
  */
 export async function seedImage(owner: string, fixtureName: string, { withBytes = true }: { withBytes?: boolean } = {}): Promise<string> {
   const id = randomUUID()
@@ -397,12 +391,6 @@ export async function seedImage(owner: string, fixtureName: string, { withBytes 
   return id
 }
 
-/** Columnas `text_*` de un archivo, para afirmar sobre la reclamación y los intentos. */
-export async function textColumns(fileId: string): Promise<{ text_status: string | null, text_attempts: number, text_content: string | null }> {
-  const [row] = await testSql()`SELECT text_status, text_attempts, text_content FROM files WHERE id = ${fileId}`
-  return row as { text_status: string | null, text_attempts: number, text_content: string | null }
-}
-
 // ---------------------------------------------------------------- Peticiones (feature 007)
 
 export interface PrayerSeed {
@@ -412,8 +400,6 @@ export interface PrayerSeed {
   reviewedAt?: Date
   senderName?: string
   note?: string | null
-  text?: string | null
-  textStatus?: 'ready' | 'empty' | 'failed' | 'pending' | 'reading'
   fixtureName?: string
   deleted?: boolean
 }
@@ -422,8 +408,8 @@ export interface PrayerSeed {
 const prayerFolders = new Map<string, Promise<string>>()
 
 /**
- * Siembra una petición como la deja la aprobación (feature 003 + 002): un `guest_submissions` y su fila de `files` con
- * `submission_id`, `origin = 'guest'` y el texto ya leído. La foto se sube como en `seedImage`. Solo en la rama de pruebas.
+ * Siembra una petición como la deja la aprobación (feature 003): un `guest_submissions` y su fila de `files` con
+ * `submission_id` y `origin = 'guest'`. La foto se sube como en `seedImage`. Solo en la rama de pruebas.
  * Va a una carpeta propia («Peticiones <runId>»), como al aprobar hacia una carpeta: en la raíz, decenas de `<hex>-foto.jpg`
  * desplazaban de la primera página de Archivos (orden por nombre, 60 por página) lo que suben otros archivos e2e.
  */
@@ -433,8 +419,6 @@ export async function seedPrayerRequest(owner: string, {
   reviewedAt = new Date(),
   senderName = `Invitado ${runId()}`,
   note = null,
-  text = 'Oremos por la familia',
-  textStatus = 'ready',
   fixtureName = 'foto.jpg',
   deleted = false,
 }: PrayerSeed = {}): Promise<{ fileId: string, submissionId: string }> {
@@ -450,13 +434,8 @@ export async function seedPrayerRequest(owner: string, {
   // Sufijo aleatorio: cada archivo e2e es otro proceso (otro caché) y el nombre en la raíz es único.
   if (!prayerFolders.has(owner)) prayerFolders.set(owner, seedFolder(`Peticiones ${runId()} ${randomUUID().slice(0, 8)}`, owner))
   const folderId = await prayerFolders.get(owner)!
-  const stored = textStatus === 'pending' ? null : textStatus
   await sql`
     UPDATE files SET folder_id = ${folderId}, origin = 'guest', uploaded_by = NULL, guest_name = ${senderName}, submission_id = ${submission!.id},
-      text_status = ${stored}::image_text_status, text_content = ${textStatus === 'ready' ? text : null},
-      text_started_at = ${textStatus === 'reading' ? new Date().toISOString() : null},
-      text_read_at = ${textStatus === 'ready' || textStatus === 'empty' || textStatus === 'failed' ? new Date().toISOString() : null},
-      text_error = ${textStatus === 'failed' ? 'provider' : null},
       deleted_at = ${deleted ? new Date().toISOString() : null}, deleted_by = ${deleted ? owner : null}, trash_root_id = ${deleted ? fileId : null}
     WHERE id = ${fileId}
   `

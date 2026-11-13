@@ -8,7 +8,7 @@ const sdk = vi.hoisted(() => {
 })
 vi.mock('@openrouter/ai-sdk-provider', () => ({ createOpenRouter: sdk.createOpenRouter }))
 
-const { OPENROUTER_PRAY_REQUESTS_MODEL, OPENROUTER_VISION_MODEL, openrouterClient, resolveImageTextModel, resolvePrayerImageModel } = await import('../../server/ai/providers/openrouter')
+const { OPENROUTER_PRAY_REQUESTS_MODEL, openrouterClient, resolvePrayerImageModel } = await import('../../server/ai/providers/openrouter')
 
 const config = (openrouterApikey: string, openrouterBaseUrl = '') =>
   ({ openrouterApikey, openrouterBaseUrl }) as unknown as RuntimeConfig
@@ -31,27 +31,8 @@ describe('openrouterClient', () => {
 })
 
 describe('ids de preset', () => {
-  it('cada uno lleva un solo prefijo @preset/', () => {
-    expect(OPENROUTER_VISION_MODEL).toBe('@preset/image-content-extraction')
+  it('lleva un solo prefijo @preset/', () => {
     expect(OPENROUTER_PRAY_REQUESTS_MODEL).toBe('@preset/pray-requests-image-generation')
-  })
-})
-
-describe('resolveImageTextModel', () => {
-  it('con clave devuelve el preset de extracción', () => {
-    expect(resolveImageTextModel(config('sk-or-x'))).toEqual({ modelId: '@preset/image-content-extraction' })
-    expect(sdk.provider).toHaveBeenCalledWith(OPENROUTER_VISION_MODEL)
-  })
-
-  it.each([[''], ['   '], [' \n']])('sin clave (%j) → null sin crear el cliente', (key) => {
-    expect(resolveImageTextModel(config(key))).toBeNull()
-    expect(sdk.createOpenRouter).not.toHaveBeenCalled()
-  })
-
-  it('no pide salida de imagen', () => {
-    resolveImageTextModel(config('sk-or-x'))
-    expect(sdk.provider).toHaveBeenCalledWith(OPENROUTER_VISION_MODEL)
-    expect(sdk.provider.mock.calls[0]).toHaveLength(1)
   })
 })
 

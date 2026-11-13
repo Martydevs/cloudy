@@ -76,8 +76,6 @@ export interface FileItem {
   /** Nombres de las carpetas ancestro (búsqueda y detalle). */
   path?: string[]
   commentCount?: number
-  /** Solo en la búsqueda (feature 002): dónde coincidió la consulta. */
-  matchedIn?: 'name' | 'text'
 }
 
 export interface FolderChildren {
@@ -126,8 +124,6 @@ export interface SubmissionFile {
   category: FileCategory
   size: number
   previewUrl: string
-  /** Texto leído de la imagen (feature 002); `null` si no es imagen. */
-  text: ImageText | null
 }
 
 export interface Submission {
@@ -199,27 +195,11 @@ export interface GuestUploadTicket {
   headers: Record<string, string>
 }
 
-/** `pending` es `NULL` en la base de datos: la imagen aún no se ha leído. */
-export type ImageTextStatus = 'pending' | 'reading' | 'ready' | 'empty' | 'failed' | 'unavailable'
-export type ImageTextError = 'timeout' | 'provider' | 'rate_limited' | 'quota_exceeded' | 'invalid_input' | 'invalid_output'
-
-/** Texto extraído de una imagen (feature 002, data-model "DTO compartido"). */
-export interface ImageText {
-  status: ImageTextStatus
-  /** Solo en `ready`. */
-  text: string | null
-  error: ImageTextError | null
-  readAt: string | null
-  editedAt: string | null
-  /** Nombre visible de quien lo corrigió. */
-  editedBy: string | null
-}
-
 // ---------------------------------------------------------------- Peticiones (feature 007, data-model § Petición)
 
 /** Una imagen de un envío de invitado aprobado (tarjeta de la página Peticiones). */
 export interface PrayerRequest {
-  /** `files.id`: también el id para `/api/files/:id/text` y `/content`. */
+  /** `files.id`: también el id para `/content`. */
   id: string
   name: string
   senderName: string
@@ -229,7 +209,6 @@ export interface PrayerRequest {
   /** ISO: cuándo se aprobó (orden y filtro). */
   approvedAt: string
   previewUrl: string
-  text: ImageText
 }
 
 /** Quien generó una imagen, creó una colección o agregó una imagen: la misma forma que en Canciones. */
@@ -242,7 +221,7 @@ export interface PrayerGeneratedImage {
   previewUrl: string
   /** Lo mismo con `?download=1` (`Content-Disposition: attachment`). */
   downloadUrl: string
-  /** Ids de las peticiones (para «Generar de nuevo»); el texto se relee en el servidor. */
+  /** Ids de las peticiones que entraron en la imagen. */
   fileIds: string[]
   requestCount: number
   author: PrayerPerson

@@ -7,13 +7,16 @@ send material from a public page into an approval queue that the team reviews li
 **Governance**: `.specify/memory/constitution.md` (v1.2.0) is the source of truth and overrides this
 file. Keep this guide aligned with it whenever the constitution is amended.
 
-**Active feature**: `specs/007-peticiones-imagenes/` (Peticiones page: approved guest prayer-request images shown as selectable cards, corrected with the feature-002 text editor and
+**Active feature**: `specs/008-remove-text-extraction/` — the AI image-text extraction of feature 002 was **removed** (migration `0011`): no more OpenRouter vision reads on staff uploads or
+guest submissions, no `text_*` columns beyond `text_source_key`, no search by transcript. Peticiones was reworked: every approved guest image is selectable and the team types each
+request's text in `PrayerComposeDialog` right before generating; the text is never stored (in-memory only) and travels in `POST /api/peticiones/imagenes`.
+Previous: `specs/007-peticiones-imagenes/` (Peticiones page: approved guest prayer-request images shown as selectable cards
 turned into "prayer requests of the day" images, up to 4 requests per image, by the OpenRouter preset `@preset/pray-requests-image-generation` over a bundled template; no new
 dependencies. Amended 2026-11-12: generated images are stored in the bucket (`prayer_images`, migration `0010`), listed in a team-wide history and grouped in named collections, see the
 amendment at the top of its `spec.md`). Previous: `specs/006-canciones-lyrics-pptx/` (Canciones page: Letras.com lyrics crawled with the Apify actor `apify/rag-web-browser` through `apify-client`, then
 turned into `.pptx` slides by the external `cloudy-api` service; reuses the shape of `specs/005-youtube-downloads/`, whose YouTube page is the previous active feature, and builds on
-`specs/001-shared-media-drive/`, `specs/002-note-text-extraction/` and `specs/003-guest-upload-access-code/`; feature 003's access-approval step was later removed, see the
-amendment at the top of its `spec.md`). Read `spec.md` (what), `plan.md` + `research.md`
+`specs/001-shared-media-drive/`, `specs/002-note-text-extraction/` (**retired**, see the note at the top of its `spec.md`) and `specs/003-guest-upload-access-code/`; feature 003's
+access-approval step was later removed, see the amendment at the top of its `spec.md`). Read `spec.md` (what), `plan.md` + `research.md`
 (how), `data-model.md` and `contracts/` (interfaces) before changing related code.
 
 ## Stack
@@ -28,7 +31,7 @@ amendment at the top of its `spec.md`). Read `spec.md` (what), `plan.md` + `rese
 | Utilities | `@vueuse/nuxt` (auto-imported) |
 | Forms | Regle (`@regle/schemas`) over zod schemas (`zod/mini`) in `app/utils/form-schemas.ts`, always through `useFormSchema` (`app/utils/form-schema.ts`) · `@regle/nuxt` (auto-imports and its plugin, loaded normally) |
 | Tests | Vitest projects `unit` / `nuxt` / `e2e` · `@nuxt/test-utils` · `playwright-core` (Chromium) |
-| AI | AI SDK v7 (`generateText` + `Output.object`) · OpenRouter as the only provider via `@openrouter/ai-sdk-provider`, preset `@preset/image-content-extraction` (the preset picks model and routing and carries the system prompt: the code sends only the user prompt in `server/ai/image-text/prompt.ts`) · isolated in `server/ai/` |
+| AI | AI SDK v7 (`generateText`) · OpenRouter as the only provider via `@openrouter/ai-sdk-provider`, single use case: the preset `@preset/pray-requests-image-generation` (the preset picks model and routing and carries the system prompt: the code sends only the user prompt in `server/ai/prayer-image/prompt.ts`) · isolated in `server/ai/` |
 | Deploy | Vercel (Nitro `vercel` preset, SSR, Vercel Cron) |
 
 Do not add dependencies or external services without a justification in the feature plan's
@@ -106,7 +109,7 @@ hover. Check every screen at 360 px and ≥ 1280 px.
 logic in composables. No `any` without a justifying comment. Shared rules live once in `shared/`.
 Every endpoint validates input and calls the session/role guard server-side — hiding UI is not
 authorization. Neon Auth, storage, AI, the `cloudy-api` service (YouTube downloads and lyrics presentations), Apify (lyrics crawling) and background work are
-accessed **only** through `server/utils/auth.ts`, `server/utils/storage.ts`, `server/ai/` (via `server/utils/image-text.ts`), `server/utils/cloudy-api.ts`,
+accessed **only** through `server/utils/auth.ts`, `server/utils/storage.ts`, `server/ai/` (via `server/utils/prayer-images.ts`), `server/utils/cloudy-api.ts`,
 `server/utils/lyrics-crawler.ts` (the only importer of `apify-client`) and `server/utils/background.ts`. No demo code, dead code or secrets. Typecheck and build must pass.
 Forms validate with a zod schema from `app/utils/form-schemas.ts` through `useFormSchema` — never `useRegle`/`useRegleSchema`
 directly (`test/unit/architecture.spec.ts` enforces it). Schemas mirror `shared/validation` (messages and limits come from there);
@@ -162,7 +165,7 @@ files: set the same names per environment in the project settings.
 `NUXT_DATABASE_URL`, `NUXT_NEON_AUTH_BASE_URL`,
 `NUXT_NEON_AUTH_COOKIE_SECRET`, `NUXT_AWS_ENDPOINT_URL_S3`, `NUXT_AWS_ACCESS_KEY_ID`,
 `NUXT_AWS_SECRET_ACCESS_KEY`, `NUXT_AWS_REGION`, `NUXT_S3_BUCKET`, `NUXT_PUBLIC_SITE_URL`,
-`NUXT_OPENROUTER_APIKEY` (empty = no image-text reads), `NUXT_OPENROUTER_BASE_URL` (empty = OpenRouter; e2e only),
+`NUXT_OPENROUTER_APIKEY` (empty = Peticiones answers "not configured"), `NUXT_OPENROUTER_BASE_URL` (empty = OpenRouter; e2e only),
 `NUXT_CLOUDY_API_URL` + `NUXT_CLOUDY_API_KEY` (YouTube download and lyrics presentation service; empty = the pages answer "not configured"; e2e point the URL
 at `test/e2e/setup/cloudy-api-stub.ts`), `NUXT_APIFY_API_KEY` (lyrics crawling; empty = "not configured") + `NUXT_APIFY_BASE_URL` (empty = Apify;
 e2e → `test/e2e/setup/apify-stub.ts`), `CRON_SECRET`, `NUXT_RATE_LIMIT_SALT`. `NUXT_NEON_JWKS_URL` is present but intentionally unused in v1. There is no Neon Realtime
@@ -185,11 +188,9 @@ Never print or commit their values.
   Back-to-back e2e runs share that lockout: leave ~5 min between runs that log in a lot.
 - The Neon auth client *throws* its own normalized codes (`bad_jwt`, `invalid_credentials`, …), not Better
   Auth's; `useAuthClient` maps what pages need (e.g. a used reset link → `INVALID_TOKEN`).
-- AI: OpenRouter is the only provider; there is no fallback. Each image is one call (30 s, 1 retry, 45 s cap). The
-  guest pool's per-run breaker stops calling OpenRouter after a 402 (out of credits), 401/403/404 (key, permissions,
-  preset) or 3 transient failures in a row; images not started stay pending. With no key nothing is called. E2E run
-  against a local chat-completions stub (`test/e2e/setup/openrouter-stub.ts`) through `NUXT_OPENROUTER_BASE_URL`, so
-  they never call OpenRouter.
+- AI: OpenRouter is the only provider and the prayer-image generation of feature 007 is the only use case left; there is
+  no fallback. With no key nothing is called. E2E run against a local chat-completions stub
+  (`test/e2e/setup/openrouter-stub.ts`) through `NUXT_OPENROUTER_BASE_URL`, so they never call OpenRouter.
 - Regle: `useRegleSchema` only exposes `$validate`/`$pending` at the root (fields keep `$touch`, `$reset`, `$errors`). The plugin
   `@regle/nuxt` registers loads normally, so Regle travels in the shared entry chunk of every route (heaviest route ≈ 158 KiB gzip).
   `zod/mini` keeps the Regle + zod code small.
@@ -199,10 +200,13 @@ Never print or commit their values.
   lives in `useState`, not in a local ref.
 - Nitro's `event.waitUntil` is not wired on Vercel Node: background work uses `waitUntil` from
   `@vercel/functions`, only through `server/utils/background.ts`.
-- `heic-to` only works in the browser: load it with a dynamic `import()` (`app/utils/heic-copy.ts`).
+- `heic-to` only works in the browser: load it with a dynamic `import()` (`app/utils/heic-copy.ts`). The HEIC → JPEG copy
+  (`withTextSource`, `textsrc/<id>.jpg`, `files.text_source_key`, `checkTextSourceCopy` in `server/utils/uploads.ts`) is all
+  that survives of feature 002: nothing reads the copies any more, but they are still uploaded and the daily cron still
+  deletes them with the original. Removing the pipeline is a separate, deliberate decision.
 - Nitro auto-imports everything under `server/utils/**`, subfolders included. Code that must stay behind a boundary
   (the AI layer) lives outside it in `server/ai/` and is imported explicitly as `#server/ai`, only from
-  `server/utils/image-text.ts`; `test/unit/architecture.spec.ts` enforces it.
+  `server/utils/prayer-images.ts`; `test/unit/architecture.spec.ts` enforces it.
 - `scripts/storage-setup*` accepts an optional `CORS_EXTRA_ORIGINS` (comma-separated `https://` origins, or
   `http://localhost:*`) to add a preview alias without dropping the site domain.
 - Routes (feature 003): guests send files at `/upload` (public, one step); the old `/enviar` link 301-redirects there via
@@ -272,9 +276,10 @@ Never print or commit their values.
   `sin-letra`, `muy-larga`, `fallo-del-run`, `sin-credito`, `redirige`, `con-tildes`; `letrasUrl(slug)`) and the `cloudy-api` stub's
   `POST /api/lyrics/pptx` (titles containing `vacia`, `demasiado larga`, `respaldo`).
 - Peticiones (feature 007): the grid lists **approved** guest images (`files ⋈ guest_submissions`, `status = 'approved'`), ordered and filtered by `guest_submissions.reviewed_at`
-  (approval date), keyset cursor, 12 per page; guest photos have **no thumbnail**, so each card sets `src` only when it enters the viewport. Transcript edits reuse
-  `PATCH /api/files/:id/text` through `ImageTextPanel` (it now emits `change`). `POST /api/peticiones/imagenes` takes 1–4 file ids, rereads their text on the server (the browser never sends
-  text), uploads the generated image to the bucket with `putObject` (`key('peticiones/<id>.<ext>')`, capped at `PRAYER_IMAGE_MAX_BYTES` = 4 000 000), inserts its `prayer_images` row and
+  (approval date), keyset cursor, 12 per page; guest photos have **no thumbnail**, so each card sets `src` only when it enters the viewport. The card shows sender, dates and note only:
+  there is no stored transcript any more (see "Text removed" below). `POST /api/peticiones/imagenes` takes 1–4 `{ fileId, text }` — the browser **does** send the text now, because nothing
+  stores it; the server only re-checks that each id is still a visible approved image and fixes the paragraph order `(reviewed_at, created_at, id)`. It
+  uploads the generated image to the bucket with `putObject` (`key('peticiones/<id>.<ext>')`, capped at `PRAYER_IMAGE_MAX_BYTES` = 4 000 000), inserts its `prayer_images` row and
   answers **201** with `PrayerGeneratedImage` JSON (no binary in the response); if the insert fails the object is deleted and it answers `502 save_failed`. The call goes
   through the existing OpenRouter client with the preset `@preset/pray-requests-image-generation` + `extraBody.modalities = ['image','text']`; the image arrives in `result.files`. The template
   is `server/assets/peticiones/plantilla.jpg` (Nitro `serverAssets`, `assets:peticiones`): replace the file and redeploy to change it. Only `server/utils/prayer-images.ts` imports `#server/ai`
@@ -288,12 +293,18 @@ Never print or commit their values.
   `GET …/imagenes/:id/content` (302 presigned; `?download=1` → `peticiones-AAAA-MM-DD-<6 of id>.<ext>`, UTC date) and `DELETE …/imagenes/:id` (author or admin, `prayers.moderate`;
   row first, then object). Collections mirror `songs/collections` under `/api/peticiones/colecciones/**` (no «Generar»; deleting a collection keeps its images). All their SQL lives in
   `server/utils/prayer-gallery.ts` and `server/utils/prayer-collections.ts` (endpoints never touch drizzle; `architecture.spec.ts`). Retention: the daily cron (step 7) deletes, in batches of
-  500, images older than `PRAYER_IMAGE_RETENTION_DAYS` (30) that are in **no** collection (rows, then objects); collections are what the team keeps. Downloads are plain links (no blobs). Limits: 60 generations per hour per person (`peticiones-img:<userId>`) and 120 transcript edits per hour (`text-edit:<userId>` on `PATCH /api/files/:id/text`). **Corregir
-  texto** opens `LazyPrayerTextDialog`; `ImageTextPanel` emits `change` only for terminal states, and the page patches the card (`usePrayerRequests.patchText`, an overlay map: reassigning
-  `firstPage` would drop the later pages) and the chosen copy (`usePrayerSelection.sync`). Filters live in `usePrayerFilters` (search debounced 300 ms, cleared instantly; approval-date presets in
-  the browser's local day sent as ISO instants, `to` exclusive). E2E run against the OpenRouter stub (`test/e2e/setup/openrouter-stub.ts`): generation calls are recognised by the preset or
-  `modalities` before the image-text path, answered with `message.images` (a PNG fixture) and recorded apart (`prayerCalls()`: model, modalities, template, `<peticion>` texts); keywords in a
-  request's text pick a scenario: `sin-imagen`, `sin-credito` (402), `lento`, `falla-una-vez` (fails the first **two** calls, because the AI SDK retries once by itself).
+  500, images older than `PRAYER_IMAGE_RETENTION_DAYS` (30) that are in **no** collection (rows, then objects); collections are what the team keeps. Downloads are plain links (no blobs).
+  Limit: 60 generations per hour per person (`peticiones-img:<userId>`).
+  **Text removed (2026-11-13)**: the AI transcript is gone, so any approved image is selectable and the team writes each text by hand. «Escribir textos y generar» on `PrayerSelectionBar` opens
+  `LazyPrayerComposeDialog` (it replaced both `PrayerSelectionDialog` and `PrayerTextDialog`): the chosen requests grouped by image, each with its photo, sender, note, a `textarea`
+  (≤ `PRAYER_TEXT_MAX_LENGTH` = 10 000) and «Quitar». The confirm button stays disabled until every entry has non-blank text. The texts live in `usePrayerSelection`
+  (`{ request, text }` per id, `useState`, **in memory only**: a reload loses them) and travel in the queue item (`usePrayerImages`, `requests: { fileId, text }[]`). Consequences:
+  `prayer_images` keeps only `file_ids`, so the history has **no** «Generar de nuevo»; search covers sender name and note only; `shared/prayers.ts` lost `isSelectable`,
+  `hasIllegibleMark` and `splitIllegible` (the `[ilegible]` machinery was an artefact of machine transcription) and keeps `isLongText` for the "may not fit" hint.
+  Filters live in `usePrayerFilters` (search debounced 300 ms, cleared instantly; approval-date presets in
+  the browser's local day sent as ISO instants, `to` exclusive). E2E run against the OpenRouter stub (`test/e2e/setup/openrouter-stub.ts`), which now serves **only** generation: calls are
+  recognised by the preset or `modalities`, answered with `message.images` (a PNG fixture) and recorded in `prayerCalls()` (model, modalities, template, `<peticion>` texts); any other call
+  gets a 400. Keywords in a request's text pick a scenario: `sin-imagen`, `sin-credito` (402), `lento`, `falla-una-vez` (fails the first **two** calls, because the AI SDK retries once by itself).
   **Accepted LCP exception** (plan.md, Complexity Tracking): guest photos have no thumbnail, so the first card's photo is the LCP and can exceed 2.5 s on 4G. Only the first card
   renders its `src` in the SSR (`priority`, `fetchpriority="high"`) and the page adds a `preconnect` to the storage origin; `performance.spec.ts` asserts LCP for the card text
   (photos blocked), CLS and the 250 KB JS budget, and only reports the LCP with photos. Thumbnails were postponed by the team.
@@ -303,7 +314,8 @@ Never print or commit their values.
 - The guest access-request layer was removed (migration `drizzle/0008_*`: drops `guest_access_requests`,
   `guest_submissions.origin` / `access_granted_by` and their enums). The `access.approve` / `access.reject` values stay
   in the `activity_action` enum (Postgres cannot drop enum values and old `activity_log` rows use them), and their labels
-  stay in `app/utils/activity-labels.ts`.
+  stay in `app/utils/activity-labels.ts`. Same for `file.text_edit` after migration `0011` retired the image-text reads:
+  nothing writes it any more, but the value and its label stay for old rows.
 
 ## Workflow
 

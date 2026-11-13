@@ -77,28 +77,6 @@ export const messages = {
     /** Fila de la cola mientras se genera la copia JPEG de una HEIC. */
     preparing: 'Preparando…',
   },
-  /** Texto leído de las imágenes (feature 002). */
-  imageText: {
-    reading: 'Leyendo texto…',
-    empty: 'No se reconoció texto en esta imagen',
-    notRead: 'El texto de esta imagen aún no se ha leído.',
-    unavailable: 'No disponible para este archivo: solo se lee el texto de imágenes JPG, PNG o HEIC de hasta 5 MB. Si necesitas el texto, súbela en JPG o PNG de hasta 5 MB.',
-    unavailableHeic: 'No disponible para este archivo: esta foto HEIC se subió sin copia para lectura. Si necesitas el texto, vuelve a subirla desde tu teléfono o en JPG o PNG.',
-    failedRetryable: 'No pudimos leer el texto ahora. Inténtalo de nuevo en un momento.',
-    failedQuota: 'El servicio de lectura alcanzó su límite de uso. Avisa a un administrador e inténtalo más tarde.',
-    failedPermanent: 'No pudimos leer esta imagen. Descárgala y vuelve a subirla en JPG o PNG.',
-    loadFailed: `No pudimos cargar el texto de la imagen. ${CONNECTION}`,
-    copied: 'Texto copiado',
-    copyFailed: 'No pudimos copiar el texto. Selecciónalo y cópialo a mano.',
-    saved: 'Texto guardado',
-    saveFailed: `No pudimos guardar el texto. ${RETRY}`,
-    confirmReread: 'Se reemplazará tu corrección',
-    editedBy: (name: string) => `Editado por ${name}`,
-    edited: 'Editado',
-    searchHint: 'Solo buscamos en el texto de las imágenes que ya se leyeron',
-    guestNotice: 'Leeremos automáticamente el texto de tus imágenes para que el equipo pueda revisarlas.',
-    guestPrivacy: 'Las imágenes se procesan con servicios externos de inteligencia artificial solo para transcribir su texto; no se envían tu nombre, tu nota ni tu dirección IP. El texto lo ve únicamente el equipo.',
-  },
   trash: {
     restored: (name: string, where: string) => `«${name}» se restauró en ${where}`,
     restoredToRoot: (name: string) => `«${name}» se restauró en Archivos porque su carpeta original sigue en la papelera`,
@@ -370,7 +348,7 @@ export const messages = {
   },
   /**
    * Página Peticiones (feature 007, contracts/ui.md "Textos"). Los textos por código de la generación viven en
-   * `shared/constants/prayers.ts`; los estados de la transcripción reutilizan `imageText`.
+   * `shared/constants/prayers.ts`.
    */
   prayers: {
     title: 'Peticiones',
@@ -378,11 +356,7 @@ export const messages = {
     description: 'Peticiones de oración que enviaron los invitados y ya se aprobaron. Elige cuáles proyectar y genera sus imágenes.',
     selected: (n: number) => (n === 1 ? '1 petición elegida' : `${n} peticiones elegidas`),
     willGenerate: (n: number, m: number) => `${pluralize(n, 'petición', 'peticiones')} → ${pluralize(m, 'imagen', 'imágenes')}`,
-    illegibleWarning: (n: number) => (n === 1
-      ? '1 petición todavía tiene texto ilegible'
-      : `${n} peticiones todavía tienen texto ilegible`),
     limit: `Elegiste el máximo de ${PRAYER_MAX_SELECTION} peticiones por generación`,
-    noText: 'Sin texto: escríbelo primero',
     limitReached: `Tope de ${PRAYER_MAX_SELECTION} alcanzado`,
     pick: (name: string) => `Elegir la petición de ${name}`,
     card: (name: string) => `Petición de ${name}`,
@@ -399,7 +373,7 @@ export const messages = {
     goToRequests: 'Ir a Solicitudes',
     clearFilters: 'Quitar filtros',
     filters: 'Filtrar peticiones',
-    search: 'Buscar por nombre, nota o texto',
+    search: 'Buscar por nombre o nota',
     clearSearch: 'Limpiar búsqueda',
     dateFilter: 'Fecha de aprobación',
     presets: { all: 'Todas', today: 'Hoy', week: '7 días', range: 'Rango' },
@@ -422,23 +396,28 @@ export const messages = {
     rowNav: 'Recorrer las peticiones aprobadas',
     rowPrev: 'Ver peticiones anteriores',
     rowNext: 'Ver más peticiones',
-    edited: 'Editada',
-    toFix: 'Texto por corregir',
     long: 'Texto largo: puede no caber',
-    fix: 'Corregir texto',
-    write: 'Escribir transcripción',
-    review: 'Ver elegidas',
-    reviewTitle: 'Peticiones elegidas',
     remove: 'Quitar',
     clear: 'Limpiar',
     close: 'Cerrar',
-    generate: 'Generar imágenes',
-    generateDisabled: 'Elige al menos una petición con texto',
-    confirmTitle: 'Generar imágenes',
-    confirmBody: (n: number, m: number) => `${pluralize(n, 'petición', 'peticiones')} → ${pluralize(m, 'imagen', 'imágenes')}. Cada imagen usa crédito del servicio de imágenes.`,
-    confirmIllegible: 'Revisa las marcas [ilegible] antes de generar, o genera de todos modos.',
-    confirm: 'Generar',
-    confirmAnyway: 'Generar de todos modos',
+    generate: 'Escribir textos y generar',
+    generateDisabled: 'Elige al menos una petición',
+    /** Diálogo de generación: aquí se escribe la transcripción de cada petición elegida. */
+    compose: {
+      title: 'Escribe el texto de cada petición',
+      intro: 'Escribe lo que dice cada foto. El texto no se guarda: viaja solo con esta generación.',
+      cost: 'Cada imagen usa crédito del servicio de imágenes.',
+      image: (n: number) => `Imagen ${n}`,
+      label: (name: string) => `Texto de la petición de ${name}`,
+      placeholder: 'Escribe aquí lo que dice la foto…',
+      counter: (used: string, max: string) => `${used} / ${max}`,
+      tooLong: 'El texto es demasiado largo',
+      missing: (n: number) => (n === 1
+        ? 'Falta el texto de 1 petición'
+        : `Falta el texto de ${n} peticiones`),
+      generate: 'Generar imágenes',
+      queued: (n: number) => `${pluralize(n, 'imagen', 'imágenes')} en cola`,
+    },
     resultAlt: (n: number) => `Imagen de peticiones ${n}`,
     generating: 'Generando…',
     queued: 'En cola',
@@ -446,8 +425,7 @@ export const messages = {
     failedImage: (n: number) => `La imagen ${n} no se pudo generar`,
     download: 'Descargar',
     preview: 'Ver en grande',
-    regenerate: 'Generar de nuevo',
-    regenerateQueued: 'Generando de nuevo con el texto actual de sus peticiones',
+    regenerate: 'Volver a poner en cola',
     retry: 'Reintentar',
     cancel: 'Cancelar',
     dismiss: 'Descartar',
@@ -459,7 +437,6 @@ export const messages = {
     leaveTitle: '¿Salir de Peticiones?',
     leaveBody: 'Hay imágenes generándose. Si sales, se cancelan; las que ya terminaron siguen en el historial.',
     leaveConfirm: 'Salir',
-    textDialogTitle: (name: string) => `Transcripción de ${name}`,
     history: {
       title: 'Historial de imágenes generadas',
       jump: 'Ver imágenes generadas',

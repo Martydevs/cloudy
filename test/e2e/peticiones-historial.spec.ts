@@ -35,13 +35,15 @@ const toast = (page: Page, text: string) => page.getByText(text, { exact: true }
 /** Genera una imagen con una petición nueva y devuelve su id (la respuesta 201 del servidor). */
 async function generateOne(page: Page, owner: string, label: string): Promise<string> {
   const senderName = `${label} ${runId()}`
-  await seedPrayerRequest(owner, { senderName, text: `Oremos por ${label} ${runId()}` })
+  await seedPrayerRequest(owner, { senderName })
   await page.goto(`${E2E_URL}/peticiones`)
   await waitForHydration(page)
   await page.getByRole('checkbox', { name: `Elegir la petición de ${senderName}`, exact: true }).check()
   const response = page.waitForResponse(r => r.request().method() === 'POST' && new URL(r.url()).pathname === '/api/peticiones/imagenes')
-  await page.getByRole('region', { name: 'Selección de peticiones' }).getByRole('button', { name: 'Generar imágenes' }).click()
-  await page.getByRole('dialog', { name: 'Generar imágenes' }).getByRole('button', { name: 'Generar', exact: true }).click()
+  await page.getByRole('region', { name: 'Selección de peticiones' }).getByRole('button', { name: 'Escribir textos y generar' }).click()
+  const dialog = page.getByRole('dialog', { name: 'Escribe el texto de cada petición' })
+  await dialog.getByLabel(senderName, { exact: true }).fill(`Oremos por ${label} ${runId()}`)
+  await dialog.getByRole('button', { name: 'Generar imágenes', exact: true }).click()
   const res = await response
   expect(res.status()).toBe(201)
   const { id } = await res.json() as { id: string }

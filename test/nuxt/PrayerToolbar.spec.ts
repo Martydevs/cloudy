@@ -19,7 +19,7 @@ describe('PrayerToolbar', () => {
   it('buscador: label.input con icono y aria-label; Limpiar búsqueda solo con texto, vacía q', async () => {
     const wrapper = await mount()
     const input = wrapper.get('input[type="search"]')
-    expect(input.attributes('aria-label')).toBe('Buscar por nombre, nota o texto')
+    expect(input.attributes('aria-label')).toBe('Buscar por nombre o nota')
     const label = input.element.closest('label')!
     expect(label.className).toContain('input')
     expect(label.className).toContain('min-h-11')

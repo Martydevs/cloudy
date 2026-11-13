@@ -1,5 +1,25 @@
 # Feature Specification: Extracción del texto de notas e intenciones de oración
 
+> **RETIRADA (2026-11-13).** Esta feature **ya no existe en el producto**. Se quitó por completo la lectura del texto de
+> las imágenes con el modelo de visión de OpenRouter, tanto en las subidas del equipo como en los envíos de invitados
+> (el preset `@preset/image-content-extraction` se dio de baja en OpenRouter). Este documento queda solo como historia.
+>
+> Qué se borró: `server/ai/image-text/`, `server/ai/breaker.ts`, `server/utils/image-text.ts`, `server/utils/image-text-store.ts`,
+> los cinco endpoints `…/text` (`GET`/`POST`/`PATCH /api/files/:id/text` y `GET`/`POST /api/submissions/:id/files/:fileId/text`),
+> el pool de lectura en segundo plano de los envíos, `ImageTextPanel`, `ImageTextEditor`, `useImageText`, el bloque
+> `messages.imageText`, `shared/validation/image-text.ts` y la búsqueda por el texto leído (`matchedIn`, la insignia
+> «En el texto», el índice `files_text_trgm_idx`). La migración `drizzle/0011_*` borra las columnas `text_*` de `files` y
+> `guest_submission_files` y el tipo `image_text_status`.
+>
+> Qué **sobrevive**: la copia JPEG de los HEIC (`withTextSource`, `textsrc/<id>.jpg`, la columna `text_source_key`,
+> `heic-to`, `checkTextSourceCopy` — reubicada en `server/utils/uploads.ts`). Ya nadie la lee, pero se sigue subiendo y la
+> limpieza diaria la borra junto al original; quitar ese canal es una decisión aparte. El valor `file.text_edit` del enum
+> `activity_action` también se queda: Postgres no borra valores de un enum y el registro de actividad antiguo lo usa.
+>
+> Consecuencia para la feature 007 (Peticiones): se quedó sin su fuente de texto, así que se reescribió — ahora cualquier
+> imagen aprobada se puede elegir y el equipo escribe el texto de cada petición en el diálogo de generación. Ver la
+> enmienda al principio de `specs/007-peticiones-imagenes/spec.md`.
+
 **Feature Branch**: `002-note-text-extraction`
 
 **Created**: 2026-10-19

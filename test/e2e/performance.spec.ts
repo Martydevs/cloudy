@@ -233,7 +233,7 @@ describe('Constitución I · Web Vitals en móvil 4G (T155)', () => {
     const p = await throttledPage()
     const owner = await profileUserId(email(ADMIN))
     for (let i = 0; i < 12; i++) {
-      await seedPrayerRequest(owner, { senderName: `Perf ${i + 1} ${runId()}`, text: `Oremos por la familia número ${i + 1}`, reviewedAt: new Date(Date.now() - i * 1000) })
+      await seedPrayerRequest(owner, { senderName: `Perf ${i + 1} ${runId()}`, reviewedAt: new Date(Date.now() - i * 1000) })
     }
     // JS inicial primero (no depende de la red simulada): los módulos que la página ejecuta al abrir (script de entrada +
     // `modulepreload`), no los `prefetch` de los `Lazy*`. Así se reporta aunque luego falle el LCP.
@@ -266,17 +266,16 @@ describe('Constitución I · Web Vitals en móvil 4G (T155)', () => {
   })
 })
 
-// Feature 002 · SC-006 — la búsqueda por el texto leído de las imágenes responde en < 2 s con 5 000 archivos.
-describe('SC-006 · búsqueda por texto con 5 000 archivos', () => {
-  it('GET /api/files/search?q=<palabra del texto> responde en menos de 2 s', async ({ annotate }) => {
+// La búsqueda por nombre responde en < 2 s con 5 000 archivos (la búsqueda por el texto leído se retiró con la feature 002).
+describe('búsqueda por nombre con 5 000 archivos', () => {
+  it('GET /api/files/search?q=<palabra del nombre> responde en menos de 2 s', async ({ annotate }) => {
     const p = await throttledPage()
     const owner = await profileUserId(email(ADMIN))
     const folderId = await seedFolder(`Texto ${runId()}`, owner)
     const word = `girasol${runId()}`
-    // Una de cada 10 con texto leído; solo 50 contienen la palabra buscada.
-    await seedFiles(owner, folderId, 5000, `Nota ${runId()}`, {
-      textContent: i => (i % 10 === 0 ? `Oremos por la familia\nGracias por ${i % 100 === 0 ? word : 'el campamento'}` : null),
-    })
+    await seedFiles(owner, folderId, 5000, `Nota ${runId()}`)
+    // Un puñado con la palabra buscada en el nombre, entre las 5 000.
+    await seedFiles(owner, folderId, 50, word)
     const cookie = (await p.context().cookies()).map(c => `${c.name}=${c.value}`).join('; ')
     const timings: number[] = []
     let found = 0
@@ -285,13 +284,13 @@ describe('SC-006 · búsqueda por texto con 5 000 archivos', () => {
       const res = await fetch(`${E2E_URL}/api/files/search?q=${word}`, { headers: { cookie } })
       timings.push(Math.round(performance.now() - start))
       expect(res.status).toBe(200)
-      const body = await res.json() as { files: { matchedIn: string }[] }
+      const body = await res.json() as { files: { name: string }[] }
       found = body.files.length
-      expect(body.files.every(f => f.matchedIn === 'text')).toBe(true)
+      expect(body.files.every(f => f.name.includes(word))).toBe(true)
     }
     const ms = median(timings)
-    await annotate(`búsqueda por texto: ${ms} ms (${timings.join(', ')}) · ${found} resultados en la primera página`, 'perf')
+    await annotate(`búsqueda por nombre: ${ms} ms (${timings.join(', ')}) · ${found} resultados en la primera página`, 'perf')
     expect(found).toBeGreaterThan(0)
-    expect(ms, `búsqueda por texto: ${ms} ms`).toBeLessThan(2000)
+    expect(ms, `búsqueda por nombre: ${ms} ms`).toBeLessThan(2000)
   })
 })

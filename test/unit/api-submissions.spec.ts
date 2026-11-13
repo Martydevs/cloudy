@@ -138,7 +138,7 @@ describe('POST /api/public/submissions/:id/complete', () => {
   it('un grupo grande en la misma red cierra sus envíos: el 60.º cierre de la hora pasa', async () => {
     s3.head.mockResolvedValueOnce({ size: 8386 })
     s3.readRange.mockResolvedValueOnce(JPEG)
-    const fake = installNitro([[{ count: 60 }], [submission({ completedAt: null })], [uploading()], [], []], { readSubmissionImages: vi.fn(async () => {}) })
+    const fake = installNitro([[{ count: 60 }], [submission({ completedAt: null })], [uploading()], [], []])
     const handler = await loadHandler('api/public/submissions/[id]/complete.post.ts')
     expect(await handler(makeEvent({ auth: undefined, method: 'POST', params: { id: SUB } }))).toEqual({ status: 'pending', accepted: 1, rejected: 0 })
     // Cerrar no consume ningún acceso: solo marca los archivos listos y el envío cerrado.
@@ -312,7 +312,7 @@ describe('POST /api/submissions/:id/reject', () => {
   })
 })
 
-describe('texto de las imágenes de invitados (feature 002)', () => {
+describe('copia JPEG de los HEIC de invitados', () => {
   const HEIC_HEADER = new Uint8Array([0, 0, 0, 24, 0x66, 0x74, 0x79, 0x70, 0x68, 0x65, 0x69, 0x63])
 
   it('POST /api/public/submissions firma la copia JPEG solo para una HEIC apta que la pide', async () => {
@@ -336,42 +336,37 @@ describe('texto de las imágenes de invitados (feature 002)', () => {
   })
 
   const complete = async (files: Record<string, unknown>[], overrides: Record<string, unknown> = {}) => {
-    const readSubmissionImages = vi.fn(async () => {})
     const checkTextSourceCopy = vi.fn(async () => true)
-    installNitro([[{ count: 1 }], [submission({ completedAt: null })], files.map(f => guestFile({ uploadStatus: 'uploading', ...f })), [], []], { readSubmissionImages, checkTextSourceCopy, ...overrides })
+    installNitro([[{ count: 1 }], [submission({ completedAt: null })], files.map(f => guestFile({ uploadStatus: 'uploading', ...f })), [], []], { checkTextSourceCopy, ...overrides })
     const handler = await loadHandler('api/public/submissions/[id]/complete.post.ts')
     const body = await handler(makeEvent({ auth: undefined, method: 'POST', params: { id: SUB } }))
-    return { body, readSubmissionImages, checkTextSourceCopy }
+    return { body, checkTextSourceCopy }
   }
 
-  it('complete programa la lectura del envío en segundo plano y responde sin esperarla', async () => {
+  it('complete cierra el envío sin programar nada en segundo plano', async () => {
     s3.head.mockResolvedValue({ size: 8386 })
     s3.readRange.mockResolvedValue(JPEG)
-    const { body, readSubmissionImages } = await complete([{}])
+    const { body, checkTextSourceCopy } = await complete([{}])
     expect(body).toEqual({ status: 'pending', accepted: 1, rejected: 0 })
-    expect(backgroundTasks).toHaveLength(1)
-    expect(readSubmissionImages).not.toHaveBeenCalled()
-    await backgroundTasks[0]!()
-    expect(readSubmissionImages).toHaveBeenCalledWith(SUB, { concurrency: 4 })
+    expect(backgroundTasks).toHaveLength(0)
+    // Una JPG no lleva copia.
+    expect(checkTextSourceCopy).not.toHaveBeenCalled()
   })
 
-  it('valida la copia de cada HEIC apta y sin imágenes aptas no programa nada', async () => {
+  it('valida la copia de cada HEIC apta; lo que no es imagen apta no la busca', async () => {
     s3.head.mockResolvedValue({ size: 3_000_000 })
     s3.readRange.mockResolvedValue(HEIC_HEADER)
     const heic = { originalName: 'IMG.heic', extension: 'heic', mimeType: 'image/heic', sizeBytes: 3_000_000 }
     const valid = await complete([heic])
     expect(valid.checkTextSourceCopy).toHaveBeenCalledWith({ table: 'guest_submission_files', id: F1 })
-    expect(backgroundTasks).toHaveLength(1)
 
     const missing = await complete([heic], { checkTextSourceCopy: vi.fn(async () => false) })
     expect(missing.body).toEqual({ status: 'pending', accepted: 1, rejected: 0 })
-    expect(backgroundTasks).toHaveLength(0)
 
     s3.head.mockResolvedValue({ size: 10 })
     s3.readRange.mockResolvedValue(new TextEncoder().encode('hola'))
     const notImage = await complete([{ originalName: 'n.txt', extension: 'txt', mimeType: 'text/plain', category: 'document', sizeBytes: 10 }])
     expect(notImage.checkTextSourceCopy).not.toHaveBeenCalled()
-    expect(backgroundTasks).toHaveLength(0)
   })
 
   it('valida todas las copias HEIC a la vez, sin esperar una para empezar la siguiente', async () => {
@@ -385,64 +380,28 @@ describe('texto de las imágenes de invitados (feature 002)', () => {
     await vi.waitFor(() => expect(checkTextSourceCopy).toHaveBeenCalledTimes(2))
     release()
     expect((await pending).body).toEqual({ status: 'pending', accepted: 2, rejected: 0 })
-    expect(backgroundTasks).toHaveLength(1)
   })
 
-  it('GET /api/submissions incluye el texto de cada imagen en el mismo listado (null si no es imagen)', async () => {
+  it('GET /api/submissions ya no trae texto de las imágenes', async () => {
     const fake = installNitro([[submission()], [
-      guestFile({ textStatus: 'ready', textContent: 'Oremos', textReadAt: created }),
+      guestFile(),
       guestFile({ id: F2, originalName: 'a.mp3', extension: 'mp3', category: 'audio' }),
     ]])
     const handler = await loadHandler('api/submissions/index.get.ts')
-    const [first] = await handler(makeEvent()) as { files: { text: unknown }[] }[]
-    expect(first!.files.map(f => f.text)).toEqual([
-      { status: 'ready', text: 'Oremos', error: null, readAt: created.toISOString(), editedAt: null, editedBy: null },
-      null,
-    ])
+    const [first] = await handler(makeEvent()) as { files: Record<string, unknown>[] }[]
+    expect(first!.files.every(f => !('text' in f))).toBe(true)
     expect(fake.db.execute).not.toHaveBeenCalled()
   })
 
-  const textRow = (changes: Record<string, unknown> = {}) => ({
-    id: F1, extension: 'jpg', category: 'image', size_bytes: 8386, storage_key: `pre/guest/${SUB}/x`, text_status: 'ready',
-    text_content: 'Oremos', text_error: null, text_source_key: null, text_attempts: 1, text_started_at: null,
-    text_read_at: null, text_edited_at: null, edited_by_name: null, ...changes,
-  })
-  const textEvent = (method = 'GET', body?: unknown) => makeEvent({ method, params: { id: SUB, fileId: F1 }, body })
-
-  it('GET …/files/:fileId/text devuelve el DTO también tras aprobar; 404 si no existe', async () => {
-    installNitro([[{ status: 'approved' }], { rows: [textRow()] }])
-    const handler = await loadHandler('api/submissions/[id]/files/[fileId]/text.get.ts')
-    expect(await handler(textEvent())).toMatchObject({ status: 'ready', text: 'Oremos' })
-    installNitro([[]])
-    await expectStatus(Promise.resolve(handler(textEvent())), 404)
-    installNitro()
-    await expectGuarded(handler, { params: { id: SUB, fileId: F1 } })
-  })
-
-  it('POST …/files/:fileId/text: mismas reglas que /api/files/:id/text, 409 si el envío ya no está pendiente', async () => {
-    installNitro([[{ status: 'pending' }], { rows: [textRow()] }])
-    const handler = await loadHandler('api/submissions/[id]/files/[fileId]/text.post.ts')
-    expect(await handler(textEvent('POST', {}))).toMatchObject({ status: 'ready' })
-
-    const fake = installNitro([[{ status: 'pending' }], { rows: [textRow({ text_status: 'failed' })] }, { rows: [] }])
-    await expectStatus(Promise.resolve(handler(textEvent('POST', { force: true }))), 409)
-    expect(sqlText(fake.db.execute.mock.calls[1]![0])).toContain(`UPDATE "guest_submission_files" t`)
-
-    installNitro([[{ status: 'approved' }]])
-    await expectStatus(Promise.resolve(handler(textEvent('POST', {}))), 409)
-    installNitro([[]])
-    await expectStatus(Promise.resolve(handler(textEvent('POST', {}))), 404)
-    installNitro()
-    await expectGuarded(handler, { method: 'POST', params: { id: SUB, fileId: F1 }, body: {} })
-  })
-
-  it('approve copia las columnas text_* al archivo, sin volver a leer (FR-010)', async () => {
+  it('approve copia solo text_source_key al archivo', async () => {
     const fake = installNitro([[submission()], [guestFile()], [], { rows: [{ id: F1 }] }, [{ id: SUB }], [], []])
     const handler = await loadHandler('api/submissions/[id]/approve.post.ts')
     await handler(makeEvent({ method: 'POST', params: { id: SUB }, body: { folderId: null } }))
     const insert = sqlText(fake.db.execute.mock.calls[0]![0])
-    expect(insert).toContain('text_status, text_content, text_error, text_attempts, text_started_at, text_read_at, text_source_key')
-    expect(insert).toContain('g.text_status, g.text_content, g.text_error, g.text_attempts, g.text_started_at, g.text_read_at, g.text_source_key')
+    expect(insert).toContain('text_source_key')
+    expect(insert).toContain('g.text_source_key')
+    expect(insert).not.toContain('text_status')
+    expect(insert).not.toContain('text_content')
     expect(insert).toContain('JOIN guest_submission_files g ON g.id = v.id')
   })
 })

@@ -1,12 +1,13 @@
-// Capa de aplicación de las imágenes de peticiones (feature 007, contracts/api.md § 2): relee las peticiones en el servidor
-// (el navegador no manda texto), carga la plantilla, llama a la IA y traduce cada fallo a HTTP. Junto con `image-text.ts`,
-// es el único importador de `#server/ai`; el SQL vive en `prayer-requests.ts`, `prayer-gallery.ts` y `prayer-collections.ts`.
-// Al proveedor solo viajan los textos y la plantilla (FR-022) y el registro solo lleva códigos.
+// Capa de aplicación de las imágenes de peticiones (feature 007, contracts/api.md § 2): comprueba en el servidor que las
+// peticiones sigan disponibles, carga la plantilla, llama a la IA y traduce cada fallo a HTTP. Único importador de
+// `#server/ai`; el SQL vive en `prayer-requests.ts`, `prayer-gallery.ts` y `prayer-collections.ts`. Al proveedor solo
+// viajan los textos y la plantilla (FR-022) y el registro solo lleva códigos.
 import { createError } from 'h3'
 import { generatePrayerImage } from '#server/ai'
 import type { PrayerImageErrorCode } from '#server/ai'
 import type { PrayerErrorCode } from '#shared/constants/prayers'
 import { PRAYER_ERROR_MESSAGES } from '#shared/constants/prayers'
+import type { PrayerImageRequestInput } from '#shared/validation/prayers'
 import { loadEligibleRequests } from './prayer-requests'
 
 const STATUS: Record<PrayerErrorCode, [number, string]> = {
@@ -47,11 +48,17 @@ export interface PrayerImage {
   count: number
 }
 
-/** Genera una imagen con 1–4 peticiones (ya validadas por el endpoint). Lanza errores HTTP con `data.code`. */
-export async function createPrayerImage(fileIds: string[], { abortSignal }: { abortSignal?: AbortSignal } = {}): Promise<PrayerImage> {
-  const { found, missing } = await loadEligibleRequests(fileIds)
+/**
+ * Genera una imagen con 1–4 peticiones (ya validadas por el endpoint). El texto es el que escribió el equipo; el servidor
+ * solo comprueba que cada petición siga siendo una imagen aprobada y visible, y fija el orden de los párrafos. Lanza
+ * errores HTTP con `data.code`.
+ */
+export async function createPrayerImage(requests: PrayerImageRequestInput[], { abortSignal }: { abortSignal?: AbortSignal } = {}): Promise<PrayerImage> {
+  const { found, missing } = await loadEligibleRequests(requests.map(request => request.fileId))
   if (missing.length > 0) throw prayerError('request_unavailable', { ids: missing })
-  const paragraphs = found.map(request => (request.text.text ?? '').trim())
+  // El orden lo decide el servidor (aprobación, envío, id), no el navegador.
+  const texts = new Map(requests.map(request => [request.fileId, request.text.trim()]))
+  const paragraphs = found.map(request => texts.get(request.id) ?? '')
 
   // Sin clave o sin plantilla no se llama a nadie.
   const template = useRuntimeConfig().openrouterApikey?.trim() ? await loadTemplate() : null

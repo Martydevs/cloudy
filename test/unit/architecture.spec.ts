@@ -1,6 +1,6 @@
-// Feature 002 · reglas de capas (plan, "Organización por capas"; Constitución IV): la IA solo se usa por su
-// superficie pública y solo desde la capa de aplicación; el SQL del texto solo vive en el store; los
-// endpoints no lo tocan; `@vercel/functions` solo desde `background.ts`. Lee los fuentes reales.
+// Reglas de capas (Constitución IV): la IA solo se usa por su superficie pública y solo desde su capa de
+// aplicación; el SQL de cada feature vive donde le toca; los endpoints no lo tocan; `@vercel/functions` solo
+// desde `background.ts`. Lee los fuentes reales.
 import { readdirSync, readFileSync } from 'node:fs'
 import { join, posix, relative, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -38,13 +38,13 @@ const touchesAi = (from: string, spec: string) => spec === '#server/ai' || inAi(
 
 const files = sources()
 
-describe('arquitectura de la feature 002', () => {
+describe('arquitectura de las capas', () => {
   it('resuelve los imports relativos y con alias', () => {
     expect(touchesAi('server/api/files/x.ts', '../../ai/index')).toBe(true)
-    expect(touchesAi('server/utils/x.ts', '#server/ai/image-text/extract')).toBe(true)
+    expect(touchesAi('server/utils/x.ts', '#server/ai/prayer-image/generate')).toBe(true)
     expect(touchesAi('server/utils/x.ts', '#server/ai')).toBe(true)
     expect(touchesAi('server/utils/x.ts', './storage')).toBe(false)
-    expect(target('server/ai/image-text/extract.ts', '../breaker')).toBe('server/ai/breaker')
+    expect(target('server/ai/prayer-image/generate.ts', '../errors')).toBe('server/ai/errors')
   })
 
   it('encuentra los fuentes', () => {
@@ -52,10 +52,10 @@ describe('arquitectura de la feature 002', () => {
     expect(files.map(f => f.path)).toContain('server/ai/index.ts')
   })
 
-  // Feature 007 (plan, Complexity Tracking): las imágenes de peticiones son otro caso de uso con su propia capa de aplicación.
-  const AI_IMPORTERS = ['server/utils/image-text.ts', 'server/utils/prayer-images.ts']
+  // Feature 007 (plan, Complexity Tracking): las imágenes de peticiones son el único caso de uso de IA que queda.
+  const AI_IMPORTERS = ['server/utils/prayer-images.ts']
 
-  it('fuera de server/ai solo image-text.ts y prayer-images.ts importan la IA, y solo como #server/ai', () => {
+  it('fuera de server/ai solo prayer-images.ts importa la IA, y solo como #server/ai', () => {
     const offenders = files
       .filter(f => !inAi(f.path))
       .flatMap(f => imports(f.code)
@@ -108,11 +108,10 @@ describe('arquitectura de la feature 002', () => {
     expect(offenders).toEqual([])
   })
 
-  it('ningún endpoint usa las funciones del store', () => {
-    const store = ['claimImageText', 'saveImageTextResult', 'releaseImageText', 'markUnavailable', 'editImageTextQuery', 'setTextSourceKey', 'listPendingSubmissionImages', 'loadImageTextRow']
+  it('la lectura de texto de imágenes quedó retirada por completo', () => {
+    const gone = ['extractImageText', 'readSubmissionImages', 'readFileImage', 'claimImageText', 'saveImageTextResult', 'editImageTextQuery', 'toImageText', 'createProviderBreaker']
     const offenders = files
-      .filter(f => f.path.startsWith('server/api/'))
-      .flatMap(f => store.filter(name => new RegExp(`\\b${name}\\b`).test(f.code)).map(name => `${f.path} usa ${name}`))
+      .flatMap(f => gone.filter(name => new RegExp(`\\b${name}\\b`).test(f.code)).map(name => `${f.path} usa ${name}`))
     expect(offenders).toEqual([])
   })
 

@@ -1,2 +1,0 @@
-// PASS THIS AS PROMPT OF THE TEXT GENERATION FUNCTION
-export const IMAGE_EXTRACTION_PROMPT = "Whats the content of this images"

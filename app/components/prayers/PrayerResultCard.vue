@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // Una imagen en curso (feature 007, contracts/ui.md, enmienda de historial): en cola o generándose, un esqueleto con la
 // proporción de la plantilla (1376×768) y una barra de progreso; fallida, el motivo en español y **Reintentar** solo si
-// sirve; cancelada, **Generar de nuevo**. Lista, sale de la cola y aparece en el historial (`PrayerHistoryCard`).
+// sirve; cancelada, **Volver a poner en cola**. Lista, sale de la cola y aparece en el historial (`PrayerHistoryCard`).
 import type { PrayerImageItem } from '~/composables/usePrayerImages'
 
 const props = defineProps<{ item: PrayerImageItem }>()
@@ -24,7 +24,7 @@ const titleId = useId()
     <div class="flex flex-col gap-3 p-4">
       <div class="flex flex-wrap items-center justify-between gap-2">
         <h3 :id="titleId" class="font-semibold">{{ m.resultAlt(item.index) }}</h3>
-        <span class="text-sm text-base-content/70">{{ pluralize(item.fileIds.length, 'petición', 'peticiones') }}</span>
+        <span class="text-sm text-base-content/70">{{ pluralize(item.requests.length, 'petición', 'peticiones') }}</span>
       </div>
 
       <template v-if="active">

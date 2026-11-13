@@ -9,8 +9,6 @@ import { uuid } from '#shared/validation/core'
 import type { Paginated, PrayerRequest } from '#shared/types/api'
 import type { PrayersDir } from '#shared/validation/prayers'
 import { files, guestSubmissions } from '../db/schema'
-import { toImageText } from './image-text'
-import type { ImageTextDtoRow } from './image-text'
 import { decodeCursor, encodeCursor } from './pagination'
 
 const ACCENTED = 'áéíóúüñ'
@@ -44,20 +42,13 @@ const visible = () => and(
 const columns = {
   id: files.id,
   name: files.name,
-  textStatus: files.textStatus,
-  textContent: files.textContent,
-  textError: files.textError,
-  textStartedAt: files.textStartedAt,
-  textReadAt: files.textReadAt,
-  textEditedAt: files.textEditedAt,
-  editedByName: sql<string | null>`(SELECT p.name FROM profiles p WHERE p.user_id = ${files.textEditedBy})`,
   senderName: guestSubmissions.senderName,
   note: guestSubmissions.note,
   sentAt: guestSubmissions.createdAt,
   approvedAt: guestSubmissions.reviewedAt,
 }
 
-export interface PrayerRow extends ImageTextDtoRow {
+export interface PrayerRow {
   id: string
   name: string
   senderName: string
@@ -81,7 +72,6 @@ export function toPrayerRequest(row: PrayerRow): PrayerRequest {
     // Aprobado ⇒ `reviewed_at` existe; el respaldo solo cubre datos viejos inconsistentes.
     approvedAt: (row.approvedAt ?? row.sentAt).toISOString(),
     previewUrl: `/api/files/${row.id}/content`,
-    text: toImageText(row),
   }
 }
 
@@ -115,7 +105,7 @@ export async function listPrayerRequests({ q, from, to, dir = 'desc', cursor }: 
     from ? sql`${guestSubmissions.reviewedAt} >= ${from}::timestamptz` : undefined,
     to ? sql`${guestSubmissions.reviewedAt} < ${to}::timestamptz` : undefined,
     search
-      ? sql`translate(lower(${guestSubmissions.senderName} || ' ' || coalesce(${guestSubmissions.note}, '') || ' ' || coalesce(${files.textContent}, '')), ${ACCENTED}, ${PLAIN}) LIKE ${`%${normalizeSearch(search)}%`} ESCAPE '\\'`
+      ? sql`translate(lower(${guestSubmissions.senderName} || ' ' || coalesce(${guestSubmissions.note}, '')), ${ACCENTED}, ${PLAIN}) LIKE ${`%${normalizeSearch(search)}%`} ESCAPE '\\'`
       : undefined,
     after ? sql`(${approvedKey}, ${files.id}) ${op} (${after.v}::timestamptz, ${after.id}::uuid)` : undefined,
   ]
@@ -133,8 +123,9 @@ export async function listPrayerRequests({ q, from, to, dir = 'desc', cursor }: 
 }
 
 /**
- * Peticiones que pueden ir a una imagen ahora (FR-027): las condiciones del listado más un texto listo y no vacío.
- * `found` va en el orden de las imágenes `(reviewed_at, sent_at, id)` ascendente; `missing` son los ids que no cumplen.
+ * Peticiones que pueden ir a una imagen ahora (FR-027): las mismas condiciones del listado. El texto lo escribe el equipo
+ * y viaja en la petición. `found` va en el orden de las imágenes `(reviewed_at, sent_at, id)` ascendente; `missing` son los
+ * ids que ya no están disponibles.
  */
 export async function loadEligibleRequests(fileIds: string[]): Promise<{ found: PrayerRequest[], missing: string[] }> {
   if (fileIds.length === 0) return { found: [], missing: [] }
@@ -142,8 +133,6 @@ export async function loadEligibleRequests(fileIds: string[]): Promise<{ found: 
     .where(and(
       visible(),
       inArray(files.id, fileIds),
-      eq(files.textStatus, 'ready'),
-      sql`btrim(coalesce(${files.textContent}, '')) <> ''`,
     ))
     .orderBy(asc(guestSubmissions.reviewedAt), asc(guestSubmissions.createdAt), asc(files.id))
   const found = rows.map(row => toPrayerRequest(row))

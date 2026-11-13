@@ -2,8 +2,7 @@
 import { createPage, setup } from '@nuxt/test-utils/e2e'
 import type { Page } from 'playwright-core'
 import { describe, expect, it } from 'vitest'
-import { E2E_URL, fixture, profileUserId, resetStub, runId, seedFolder, signedInAs, stubCalls, testSql, viewports, waitForHydration } from './setup/fixtures'
-import { NOTE_TEXT } from './setup/openrouter-stub'
+import { E2E_URL, fixture, profileUserId, runId, seedFolder, signedInAs, testSql, viewports, waitForHydration } from './setup/fixtures'
 
 await setup({ host: E2E_URL, browser: true })
 
@@ -199,78 +198,6 @@ describe('US3 · envío de un solo paso en /upload', () => {
     expect(await testSql()`
       SELECT f.origin, f.guest_name, f.folder_id FROM files f JOIN guest_submissions s ON s.id = f.submission_id WHERE s.sender_name = ${name}
     `).toEqual([{ origin: 'guest', guest_name: name, folder_id: folderId }])
-    await editor.close()
-
-    // Las lecturas de texto de estas imágenes corren en segundo plano contra el stub: se esperan aquí para que no
-    // lleguen después del `resetStub()` de la prueba siguiente y le sumen llamadas.
-    await expect.poll(async () => (await testSql()`
-      SELECT count(*)::int AS n FROM guest_submission_files f JOIN guest_submissions s ON s.id = f.submission_id
-      WHERE s.sender_name = ${name} AND (f.text_status IS NULL OR f.text_status = 'reading')
-    `)[0]!.n, { timeout: 30_000 }).toBe(0)
-  })
-})
-
-// Feature 002 · US2 — el texto de las imágenes de invitados se lee en segundo plano al recibir el envío.
-describe('US2 · texto de las imágenes de invitados', () => {
-  const FIRST_LINE = NOTE_TEXT.split('\n')[0]!
-  const note = 'nota.jpg'
-
-  it('confirmación inmediata, texto en Solicitudes, aprobación sin releer y rechazo que lo elimina (9, 10, 11)', async () => {
-    await resetStub()
-    const editor = await createPage(undefined, { viewport: viewports.phone })
-    await signedInAs(editor, 'editor', 'guest-text-editor')
-
-    // 9 · El invitado ve el aviso, recibe la confirmación y nunca ve el texto extraído (FR-016).
-    const guest = await guestPage()
-    const name = `Texto ${runId()}`
-    await guest.goto(`${E2E_URL}/upload`)
-    await waitForHydration(guest)
-    expect(await guest.getByText('Leeremos automáticamente el texto de tus imágenes').isVisible()).toBe(true)
-    const files = [note, 'nota.heic']
-    await sendAsGuest(guest, name, files)
-    expect(await guest.content()).not.toContain(FIRST_LINE)
-    await guest.close()
-
-    await editor.goto(`${E2E_URL}/solicitudes`)
-    await waitForHydration(editor)
-    const card = editor.getByRole('article', { name: `Envío de ${name}` })
-    await expect.poll(() => card.isVisible()).toBe(true)
-    const panel = card.getByRole('region', { name: `Texto de «${note}»` })
-    await expect.poll(() => panel.textContent(), { timeout: 30_000 }).toContain(FIRST_LINE)
-    // La segunda imagen (HEIC) puede seguir leyéndose cuando ya se ve el texto de la primera: se esperan las dos lecturas.
-    await expect.poll(async () => (await stubCalls()).total, { timeout: 30_000 }).toBe(files.length)
-    const callsBeforeApproval = (await stubCalls()).total
-    expect(callsBeforeApproval).toBe(files.length)
-
-    // 10 · Al aprobar, el archivo conserva el texto sin una lectura nueva.
-    await card.getByRole('button', { name: 'Aprobar' }).click()
-    await editor.getByRole('button', { name: 'Aprobar aquí' }).click()
-    await expect.poll(() => card.count()).toBe(0)
-    const [approved] = await testSql()`
-      SELECT f.id, f.text_status FROM files f JOIN guest_submissions s ON s.id = f.submission_id
-      WHERE s.sender_name = ${name} AND f.extension = 'jpg'
-    `
-    expect(approved).toMatchObject({ text_status: 'ready' })
-    await editor.goto(`${E2E_URL}/archivos/ver/${approved!.id}`)
-    await waitForHydration(editor)
-    await expect.poll(() => editor.getByRole('region', { name: 'Texto de la imagen' }).textContent()).toContain(FIRST_LINE)
-    expect((await stubCalls()).total).toBe(callsBeforeApproval)
-
-    // 11 · Rechazar otro envío con imagen elimina sus filas, y con ellas el texto.
-    const other = await guestPage()
-    const rejected = `Texto rechazado ${runId()}`
-    await sendAsGuest(other, rejected, ['imagen.png'])
-    await other.close()
-    await editor.goto(`${E2E_URL}/solicitudes`)
-    await waitForHydration(editor)
-    const rejectCard = editor.getByRole('article', { name: `Envío de ${rejected}` })
-    await expect.poll(() => rejectCard.getByRole('region', { name: 'Texto de «imagen.png»' }).textContent(), { timeout: 30_000 }).toContain(FIRST_LINE)
-    await rejectCard.getByRole('button', { name: 'Rechazar' }).click()
-    await editor.getByRole('button', { name: 'Rechazar envío' }).click()
-    await expect.poll(() => rejectCard.count()).toBe(0)
-    expect(await testSql()`
-      SELECT g.id FROM guest_submission_files g JOIN guest_submissions s ON s.id = g.submission_id WHERE s.sender_name = ${rejected}
-    `).toEqual([])
     await editor.close()
   })
 })

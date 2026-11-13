@@ -8,6 +8,32 @@
 
 **Input**: User description: "New Nuxt page as feature named Peticiones. On the peticiones i require to display the uploaded requests from @app/pages/upload.vue and link shared upload as multiselect radio buttons cards arranged in a grid of cols and rows, no table, then the selected cards transcription goes to api where consume the openrouter client in order to generate an image or images where each image maximum margin of upload content description can include 4 parragaphs, then the 5th will be placed in a second image displaying the pray requests of the day. the llm is a custom image type llm with system prompt and, part of the input goes a image as template where simply the llm will fill the empty indicated body space with the selected card content. Add filters by date, sorter asc and desc, infinite scrolling, responsive grid and search input. Include in the card the submitted image and make the ai transcript content editable so, if includes a [unlegible] like text, the user can update it before generate the image."
 
+> **Enmienda (2026-11-13) — el texto se escribe a mano; se retiró la transcripción automática.** La feature 002 (lectura
+> del texto de las imágenes con el modelo de visión de OpenRouter) se **retiró por completo**, así que Peticiones se quedó
+> sin su fuente de texto y cambia así:
+>
+> - **Elegir**: cualquier imagen de un envío aprobado, visible y fuera de la papelera se puede elegir. Ya no hay filtro por
+>   «transcripción lista» (`isSelectable` desaparece) ni el aviso «Sin texto: escríbelo primero». Sigue el tope de 40.
+> - **Escribir**: «Generar imágenes» pasa a llamarse **«Escribir textos y generar»** y abre `PrayerComposeDialog`
+>   (reemplaza a `PrayerSelectionDialog` **y** a `PrayerTextDialog`): las peticiones elegidas agrupadas por imagen, cada una
+>   con su foto, remitente, nota, un `textarea` (1–10 000 caracteres, `PRAYER_TEXT_MAX_LENGTH`) y «Quitar». El botón de
+>   generar queda deshabilitado mientras falte algún texto, y el diálogo dice cuántos faltan.
+> - **Persistencia**: el texto **no se guarda en ningún lado**. Vive en la selección de la página (`usePrayerSelection`,
+>   `useState`, solo en memoria): recargar o salir lo pierde, y el guardián de salida ya avisaba de la cola en curso.
+> - **Contrato**: `POST /api/peticiones/imagenes` recibe `{ requests: [{ fileId, text }] }` (1–4, ids distintos) en vez de
+>   `{ fileIds }`. El navegador **sí** manda el texto ahora (FR-027 «el servidor lo relee» queda sin efecto); el servidor
+>   solo comprueba que cada id siga disponible y fija el orden de los párrafos `(reviewed_at, created_at, id)`.
+> - **Historial**: `prayer_images` sigue guardando solo los ids, nunca el texto, así que **desaparece «Generar de nuevo»**
+>   del menú de una imagen guardada (no hay texto que repetir). Lo demás del historial y las colecciones no cambia.
+> - **Búsqueda**: cubre remitente y nota; ya no el texto de la imagen.
+> - **Ilegibles**: se retira toda la maquinaria de `[ilegible]` (`hasIllegibleMark`, `splitIllegible`, la insignia «Texto por
+>   corregir», el aviso de la barra y el segundo paso de confirmación): era un artefacto de la transcripción automática.
+>   Se conserva `isLongText` (aviso «puede no caber»), ahora dentro del diálogo.
+>
+> Quedan **sin efecto** FR-027 (releer el texto en el servidor) y lo que la US3 decía sobre corregir una transcripción
+> existente: la US3 pasa a ser «escribir el texto antes de generar». Ver la nota de retirada al principio de
+> `specs/002-note-text-extraction/spec.md`.
+
 > **Enmienda (2026-11-12) — historial y colecciones de imágenes generadas.** Las imágenes generadas **ya se guardan**: cada
 > una se sube al bucket (`peticiones/<id>.<ext>`) con una fila en `prayer_images` (los ids de sus 1–4 peticiones, nunca su
 > texto) y aparece en una sección nueva, **Historial de imágenes generadas**, compartida por el equipo, la más reciente

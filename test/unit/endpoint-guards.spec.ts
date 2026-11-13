@@ -30,14 +30,8 @@ describe('guards de los endpoints', () => {
     expect(files.length).toBeGreaterThan(20)
     expect(files).toContain('me.get.ts')
     expect(files).toContain('cron/cleanup.get.ts')
-    // Texto de las imágenes (feature 002): también pasan por el guard de abajo.
-    expect(files).toEqual(expect.arrayContaining([
-      'files/[id]/text.get.ts',
-      'files/[id]/text.post.ts',
-      'files/[id]/text.patch.ts',
-      'submissions/[id]/files/[fileId]/text.get.ts',
-      'submissions/[id]/files/[fileId]/text.post.ts',
-    ]))
+    // La lectura de texto de imágenes se retiró: sus endpoints ya no existen.
+    expect(files.filter(f => /\btext\.(get|post|patch)\.ts$/.test(f))).toEqual([])
   })
 
   it.each(files.filter(f => !isPublic(f) && !isCron(f) && !isMe(f)))('%s exige sesión activa y rol', (file) => {

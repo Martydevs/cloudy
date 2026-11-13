@@ -9,7 +9,7 @@ import type { H3Event } from 'h3'
 import type { Me, Paginated, PrayerGeneratedImage, PrayerRequest } from '#shared/types/api'
 import PeticionesPage from '~/pages/peticiones.vue'
 import { buttonsWithText, calls, failWith, flush, mockApi, resetCalls } from './helpers/api'
-import { generated, imageCollection, prayer, prayerText } from './prayer-fixtures'
+import { generated, imageCollection, prayer } from './prayer-fixtures'
 
 const { visible, copyGuestLink } = await vi.hoisted(async () => {
   const { ref } = await import('vue')
@@ -195,33 +195,18 @@ describe('/peticiones', () => {
     expect(wrapper.find('[aria-label="Selección de peticiones"]').exists()).toBe(false)
   })
 
-  it('una tarjeta sin texto no se puede elegir y dice por qué', async () => {
-    mockApi('GET', '/api/peticiones', { items: [prayer(1, { text: prayerText({ status: 'empty', text: null }) })], nextCursor: null })
+  it('cualquier petición aprobada se puede elegir: el texto se escribe al generar', async () => {
+    mockApi('GET', '/api/peticiones', { items: [prayer(1)], nextCursor: null })
     const wrapper = await mountSuspended(PeticionesPage)
     await flush()
-    expect(wrapper.get('input[type="checkbox"]').attributes('disabled')).toBeDefined()
-    expect(wrapper.text()).toContain('Sin texto: escríbelo primero')
-  })
-
-  it('Ver elegidas abre el diálogo con las elegidas', async () => {
-    const wrapper = await mountSuspended(PeticionesPage, { attachTo: document.body })
-    await flush()
-    await wrapper.findAll('input[type="checkbox"]')[0]!.trigger('change')
-    await buttonsWithText(wrapper, 'Ver elegidas')[0]!.trigger('click')
-    // `LazyPrayerSelectionDialog` es un `import()`: con la suite completa su chunk puede tardar más que unos ticks.
-    await vi.waitFor(() => expect(document.body.querySelector('dialog')?.textContent).toContain('Invitado 1'), { timeout: 5000 })
-    // **Quitar** saca a esa de la selección; **Cerrar** cierra el diálogo.
-    await wrapper.get('dialog button[aria-label="Quitar la petición de Invitado 1"]').trigger('click')
-    expect(usePrayerSelection().count.value).toBe(0)
-    await buttonsWithText(wrapper.get('dialog'), 'Cerrar')[0]!.trigger('click')
-    await flush()
-    expect(wrapper.find('dialog').exists()).toBe(false)
-    wrapper.unmount()
+    expect(wrapper.get('input[type="checkbox"]').attributes('disabled')).toBeUndefined()
+    expect(wrapper.text()).not.toContain('Sin texto')
   })
 
   describe('US2 · generar', () => {
     const saved = async (event: H3Event): Promise<PrayerGeneratedImage> => {
-      const { fileIds } = await readBody<{ fileIds: string[] }>(event)
+      const { requests } = await readBody<{ requests: { fileId: string }[] }>(event)
+      const fileIds = requests.map(r => r.fileId)
       setResponseStatus(event, 201)
       return generated(fileIds.length === 4 ? 1 : 2, { fileIds, requestCount: fileIds.length })
     }
@@ -242,31 +227,67 @@ describe('/peticiones', () => {
 
     const posts = () => calls.filter(c => c.method === 'POST' && c.url === '/api/peticiones/imagenes')
 
-    it('Generar imágenes pide confirmación con «N → M» y el aviso de crédito; Cancelar no encola nada', async () => {
+    type Page = Awaited<ReturnType<typeof mountSuspended<typeof PeticionesPage>>>
+
+    /** Abre `LazyPrayerComposeDialog` (un `import()`: su chunk puede tardar más que unos ticks). */
+    async function openCompose(wrapper: Page) {
+      await buttonsWithText(wrapper, 'Escribir textos y generar')[0]!.trigger('click')
+      await vi.waitFor(() => expect(document.body.querySelector('dialog textarea')).not.toBeNull(), { timeout: 5000 })
+      return wrapper.findAll('dialog').at(-1)!
+    }
+
+    const fill = async (dialog: ReturnType<Page['findAll']>[number], text = 'Oremos por Ana') => {
+      for (const area of dialog.findAll('textarea')) await area.setValue(text)
+      await flush()
+    }
+
+    it('«Escribir textos y generar» abre el diálogo agrupado por imagen; sin textos no deja generar', async () => {
       const wrapper = await choose(5)
-      await buttonsWithText(wrapper, 'Generar imágenes')[0]!.trigger('click')
-      await flush()
-      const options = useConfirm().options.value!
-      expect(options.title).toBe('Generar imágenes')
-      expect(options.message).toContain('5 peticiones → 2 imágenes')
-      expect(options.message).toContain('crédito')
-      expect(options.confirmLabel).toBe('Generar')
-      useConfirm().cancel()
-      await flush()
+      const dialog = await openCompose(wrapper)
+      expect(dialog.findAll('textarea')).toHaveLength(5)
+      expect(dialog.text()).toContain('Imagen 1')
+      expect(dialog.text()).toContain('Imagen 2')
+      expect(dialog.text()).toContain('5 peticiones → 2 imágenes')
+      expect(dialog.text()).toContain('crédito')
+      expect(dialog.text()).toContain('Falta el texto de 5 peticiones')
+      expect(buttonsWithText(dialog, 'Generar imágenes')[0]!.attributes('disabled')).toBeDefined()
       expect(posts()).toHaveLength(0)
-      expect(wrapper.find('[aria-label="Imágenes en curso"]').exists()).toBe(false)
       wrapper.unmount()
     })
 
-    it('al confirmar encola los grupos, las imágenes guardadas entran al historial (abajo) y se conserva la selección', async () => {
+    it('cerrar el diálogo no encola nada y conserva los textos escritos', async () => {
+      const wrapper = await choose(2)
+      let dialog = await openCompose(wrapper)
+      await fill(dialog, 'Oremos por Ana')
+      await buttonsWithText(dialog, 'Cerrar')[0]!.trigger('click')
+      await flush()
+      expect(posts()).toHaveLength(0)
+      expect(usePrayerSelection().ordered.value.map(e => e.text)).toEqual(['Oremos por Ana', 'Oremos por Ana'])
+      dialog = await openCompose(wrapper)
+      expect(dialog.findAll('textarea').map(a => (a.element as HTMLTextAreaElement).value)).toEqual(['Oremos por Ana', 'Oremos por Ana'])
+      wrapper.unmount()
+    })
+
+    it('«Quitar» saca la petición de la selección desde el diálogo', async () => {
+      const wrapper = await choose(2)
+      const dialog = await openCompose(wrapper)
+      await dialog.get('button[aria-label="Quitar la petición de Invitado 1"]').trigger('click')
+      await flush()
+      expect(usePrayerSelection().count.value).toBe(1)
+      wrapper.unmount()
+    })
+
+    it('al generar encola los grupos con su texto, el historial los recibe (abajo) y se conserva la selección', async () => {
       const scroll = vi.fn()
       Element.prototype.scrollIntoView = scroll
       const wrapper = await choose(5)
-      await buttonsWithText(wrapper, 'Generar imágenes')[0]!.trigger('click')
-      await flush()
-      useConfirm().accept()
+      const dialog = await openCompose(wrapper)
+      await fill(dialog, 'Oremos por Ana')
+      await buttonsWithText(dialog, 'Generar imágenes')[0]!.trigger('click')
       await flush(15)
-      expect(posts().map(c => (c.body as { fileIds: string[] }).fileIds.length)).toEqual([4, 1])
+      const bodies = posts().map(c => (c.body as { requests: { fileId: string, text: string }[] }).requests)
+      expect(bodies.map(r => r.length)).toEqual([4, 1])
+      expect(bodies.flat().every(r => r.text === 'Oremos por Ana')).toBe(true)
       // `LazyPrayerHistory` es un `import()`: con la suite completa su chunk puede tardar más que unos ticks.
       await vi.waitFor(() => expect(wrapper.findAll('ul[aria-label="Imágenes generadas"] > li')).toHaveLength(2), { timeout: 5000 })
       expect(wrapper.find('[aria-label="Imágenes en curso"]').exists()).toBe(false)
@@ -278,14 +299,13 @@ describe('/peticiones', () => {
       wrapper.unmount()
     })
 
-    it('con texto ilegible la confirmación avisa y ofrece «Generar de todos modos»', async () => {
-      const wrapper = await choose(2, [prayer(1, { text: prayerText({ text: 'Por [ilegible]' }) }), prayer(2)])
-      expect(wrapper.text()).toContain('1 petición todavía tiene texto ilegible')
-      await buttonsWithText(wrapper, 'Generar imágenes')[0]!.trigger('click')
-      await flush()
-      expect(useConfirm().options.value!.message).toContain('1 petición todavía tiene texto ilegible')
-      expect(useConfirm().options.value!.confirmLabel).toBe('Generar de todos modos')
-      useConfirm().cancel()
+    it('un texto demasiado largo bloquea la generación', async () => {
+      const wrapper = await choose(1)
+      const dialog = await openCompose(wrapper)
+      await fill(dialog, 'a'.repeat(10_001))
+      expect(dialog.text()).toContain('El texto es demasiado largo')
+      expect(buttonsWithText(dialog, 'Generar imágenes')[0]!.attributes('disabled')).toBeDefined()
+      expect(posts()).toHaveLength(0)
       wrapper.unmount()
     })
 
@@ -295,9 +315,9 @@ describe('/peticiones', () => {
         return { statusCode: 409, message: 'x', data: { code: 'request_unavailable', ids: [prayer(2).id] } }
       })
       const wrapper = await choose(2)
-      await buttonsWithText(wrapper, 'Generar imágenes')[0]!.trigger('click')
-      await flush()
-      useConfirm().accept()
+      const dialog = await openCompose(wrapper)
+      await fill(dialog)
+      await buttonsWithText(dialog, 'Generar imágenes')[0]!.trigger('click')
       await flush(15)
       expect(usePrayerSelection().isSelected(prayer(2).id)).toBe(false)
       expect(usePrayerSelection().count.value).toBe(1)
@@ -308,9 +328,9 @@ describe('/peticiones', () => {
     it('con imágenes generándose, salir pide confirmación; aceptarla cancela la cola', async () => {
       mockApi('POST', '/api/peticiones/imagenes', () => new Promise(() => {}))
       const wrapper = await choose(1)
-      await buttonsWithText(wrapper, 'Generar imágenes')[0]!.trigger('click')
-      await flush()
-      useConfirm().accept()
+      const dialog = await openCompose(wrapper)
+      await fill(dialog)
+      await buttonsWithText(dialog, 'Generar imágenes')[0]!.trigger('click')
       await flush(15)
       expect(usePrayerImages().needsLeaveGuard.value).toBe(true)
       const router = useRouter()
@@ -331,9 +351,9 @@ describe('/peticiones', () => {
 
     it('una imagen ya guardada no pide confirmación al salir', async () => {
       const wrapper = await choose(1)
-      await buttonsWithText(wrapper, 'Generar imágenes')[0]!.trigger('click')
-      await flush()
-      useConfirm().accept()
+      const dialog = await openCompose(wrapper)
+      await fill(dialog)
+      await buttonsWithText(dialog, 'Generar imágenes')[0]!.trigger('click')
       await flush(15)
       expect(usePrayerImages().items.value).toEqual([])
       expect(usePrayerImages().needsLeaveGuard.value).toBe(false)
@@ -346,74 +366,13 @@ describe('/peticiones', () => {
       const idle = new Event('beforeunload', { cancelable: true })
       window.dispatchEvent(idle)
       expect(idle.defaultPrevented).toBe(false)
-      await buttonsWithText(wrapper, 'Generar imágenes')[0]!.trigger('click')
-      await flush()
-      useConfirm().accept()
+      const dialog = await openCompose(wrapper)
+      await fill(dialog)
+      await buttonsWithText(dialog, 'Generar imágenes')[0]!.trigger('click')
       await flush(15)
       const busy = new Event('beforeunload', { cancelable: true })
       window.dispatchEvent(busy)
       expect(busy.defaultPrevented).toBe(true)
-      wrapper.unmount()
-    })
-  })
-
-  describe('US3 · corregir la transcripción', () => {
-    const endpoint = (n: number) => `/api/files/${prayer(n).id}/text`
-    type Page = Awaited<ReturnType<typeof mountSuspended<typeof PeticionesPage>>>
-    const card = (wrapper: Page, n: number) =>
-      wrapper.findAll('article').find(a => a.attributes('aria-label') === `Petición de Invitado ${n}`)!
-
-    async function correct(wrapper: Page, n: number, text: string) {
-      mockApi('PATCH', endpoint(n), prayerText({ text, editedAt: '2026-11-12T10:00:00.000Z', editedBy: 'Ana' }))
-      await buttonsWithText(card(wrapper, n), 'Corregir texto')[0]!.trigger('click')
-      // `LazyPrayerTextDialog` es un `import()`: con la suite completa su chunk puede tardar más que unos ticks.
-      await vi.waitFor(() => expect(document.body.querySelector('dialog textarea, dialog button')).not.toBeNull(), { timeout: 5000 })
-      const dialog = wrapper.findAll('dialog').at(-1)!
-      await buttonsWithText(dialog, 'Editar')[0]!.trigger('click')
-      await flush()
-      await dialog.get('textarea').setValue(text)
-      await dialog.get('form').trigger('submit')
-      await flush()
-    }
-
-    it('Corregir texto abre el diálogo de esa petición y no cambia la selección', async () => {
-      const wrapper = await mountSuspended(PeticionesPage, { attachTo: document.body })
-      await flush()
-      await buttonsWithText(card(wrapper, 2), 'Corregir texto')[0]!.trigger('click')
-      await vi.waitFor(() => expect(document.body.querySelector('dialog')?.textContent).toContain('Transcripción de Invitado 2'), { timeout: 5000 })
-      expect(usePrayerSelection().count.value).toBe(0)
-      await wrapper.get('dialog button[aria-label="Cerrar"]').trigger('click')
-      await flush()
-      expect(wrapper.find('dialog').exists()).toBe(false)
-      wrapper.unmount()
-    })
-
-    it('al guardar, la tarjeta y la copia elegida toman el texto nuevo con «Editada», sin recargar la lista', async () => {
-      const wrapper = await mountSuspended(PeticionesPage, { attachTo: document.body })
-      await flush()
-      await card(wrapper, 1).get('input[type="checkbox"]').trigger('change')
-      useToast().toasts.value = []
-      const before = list().length
-      await correct(wrapper, 1, 'Oremos por Rosa')
-      expect(calls.filter(c => c.method === 'PATCH').map(c => c.url)).toEqual([endpoint(1)])
-      expect(card(wrapper, 1).text()).toContain('Oremos por Rosa')
-      expect(card(wrapper, 1).text()).toContain('Editada')
-      expect(usePrayerSelection().ordered.value[0]!.text.text).toBe('Oremos por Rosa')
-      expect(list().length).toBe(before)
-      expect(useToast().toasts.value.map(t => t.message)).toEqual(['Texto guardado'])
-      wrapper.unmount()
-    })
-
-    it('corregir una tarjeta de una página posterior conserva todas las cargadas', async () => {
-      const wrapper = await mountSuspended(PeticionesPage, { attachTo: document.body })
-      await flush()
-      visible.value = true
-      await flush(10)
-      expect(wrapper.findAll('article')).toHaveLength(14)
-      await correct(wrapper, 13, 'Corregida en la página dos')
-      expect(wrapper.findAll('article')).toHaveLength(14)
-      expect(card(wrapper, 13).text()).toContain('Corregida en la página dos')
-      expect(wrapper.text()).toContain('Ya viste todas las peticiones')
       wrapper.unmount()
     })
   })

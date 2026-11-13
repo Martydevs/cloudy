@@ -4,7 +4,6 @@
 // fila, el centinela del desplazamiento infinito con sus estados: esqueleto mientras carga, error con «Reintentar» (sin perder
 // lo cargado), «Cargar más» para teclado y el aviso de fin. Desde `sm`, dos botones recorren la fila (con ratón no hay gesto).
 import type { PrayerRequest } from '#shared/types/api'
-import { isSelectable } from '#shared/prayers'
 
 const props = defineProps<{
   items: PrayerRequest[]
@@ -14,14 +13,13 @@ const props = defineProps<{
   isSelected: (id: string) => boolean
   limitReached: boolean
 }>()
-const emit = defineEmits<{ 'toggle': [request: PrayerRequest], 'fix': [request: PrayerRequest], 'load-more': [], 'retry-more': [] }>()
+const emit = defineEmits<{ 'toggle': [request: PrayerRequest], 'load-more': [], 'retry-more': [] }>()
 
 const m = messages.prayers
 
-/** Sin texto no se puede elegir; con el tope, solo las ya elegidas siguen activas. */
+/** Con el tope alcanzado, solo las ya elegidas siguen activas. */
 function reason(request: PrayerRequest): string | null {
   if (props.isSelected(request.id)) return null
-  if (!isSelectable(request)) return m.noText
   return props.limitReached ? m.limitReached : null
 }
 
@@ -74,7 +72,6 @@ function step(direction: 1 | -1) {
             :disabled-reason="reason(request)"
             :scroll-root="scroller"
             @toggle="emit('toggle', request)"
-            @fix="emit('fix', request)"
           />
         </li>
       </ul>

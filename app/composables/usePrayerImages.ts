@@ -3,7 +3,8 @@
 // un mapa del módulo. Enmienda de historial: el servidor guarda cada imagen y responde su JSON, así que una imagen lista sale
 // de la cola y entra arriba en el historial (`PRAYER_HISTORY_ADDED_KEY`); en la cola solo quedan las que están en curso,
 // fallaron o se cancelaron.
-import type { PrayerGeneratedImage, PrayerRequest } from '#shared/types/api'
+import type { PrayerGeneratedImage } from '#shared/types/api'
+import type { PrayerImageRequestInput } from '#shared/validation/prayers'
 import type { PrayerErrorCode } from '#shared/constants/prayers'
 import { PRAYER_ERROR_MESSAGES, PRAYER_IMAGE_CONCURRENCY, PRAYER_IMAGE_TIMEOUT_MS } from '#shared/constants/prayers'
 import { FetchError } from 'ofetch'
@@ -14,7 +15,8 @@ export interface PrayerImageItem {
   key: string
   /** 1-based: el número con el que la cola nombra la imagen («Imagen 2 lista»). */
   index: number
-  fileIds: string[]
+  /** Las peticiones de esta imagen con el texto escrito para cada una. */
+  requests: PrayerImageRequestInput[]
   status: PrayerImageStatus
   error?: string
   errorCode?: PrayerErrorCode | null
@@ -75,7 +77,7 @@ export function usePrayerImages() {
     try {
       const request = api<PrayerGeneratedImage>('/api/peticiones/imagenes', {
         method: 'POST',
-        body: { fileIds: item.fileIds },
+        body: { requests: item.requests },
         signal: controller.signal,
       })
       // Cancelar o vencer el plazo libera la cola aunque el transporte no respete la señal.
@@ -132,20 +134,20 @@ export function usePrayerImages() {
   /** Numeración continua en la sesión: no se repite aunque las anteriores ya hayan salido de la cola. */
   const counter = useState('prayer-images-counter', () => 0)
 
-  /** Una imagen por grupo (1–4 peticiones). */
-  function enqueue(groups: readonly (readonly Pick<PrayerRequest, 'id'>[])[]): number {
+  /** Una imagen por grupo (1–4 peticiones con su texto). */
+  function enqueue(groups: readonly (readonly PrayerSelectionEntry[])[]): number {
     const fresh = groups.filter(group => group.length > 0).map((group): PrayerImageItem => {
       counter.value++
-      return { key: `img-${counter.value}`, index: counter.value, fileIds: group.map(request => request.id), status: 'queued' }
+      return {
+        key: `img-${counter.value}`,
+        index: counter.value,
+        requests: group.map(entry => ({ fileId: entry.request.id, text: entry.text })),
+        status: 'queued',
+      }
     })
     items.value = [...items.value, ...fresh]
     pump()
     return fresh.length
-  }
-
-  /** **Generar de nuevo** una imagen del historial: las mismas peticiones; el servidor relee su texto actual. */
-  function regenerateFrom(fileIds: readonly string[]): number {
-    return enqueue([fileIds.map(id => ({ id }))])
   }
 
   /** En cola: sale de la cola. Generándose: se aborta y la cola sigue. */
@@ -187,7 +189,6 @@ export function usePrayerImages() {
     items,
     announcement,
     enqueue,
-    regenerateFrom,
     cancel,
     retry,
     regenerate,

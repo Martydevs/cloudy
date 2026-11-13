@@ -4,7 +4,7 @@
 // fila), las colecciones de imágenes generadas (con el SSR) y el historial de imágenes generadas (diferido e hidratado cuando
 // el navegador está libre), con la cola en curso arriba. Delgada: la lista, la selección, la cola, el historial y las
 // colecciones viven en sus composables.
-import type { ImageText, PrayerGeneratedImage, PrayerRequest } from '#shared/types/api'
+import type { PrayerGeneratedImage } from '#shared/types/api'
 
 definePageMeta({ layout: 'dashboard', access: 'private', roles: ['editor', 'admin'] })
 useHead({ title: 'Peticiones · Cloudy' })
@@ -13,7 +13,6 @@ if (import.meta.server) useHead({ link: storagePreconnect(useRuntimeConfig().aws
 
 const m = messages.prayers
 const toast = useToast()
-const { confirm } = useConfirm()
 const { copyGuestLink } = useGuestLink()
 
 // Cambiar un filtro reinicia la lista; la selección no se toca (FR-031).
@@ -22,9 +21,8 @@ const requests = usePrayerRequests(filters.query)
 const { items, firstPage, error, pending, loadingMore, moreError, done } = requests
 const selection = usePrayerSelection()
 const images = usePrayerImages()
-const reviewing = ref(false)
-/** Petición cuya transcripción se corrige (`LazyPrayerTextDialog`). */
-const fixing = ref<PrayerRequest | null>(null)
+/** Diálogo donde se escribe el texto de cada petición elegida antes de generar. */
+const composing = ref(false)
 const historySection = useTemplateRef<HTMLElement>('historySection')
 const approvedHeading = useId()
 
@@ -36,14 +34,6 @@ const collectionDialog = ref<{ collectionId?: string, imageId?: string } | null>
 
 function saveToCollection(image: PrayerGeneratedImage) {
   collectionDialog.value = { imageId: image.id }
-}
-
-// La tarjeta y la copia elegida toman el texto nuevo (el panel ya avisa con su toast «Texto guardado»).
-function onTextChange(text: ImageText) {
-  const request = fixing.value
-  if (!request) return
-  requests.patchText(request.id, text)
-  selection.sync({ ...request, text })
 }
 
 usePrayerLeaveGuard()
@@ -60,15 +50,11 @@ images.onUnavailable((ids) => {
   toast.info(m.removedUnavailable(ids.length))
 })
 
+/** El diálogo ya confirmó: aquí solo se encola y se baja al historial, donde está la cola. */
 async function generate() {
-  const count = selection.count.value
-  const groups = selection.groups.value
-  const unreadable = selection.unreadable.value.length
-  const message = [m.confirmBody(count, groups.length), ...(unreadable > 0 ? [`${m.illegibleWarning(unreadable)}.`, m.confirmIllegible] : [])].join(' ')
-  const ok = await confirm({ title: m.confirmTitle, message, confirmLabel: unreadable > 0 ? m.confirmAnyway : m.confirm })
-  if (!ok) return
-  images.enqueue(groups)
-  // La selección se conserva para poder corregir y volver a generar.
+  const queued = images.enqueue(selection.groups.value)
+  if (queued > 0) toast.info(m.compose.queued(queued))
+  // La selección y sus textos se conservan para poder corregir y volver a generar.
   await nextTick()
   const smooth = import.meta.client && !window.matchMedia('(prefers-reduced-motion: reduce)').matches
   historySection.value?.scrollIntoView({ behavior: smooth ? 'smooth' : 'auto', block: 'start' })
@@ -138,7 +124,6 @@ async function generate() {
         :is-selected="selection.isSelected"
         :limit-reached="selection.limitReached.value"
         @toggle="selection.toggle"
-        @fix="request => fixing = request"
         @load-more="requests.loadMore()"
         @retry-more="requests.loadMore()"
       />
@@ -166,18 +151,18 @@ async function generate() {
       v-if="selection.count.value > 0"
       :count="selection.count.value"
       :images="selection.groups.value.length"
-      :unreadable="selection.unreadable.value.length"
       :limit="selection.limitReached.value"
-      @generate="generate"
-      @review="reviewing = true"
+      @generate="composing = true"
       @clear="selection.clear()"
     />
 
-    <LazyPrayerSelectionDialog
-      v-if="reviewing"
-      :items="selection.ordered.value"
+    <LazyPrayerComposeDialog
+      v-if="composing"
+      :groups="selection.groups.value"
+      @text="(id, text) => selection.setText(id, text)"
       @remove="id => selection.remove([id])"
-      @close="reviewing = false"
+      @generate="generate"
+      @close="composing = false"
     />
 
     <LazyPrayerCollectionDialog
@@ -185,14 +170,6 @@ async function generate() {
       :collection-id="collectionDialog.collectionId"
       :image-id="collectionDialog.imageId"
       @close="collectionDialog = null"
-    />
-
-    <LazyPrayerTextDialog
-      v-if="fixing"
-      :key="fixing.id"
-      :request="fixing"
-      @change="onTextChange"
-      @close="fixing = null"
     />
   </div>
 </template>

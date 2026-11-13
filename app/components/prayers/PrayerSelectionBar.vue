@@ -1,9 +1,9 @@
 <script setup lang="ts">
 // Barra de la selección de Peticiones (feature 007, forma de `SongSelectionBar`): fija abajo, al alcance del pulgar, con el
-// área segura inferior y apoyada encima de las bandejas de YouTube y Canciones. Dice cuántas imágenes saldrán, avisa de las
-// peticiones con texto ilegible (con icono y texto, no solo color) y lleva **Generar imágenes**.
-const props = withDefaults(defineProps<{ count: number, images: number, unreadable?: number, limit?: boolean }>(), { unreadable: 0, limit: false })
-const emit = defineEmits<{ generate: [], review: [], clear: [] }>()
+// área segura inferior y apoyada encima de las bandejas de YouTube y Canciones. Dice cuántas imágenes saldrán y abre el
+// diálogo donde se escribe el texto de cada petición antes de generar.
+const props = withDefaults(defineProps<{ count: number, images: number, limit?: boolean }>(), { limit: false })
+const emit = defineEmits<{ generate: [], clear: [] }>()
 const m = messages.prayers
 const reasonId = useId()
 </script>
@@ -17,10 +17,6 @@ const reasonId = useId()
     <div class="flex flex-col gap-2 @2xl:flex-row @2xl:items-center">
       <div class="flex-1 @max-2xl:pr-24" role="status">
         <p class="font-medium">{{ m.willGenerate(props.count, props.images) }}</p>
-        <p v-if="unreadable > 0" class="flex items-center gap-1 text-sm">
-          <Icon name="lucide:triangle-alert" class="size-4 shrink-0" aria-hidden="true" />
-          {{ m.illegibleWarning(unreadable) }}
-        </p>
         <p v-if="limit" class="text-sm text-base-content/70">{{ m.limit }}</p>
       </div>
       <div class="flex flex-col gap-2 @md:flex-row">
@@ -35,10 +31,6 @@ const reasonId = useId()
           {{ m.generate }}
         </button>
         <span v-if="count === 0" :id="reasonId" class="sr-only">{{ m.generateDisabled }}</span>
-        <button type="button" class="btn btn-block @md:w-auto" @click="emit('review')">
-          <Icon name="lucide:list-checks" class="size-5" aria-hidden="true" />
-          {{ m.review }}
-        </button>
         <!-- Si la barra es angosta «Limpiar» sube a la fila del conteo para que ocupe menos pantalla. -->
         <button type="button" class="btn btn-ghost @max-2xl:absolute @max-2xl:right-2 @max-2xl:top-0 @md:w-auto" @click="emit('clear')">{{ m.clear }}</button>
       </div>
