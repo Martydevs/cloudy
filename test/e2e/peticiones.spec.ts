@@ -76,7 +76,7 @@ beforeAll(async () => {
 })
 
 describe('US1 · ver las peticiones y elegir cuáles proyectar', () => {
-  it('solo aparecen las aprobadas, con foto, texto, nombre y fechas', async () => {
+  it('solo aparecen las aprobadas, con foto, nombre, fechas y nota', async () => {
     // Nombres propios de este archivo: la cola de Solicitudes es compartida y `guest-queue.spec.ts` usa «Rechazada <runId>».
     const hidden = {
       pending: `Petición por revisar ${runId()}`,
@@ -93,7 +93,7 @@ describe('US1 · ver las peticiones y elegir cuáles proyectar', () => {
     const visible = card(page, shown!)
     await expect.poll(() => visible.isVisible()).toBe(true)
     const text = await visible.innerText()
-    expect(text).toContain('Petición 1 de Visible')
+    expect(text).toContain(shown!)
     expect(text).toMatch(/Aprobada hace/)
     expect(text).toContain('Enviada el')
     expect(text).toContain('para el domingo')
@@ -136,11 +136,12 @@ describe('US1 · ver las peticiones y elegir cuáles proyectar', () => {
   })
 
   it('cualquier petición aprobada se puede marcar: el texto se escribe al generar', async () => {
-    const [name] = await seedMany('Sin texto', 1)
+    const [name] = await seedMany('Marcable', 1)
     const page = await editorPage()
     await openPage(page)
+    // Ya no hay transcripción: ninguna tarjeta queda bloqueada ni muestra el estado de la lectura automática.
     expect(await box(page, name!).isDisabled()).toBe(false)
-    expect(await card(page, name!).innerText()).not.toContain('Sin texto')
+    expect(await card(page, name!).innerText()).not.toMatch(/sin texto|no se pudo leer|ilegible/i)
     await page.close()
   })
 
@@ -499,9 +500,9 @@ describe('US4 · buscar, filtrar por fecha y ordenar', () => {
     await search(page, `nadie-${token}`)
     await expect.poll(() => page.getByText('No hay peticiones con esos filtros').isVisible()).toBe(true)
     expect(await bar(page).innerText()).toContain('2 peticiones → 1 imagen')
-    // Las elegidas siguen listadas aunque el filtro las oculte.
-    await bar(page).getByRole('button', { name: 'Ver elegidas' }).click()
-    const chosen = page.getByRole('dialog', { name: 'Peticiones elegidas' })
+    // Las elegidas siguen en el diálogo de generación aunque el filtro las oculte.
+    await bar(page).getByRole('button', { name: 'Escribir textos y generar' }).click()
+    const chosen = page.getByRole('dialog', { name: 'Escribe el texto de cada petición' })
     await expect.poll(() => chosen.innerText()).toContain(names[0])
     expect(await chosen.innerText()).toContain(names[1])
     await chosen.getByRole('button', { name: 'Cerrar' }).first().click()

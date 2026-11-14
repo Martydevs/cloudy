@@ -148,7 +148,8 @@ describe('historial y colecciones de imágenes generadas', () => {
     await expect.poll(() => saved(page, imageId).isVisible(), { timeout: 10_000 }).toBe(true)
     expect(await saved(page, imageId).innerText()).toMatch(/por E2E pet-hist-autora/)
     await saved(page, imageId).getByRole('button', { name: 'Opciones de la imagen' }).click()
-    await expect.poll(() => page.getByRole('menuitem').allInnerTexts()).toEqual(['Guardar en colección', 'Generar de nuevo'])
+    // Sin «Generar de nuevo»: el texto de cada petición ya no se guarda (enmienda de 2026-11-13), así que no se puede repetir.
+    await expect.poll(() => page.getByRole('menuitem').allInnerTexts()).toEqual(['Guardar en colección'])
     await page.keyboard.press('Escape')
     // El servidor es la autoridad: la API responde 403 aunque se salte la interfaz.
     expect((await page.request.delete(`${E2E_URL}/api/peticiones/imagenes/${imageId}`)).status()).toBe(403)

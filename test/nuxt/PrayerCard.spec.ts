@@ -17,7 +17,9 @@ const mount = (props: Partial<InstanceType<typeof PrayerCard>['$props']> = {}) =
 
 describe('PrayerCard', () => {
   it('es un article con nombre, aprobación, envío y nota', async () => {
-    const wrapper = await mount()
+    // La aprobación es reciente a propósito: con la fecha fija de la fixture, «hace…» se volvería «la semana pasada»
+    // al pasar los días y la prueba caducaría sola.
+    const wrapper = await mount({ request: prayer(1, { senderName: 'Ana', note: 'para el domingo', approvedAt: new Date(Date.now() - 60_000).toISOString() }) })
     expect(wrapper.get('article').attributes('aria-label')).toBe('Petición de Ana')
     expect(wrapper.text()).toContain('Ana')
     expect(wrapper.text()).toMatch(/Aprobada hace/)

@@ -408,7 +408,6 @@ export const messages = {
       intro: 'Escribe lo que dice cada foto. El texto no se guarda: viaja solo con esta generación.',
       cost: 'Cada imagen usa crédito del servicio de imágenes.',
       image: (n: number) => `Imagen ${n}`,
-      label: (name: string) => `Texto de la petición de ${name}`,
       placeholder: 'Escribe aquí lo que dice la foto…',
       counter: (used: string, max: string) => `${used} / ${max}`,
       tooLong: 'El texto es demasiado largo',
