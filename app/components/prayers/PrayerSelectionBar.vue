@@ -1,8 +1,8 @@
 <script setup lang="ts">
 // Barra de la selección de Peticiones (feature 007, forma de `SongSelectionBar`): fija abajo, al alcance del pulgar, con el
 // área segura inferior y apoyada encima de las bandejas de YouTube y Canciones. Dice cuántas imágenes saldrán y las pone en
-// cola al instante: el modelo lee el texto en las fotos (feature 008).
-const props = withDefaults(defineProps<{ count: number, images: number, limit?: boolean }>(), { limit: false })
+// cola al instante: el modelo lee el texto en las fotos (feature 008). `busy` mientras se crea la generación.
+const props = withDefaults(defineProps<{ count: number, images: number, limit?: boolean, busy?: boolean }>(), { limit: false, busy: false })
 const emit = defineEmits<{ generate: [], clear: [] }>()
 const m = messages.prayers
 const reasonId = useId()
@@ -23,11 +23,13 @@ const reasonId = useId()
         <button
           type="button"
           class="btn btn-primary btn-block @md:w-auto"
-          :disabled="count === 0"
+          :disabled="count === 0 || busy"
+          :aria-busy="busy"
           :aria-describedby="count === 0 ? reasonId : undefined"
           @click="emit('generate')"
         >
-          <Icon name="lucide:sparkles" class="size-5" aria-hidden="true" />
+          <span v-if="busy" class="loading loading-spinner loading-sm motion-reduce:animate-none" aria-hidden="true" />
+          <Icon v-else name="lucide:sparkles" class="size-5" aria-hidden="true" />
           {{ m.generate }}
         </button>
         <span v-if="count === 0" :id="reasonId" class="sr-only">{{ m.generateDisabled }}</span>

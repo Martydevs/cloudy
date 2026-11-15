@@ -93,6 +93,14 @@ describe('PrayerHistoryCard', () => {
     owner.unmount()
   })
 
+  it('el menú va junto al título, no solo en otra línea de las acciones (regresión)', async () => {
+    const wrapper = await mountSuspended(PrayerHistoryCard, { props: { image: generated(1) } })
+    const menu = wrapper.get('button[aria-label="Opciones de la imagen"]')
+    const header = wrapper.get('h3').element.parentElement!.parentElement!
+    expect(header.contains(menu.element)).toBe(true)
+    expect(wrapper.get('a[download]').element.parentElement!.contains(menu.element)).toBe(false)
+  })
+
   it('ningún control es btn-sm o btn-xs de base', async () => {
     const wrapper = await mountSuspended(PrayerHistoryCard, { props: { image: generated(1) } })
     for (const el of [...wrapper.findAll('button'), ...wrapper.findAll('a')]) expect(el.classes().some(c => /^btn-(sm|xs)$/.test(c))).toBe(false)

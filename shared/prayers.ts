@@ -18,3 +18,13 @@ export function chunkRequests<T>(list: readonly T[], size: number): T[][] {
   for (let i = 0; i < list.length; i += size) groups.push(list.slice(i, i + size))
   return groups
 }
+
+/**
+ * Mismas peticiones en cualquier orden (página de generación): así se reconoce qué imagen guardada o en curso es de qué
+ * grupo. El servidor reordena las fotos al generar, así que el orden no cuenta.
+ */
+export function sameRequests(a: readonly string[], b: readonly string[]): boolean {
+  if (a.length !== b.length) return false
+  const set = new Set(a)
+  return b.every(id => set.has(id))
+}

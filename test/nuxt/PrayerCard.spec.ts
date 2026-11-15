@@ -42,13 +42,20 @@ describe('PrayerCard', () => {
     expect(input.classes()).not.toContain('radio')
     expect((input.element as HTMLInputElement).checked).toBe(true)
     expect(wrapper.get('article').classes()).toContain('ring-2')
-    expect(wrapper.text()).toContain('elegida')
   })
 
-  it('no elegida: casilla sin marcar y sin la marca', async () => {
+  it('no elegida: casilla sin marcar y sin el anillo', async () => {
     const wrapper = await mount()
     expect((wrapper.get('input[type="checkbox"]').element as HTMLInputElement).checked).toBe(false)
-    expect(wrapper.text()).not.toContain('elegida')
+    expect(wrapper.get('article').classes()).not.toContain('ring-2')
+  })
+
+  it('elegirla no agrega contenido: la tarjeta no crece (regresión del chip «elegida»)', async () => {
+    const off = await mount()
+    const on = await mount({ selected: true })
+    expect(on.find('.badge').exists()).toBe(false)
+    expect(on.text()).not.toContain('elegida')
+    expect(on.get('.card > .p-4').html()).toBe(off.get('.card > .p-4').html())
   })
 
   it('cambiar la casilla emite toggle', async () => {

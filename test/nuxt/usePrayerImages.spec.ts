@@ -25,6 +25,7 @@ const saved = (fileIds: string[]): PrayerGeneratedImage => ({
   requestCount: fileIds.length,
   author: { userId: 'u1', name: 'Ana', active: true },
   createdAt: '2026-11-12T10:00:00.000Z',
+  generationId: null,
 })
 const png: Reply = async (event) => {
   const body = await readBody<{ fileIds: string[] }>(event)

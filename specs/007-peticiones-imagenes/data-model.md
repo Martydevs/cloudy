@@ -5,6 +5,9 @@ imágenes de la feature 002. Lo único que cambia en la base son **dos índices*
 
 > **Enmienda (2026-11-12)**: el historial y las colecciones de imágenes generadas agregan **tres tablas** (migración aditiva
 > `0010`, sin enums nuevos ni borrados). Ver § Historial y colecciones (migración `0010`) al final.
+>
+> **Enmienda (2026-11-15, Página de generación)**: tabla `prayer_generations` y columna `prayer_images.generation_id`
+> (migración aditiva `0013`). Ver § Generaciones (migración `0013`) al final.
 
 ## Origen de los datos
 
@@ -184,3 +187,58 @@ Igual que `song_collections`: `id`, `name` (CHECK 1–80 tras `btrim`), `created
 `save_failed` en `shared/constants/prayers.ts`. `prayerHistoryQuery`, `prayerCollectionInput` (`name`, `imageId?`),
 `prayerCollectionRename` y `prayerCollectionItemInput` en `shared/validation/prayers.ts`; el nombre reutiliza
 `songCollectionName()` y `prayerCollectionSchema` (`app/utils/form-schemas.ts`) lo espeja.
+
+
+## Generaciones (migración `0013`, enmienda 2026-11-15 «Página de generación»)
+
+Aditiva: `CREATE TABLE`, una columna nullable, índices y claves foráneas; nada se borra. La aplica **la persona** con
+`bun run db:migrate`, `bun run db:migrate:test` y `bun run db:migrate:prod`.
+
+### `prayer_generations`
+
+| Columna | Tipo | Notas |
+|---------|------|-------|
+| `id` | `uuid` PK | `gen_random_uuid()` |
+| `created_by` | `text` → `profiles.user_id` | autora (misma forma que `prayer_images.created_by`) |
+| `created_at` | `timestamptz` | `now()` |
+| `groups` | `jsonb` (`string[][]`) | un grupo de 1–4 ids de `files` por imagen, en orden; CHECK arreglo de 1–10 grupos; nunca el texto |
+
+Índice `prayer_generations_created_idx (created_at DESC, id DESC)`.
+
+### `prayer_images.generation_id`
+
+`uuid` nullable → `prayer_generations.id` `ON DELETE SET NULL`; índice parcial `prayer_images_generation_idx` (`WHERE
+generation_id IS NOT NULL`). Las imágenes anteriores a la página no tienen generación.
+
+### Reglas
+
+- **Crear** (`createPrayerGeneration`, `server/utils/prayer-generations.ts`): valida con `prayerGenerationInput` (1–10 grupos
+  de 1–4 UUID, sin repetir peticiones en toda la generación); `loadEligibleRequests` sobre todos los ids → `409
+  request_unavailable` con `data.ids` si falta alguna; si no, inserta y responde `201 { id }`.
+- **Generar una imagen de la generación**: `POST /api/peticiones/imagenes { fileIds, generationId }`;
+  `assertPrayerGenerationGroup` exige que exista (`404 generation_not_found`) y que `fileIds` sea uno de sus grupos, en
+  cualquier orden (`409 generation_mismatch`). La imagen se guarda con `generation_id`.
+- **Leer** (`getPrayerGeneration`): la fila con su autora y las imágenes con ese `generation_id` (dos sentencias en
+  paralelo, sin N+1). A cada grupo le toca la imagen más reciente con las mismas peticiones (`sameRequests`,
+  `shared/prayers.ts`), o `null`.
+- **Retención**: la limpieza diaria (paso 8, después del 7) borra en lotes de 500 las generaciones de más de
+  `PRAYER_IMAGE_RETENTION_DAYS` (30) días sin ninguna imagen (`purgeEmptyPrayerGenerations`). Una generación con una imagen
+  en una colección se conserva.
+- El SQL que toca las imágenes de una generación (`listGenerationImages`, la limpieza) vive en `prayer-gallery.ts`; el de la
+  tabla, en `prayer-generations.ts`. Los endpoints no tocan drizzle.
+
+### DTOs y constantes
+
+- `PrayerGeneratedImage` gana `generationId: string | null`.
+- `PrayerGeneration`: `{ id, createdAt, author: PrayerPerson, groups: { index (1-based), fileIds, image: PrayerGeneratedImage | null }[] }`;
+  `PrayerGenerationCreated`: `{ id }`.
+- `PRAYER_GENERATION_MAX_IMAGES` = ⌈40 / 4⌉ = 10; códigos `generation_not_found` (404) y `generation_mismatch` (409), con sus
+  textos en `PRAYER_ERROR_MESSAGES`.
+
+### Estado del navegador
+
+- La cola (`usePrayerImages`) guarda `generationId` en cada elemento. La página (`usePrayerGeneration`) mezcla lo del servidor
+  con las imágenes terminadas en esta visita (`PRAYER_HISTORY_ADDED_KEY`) y la cola: cada grupo queda `ready`, `queued`,
+  `running`, `failed`, `canceled` o `unfinished`.
+- «Guardar en el drive» (`usePrayerDriveSave`): cola en `useState('prayer-drive-saves')`, de una en una, `AbortController`
+  por imagen en un mapa del módulo.

@@ -2,7 +2,8 @@
 // Una imagen del historial (feature 007, enmienda de historial): la imagen guardada en una caja con la proporción de la
 // plantilla (1376×768), cuántas peticiones lleva, cuándo y quién la generó, **Descargar** (un enlace: el servidor redirige a
 // la URL firmada con `Content-Disposition`), **Ver en grande** y el menú con **Guardar en colección** y **Eliminar** (solo su
-// autora o un administrador). No hay miniatura: el `src` llega cuando la tarjeta se acerca a la pantalla.
+// autora o un administrador). No hay miniatura: el `src` llega cuando la tarjeta se acerca a la pantalla. Si salió de una
+// generación, **Ver generación** abre su página (`/peticiones/generaciones/:id`).
 import type { PrayerGeneratedImage } from '#shared/types/api'
 import type { ActionMenuItem } from '~/components/ui/ActionMenu.vue'
 
@@ -54,9 +55,13 @@ function onSelect(key: string) {
     </div>
 
     <div class="flex flex-col gap-3 p-4">
-      <div class="flex min-w-0 flex-col">
-        <h3 :id="titleId" class="font-semibold">{{ count }}</h3>
-        <p class="break-words text-sm text-base-content/70">{{ h.generatedBy(ago, author) }}</p>
+      <!-- El menú va junto al título: en la fila de acciones no cabe en tarjetas angostas y quedaba solo en otra línea. -->
+      <div class="flex items-start gap-2">
+        <div class="flex min-w-0 flex-1 flex-col">
+          <h3 :id="titleId" class="font-semibold">{{ count }}</h3>
+          <p class="break-words text-sm text-base-content/70">{{ h.generatedBy(ago, author) }}</p>
+        </div>
+        <ActionMenu class="-me-2 -mt-1 shrink-0" :label="h.options" :items="menu" floating @select="onSelect" />
       </div>
       <div class="flex flex-wrap items-center gap-2">
         <a :href="image.downloadUrl" download class="btn btn-primary lg:btn-sm">
@@ -67,7 +72,10 @@ function onSelect(key: string) {
           <Icon name="lucide:maximize-2" class="size-5 lg:size-4" aria-hidden="true" />
           {{ m.preview }}
         </button>
-        <ActionMenu class="ml-auto" :label="h.options" :items="menu" floating @select="onSelect" />
+        <NuxtLink v-if="image.generationId" :to="`/peticiones/generaciones/${image.generationId}`" class="btn lg:btn-sm">
+          <Icon name="lucide:gallery-horizontal" class="size-5 lg:size-4" aria-hidden="true" />
+          {{ h.viewGeneration }}
+        </NuxtLink>
       </div>
     </div>
   </article>

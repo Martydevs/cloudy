@@ -68,7 +68,7 @@ const PRESETS: PrayerDatePreset[] = ['all', 'today', 'week', 'range']
         </label>
       </div>
 
-      <label class="flex items-center gap-2 lg:ms-auto">
+      <label class="flex items-center gap-2 xl:ms-auto">
         <span class="shrink-0 text-sm">{{ m.sort }}</span>
         <select v-model="dir" class="select min-h-11 min-w-0 flex-1 lg:w-56">
           <option value="desc">{{ m.sortDesc }}</option>

@@ -69,6 +69,7 @@ export function prayerCollectionItemsQuery(id: string) {
       fileIds: prayerImages.fileIds,
       createdBy: prayerImages.createdBy,
       createdAt: prayerImages.createdAt,
+      generationId: prayerImages.generationId,
       authorName: author.name,
       authorStatus: author.status,
       addedAt: prayerImageCollectionItems.addedAt,

@@ -2,7 +2,8 @@
 // dos a la vez. La cola vive en `useState('prayer-images')` y la mueve el propio estado (`pump`); los `AbortController` van en
 // un mapa del módulo. Enmienda de historial: el servidor guarda cada imagen y responde su JSON, así que una imagen lista sale
 // de la cola y entra arriba en el historial (`PRAYER_HISTORY_ADDED_KEY`); en la cola solo quedan las que están en curso,
-// fallaron o se cancelaron.
+// fallaron o se cancelaron. Página de generación (2026-11-15): cada imagen puede llevar el id de su generación; la cola
+// sobrevive al paso de /peticiones a /peticiones/generaciones/:id (el guardián de salida no la vacía en ese salto).
 import type { PrayerGeneratedImage, PrayerRequest } from '#shared/types/api'
 import type { PrayerErrorCode } from '#shared/constants/prayers'
 import { PRAYER_ERROR_MESSAGES, PRAYER_IMAGE_CONCURRENCY, PRAYER_IMAGE_TIMEOUT_MS } from '#shared/constants/prayers'
@@ -16,6 +17,8 @@ export interface PrayerImageItem {
   index: number
   /** Ids de las peticiones de esta imagen (1–4): el modelo lee el texto en sus fotos. */
   fileIds: string[]
+  /** Generación a la que pertenece (`/peticiones/generaciones/:id`); sin ella, `null` o ausente. */
+  generationId?: string | null
   status: PrayerImageStatus
   error?: string
   errorCode?: PrayerErrorCode | null
@@ -24,7 +27,7 @@ export interface PrayerImageItem {
 
 const ACTIVE: readonly PrayerImageStatus[] = ['queued', 'running']
 /** Requieren a un administrador o retirar peticiones: **Reintentar** no ayudaría. */
-const FINAL: readonly PrayerErrorCode[] = ['quota_exceeded', 'not_configured', 'request_unavailable', 'unreadable_image']
+const FINAL: readonly PrayerErrorCode[] = ['quota_exceeded', 'not_configured', 'request_unavailable', 'unreadable_image', 'generation_not_found', 'generation_mismatch']
 
 class Canceled extends Error {}
 class TimedOut extends Error {}
@@ -76,7 +79,7 @@ export function usePrayerImages() {
     try {
       const request = api<PrayerGeneratedImage>('/api/peticiones/imagenes', {
         method: 'POST',
-        body: { fileIds: item.fileIds },
+        body: item.generationId ? { fileIds: item.fileIds, generationId: item.generationId } : { fileIds: item.fileIds },
         signal: controller.signal,
       })
       // Cancelar o vencer el plazo libera la cola aunque el transporte no respete la señal.
@@ -133,14 +136,15 @@ export function usePrayerImages() {
   /** Numeración continua en la sesión: no se repite aunque las anteriores ya hayan salido de la cola. */
   const counter = useState('prayer-images-counter', () => 0)
 
-  /** Una imagen por grupo (1–4 peticiones). */
-  function enqueue(groups: readonly (readonly Pick<PrayerRequest, 'id'>[])[]): number {
+  /** Una imagen por grupo (1–4 peticiones), ligada a `generationId` si se da. */
+  function enqueue(groups: readonly (readonly Pick<PrayerRequest, 'id'>[])[], { generationId = null }: { generationId?: string | null } = {}): number {
     const fresh = groups.filter(group => group.length > 0).map((group): PrayerImageItem => {
       counter.value++
       return {
         key: `img-${counter.value}`,
         index: counter.value,
         fileIds: group.map(request => request.id),
+        generationId,
         status: 'queued',
       }
     })

@@ -26,6 +26,8 @@ const STATUS: Record<PrayerErrorCode, [number, string]> = {
   too_large: [502, 'Bad Gateway'],
   timeout: [504, 'Gateway Timeout'],
   save_failed: [502, 'Bad Gateway'],
+  generation_not_found: [404, 'Not Found'],
+  generation_mismatch: [409, 'Conflict'],
 }
 
 /** Error de Peticiones con su código (`data.code`) y el texto en español. */

@@ -1,6 +1,8 @@
 // Historial de imágenes de peticiones (feature 007, enmienda de historial): cada imagen generada se guarda en el bucket con
 // una fila en `prayer_images`. Aquí vive todo su SQL (guardar, listar, leer, borrar y la limpieza a los 30 días) y la
 // subida al bucket; los endpoints no tocan drizzle. Guardar no deja huérfanos: si la fila no entra, se borra el objeto.
+// También el SQL de las generaciones que toca estas imágenes (las de una generación y la limpieza de generaciones vacías):
+// `prayer-generations.ts` solo toca su propia tabla.
 import { randomUUID } from 'node:crypto'
 import { desc, eq, sql } from 'drizzle-orm'
 import { createError } from 'h3'
@@ -8,7 +10,7 @@ import { PRAYER_IMAGE_RETENTION_DAYS } from '#shared/constants/prayers'
 import type { Role } from '#shared/permissions'
 import { can } from '#shared/permissions'
 import type { Paginated, PrayerGeneratedImage } from '#shared/types/api'
-import { prayerImages, profiles } from '../db/schema'
+import { prayerGenerations, prayerImages, profiles } from '../db/schema'
 import { encodeCursor } from './pagination'
 import { prayerError } from './prayer-images'
 import { decodePrayerCursor } from './prayer-requests'
@@ -31,6 +33,7 @@ export const prayerImageColumns = {
   fileIds: prayerImages.fileIds,
   createdBy: prayerImages.createdBy,
   createdAt: prayerImages.createdAt,
+  generationId: prayerImages.generationId,
   authorName: profiles.name,
   authorStatus: profiles.status,
 }
@@ -42,6 +45,7 @@ export interface PrayerImageRow {
   fileIds: string[]
   createdBy: string
   createdAt: Date
+  generationId: string | null
   authorName: string | null
   authorStatus: string | null
 }
@@ -64,6 +68,7 @@ export function toPrayerGeneratedImage(row: PrayerImageRow): PrayerGeneratedImag
     requestCount: row.fileIds.length,
     author: toSongPerson(row.createdBy, row.authorName, row.authorStatus),
     createdAt: row.createdAt.toISOString(),
+    generationId: row.generationId,
   }
 }
 
@@ -78,13 +83,15 @@ export interface SavePrayerImageInput {
   mediaType: string
   data: Uint8Array
   author: { userId: string, name: string | null, status: string | null }
+  /** Generación a la que pertenece (ya comprobada por `assertPrayerGenerationGroup`). */
+  generationId?: string | null
 }
 
 /**
  * Sube la imagen al bucket (`peticiones/<id>.<ext>`) y guarda su fila. Un tipo desconocido es `invalid_output`; un fallo al
  * subir o al guardar es `save_failed` (502) y no deja el objeto suelto.
  */
-export async function savePrayerImage({ fileIds, mediaType, data, author }: SavePrayerImageInput): Promise<PrayerGeneratedImage> {
+export async function savePrayerImage({ fileIds, mediaType, data, author, generationId = null }: SavePrayerImageInput): Promise<PrayerGeneratedImage> {
   const extension = PRAYER_IMAGE_EXTENSIONS[mediaType]
   if (!extension) throw prayerError('invalid_output')
   const id = randomUUID()
@@ -100,14 +107,14 @@ export async function savePrayerImage({ fileIds, mediaType, data, author }: Save
     throw prayerError('save_failed')
   }
   try {
-    await useDb().insert(prayerImages).values({ id, storageKey, mediaType, sizeBytes: data.byteLength, fileIds, createdBy: author.userId, createdAt })
+    await useDb().insert(prayerImages).values({ id, storageKey, mediaType, sizeBytes: data.byteLength, fileIds, createdBy: author.userId, createdAt, generationId })
   }
   catch {
     console.error('[prayer-image] save_failed (insert)')
     await deleteMany([storageKey]).catch(() => console.error('[prayer-image] orphan object not deleted'))
     throw prayerError('save_failed')
   }
-  return toPrayerGeneratedImage({ id, storageKey, mediaType, fileIds, createdBy: author.userId, createdAt, authorName: author.name, authorStatus: author.status })
+  return toPrayerGeneratedImage({ id, storageKey, mediaType, fileIds, createdBy: author.userId, createdAt, generationId, authorName: author.name, authorStatus: author.status })
 }
 
 /** Página del historial: keyset sobre `(created_at, id)` descendente, la más reciente primero. */
@@ -173,6 +180,35 @@ export async function purgeExpiredPrayerImages(): Promise<number> {
     if (expired.length > 0) await deleteMany(expired.map(row => row.storageKey))
     total += expired.length
     if (expired.length < PURGE_BATCH) break
+  }
+  return total
+}
+
+/** Imágenes guardadas de una generación, la más reciente primero (una sola sentencia, índice `generation_id`). */
+export async function listGenerationImages(generationId: string): Promise<PrayerGeneratedImage[]> {
+  const rows = await imagesQuery()
+    .where(eq(prayerImages.generationId, generationId))
+    .orderBy(desc(prayerImages.createdAt), desc(prayerImages.id))
+  return rows.map(toPrayerGeneratedImage)
+}
+
+/**
+ * Limpieza diaria: generaciones de más de 30 días que ya no tienen imágenes (vencieron o se eliminaron), en lotes de 500.
+ * Las que conservan alguna imagen (p. ej. en una colección) se quedan. Devuelve cuántas se borraron.
+ */
+export async function purgeEmptyPrayerGenerations(): Promise<number> {
+  let total = 0
+  for (;;) {
+    const empty = await useDb().delete(prayerGenerations)
+      .where(sql`${prayerGenerations.id} IN (
+        SELECT g.id FROM prayer_generations g
+        WHERE g.created_at < now() - make_interval(days => ${PRAYER_IMAGE_RETENTION_DAYS}::int)
+          AND NOT EXISTS (SELECT 1 FROM prayer_images p WHERE p.generation_id = g.id)
+        LIMIT ${PURGE_BATCH}
+      )`)
+      .returning({ id: prayerGenerations.id })
+    total += empty.length
+    if (empty.length < PURGE_BATCH) break
   }
   return total
 }

@@ -3,8 +3,9 @@
 // aprobadas como tarjetas seleccionables en una sola fila desplazable en horizontal (con desplazamiento infinito dentro de la
 // fila), las colecciones de imágenes generadas (con el SSR) y el historial de imágenes generadas (diferido e hidratado cuando
 // el navegador está libre), con la cola en curso arriba. Delgada: la lista, la selección, la cola, el historial y las
-// colecciones viven en sus composables.
-import type { PrayerGeneratedImage } from '#shared/types/api'
+// colecciones viven en sus composables. «Generar imágenes» crea una generación y lleva a su página
+// (`/peticiones/generaciones/:id`), que se queda con la cola en curso.
+import type { PrayerGeneratedImage, PrayerGenerationCreated } from '#shared/types/api'
 
 definePageMeta({ layout: 'dashboard', access: 'private', roles: ['editor', 'admin'] })
 useHead({ title: 'Peticiones · Cloudy' })
@@ -21,7 +22,7 @@ const requests = usePrayerRequests(filters.query)
 const { items, firstPage, error, pending, loadingMore, moreError, done } = requests
 const selection = usePrayerSelection()
 const images = usePrayerImages()
-const historySection = useTemplateRef<HTMLElement>('historySection')
+const api = useApi()
 const approvedHeading = useId()
 
 // ---- Colecciones de imágenes generadas
@@ -34,38 +35,55 @@ function saveToCollection(image: PrayerGeneratedImage) {
   collectionDialog.value = { imageId: image.id }
 }
 
-usePrayerLeaveGuard()
-// La cola y la selección viven en la página: al salir se liberan (el guardián ya confirmó si hacía falta). Lo generado ya
-// está guardado en el historial.
-onBeforeUnmount(() => {
-  images.reset()
-  selection.clear()
-})
+// La cola y la selección viven en la página: al salir se liberan (el guardián ya confirmó si hacía falta), salvo al ir a la
+// página de una generación, que se queda con la cola. Lo generado ya está guardado en el historial.
+usePrayerLeaveGuard({ keep: isPrayerGenerationPath })
 
-// Un `409` retira de la selección las peticiones que ya no están disponibles.
-images.onUnavailable((ids) => {
+/** Quita de la selección las peticiones que ya no están disponibles (`409 request_unavailable`). */
+function dropUnavailable(ids: string[]) {
   selection.remove(ids)
   toast.info(m.removedUnavailable(ids.length))
-})
+}
+images.onUnavailable(dropUnavailable)
+
+const creating = ref(false)
 
 /**
- * Encola una imagen por grupo de 4 y baja al historial, donde está la cola. El modelo lee el texto en las fotos, así que no
- * hay paso intermedio. La selección se vacía: un segundo clic no gasta crédito dos veces.
+ * Crea la generación (el servidor comprueba que las peticiones sigan disponibles), encola una imagen por grupo de 4 ligada
+ * a ella y lleva a su página. El modelo lee el texto en las fotos, así que no hay paso intermedio. La selección se vacía:
+ * un segundo clic no gasta crédito dos veces.
  */
 async function generate() {
-  const queued = images.enqueue(selection.groups.value)
-  if (queued === 0) return
-  toast.info(m.queuedImages(queued))
-  selection.clear()
-  await nextTick()
-  const smooth = import.meta.client && !window.matchMedia('(prefers-reduced-motion: reduce)').matches
-  historySection.value?.scrollIntoView({ behavior: smooth ? 'smooth' : 'auto', block: 'start' })
+  const groups = selection.groups.value
+  if (creating.value || groups.length === 0) return
+  creating.value = true
+  try {
+    const { id } = await api<PrayerGenerationCreated>('/api/peticiones/generaciones', {
+      method: 'POST',
+      body: { groups: groups.map(group => group.map(request => request.id)) },
+    })
+    const queued = images.enqueue(groups, { generationId: id })
+    toast.info(m.queuedImages(queued))
+    selection.clear()
+    await navigateTo(`/peticiones/generaciones/${id}`)
+  }
+  catch (error) {
+    const data = (error as { data?: { data?: { code?: unknown, ids?: unknown } } } | null)?.data?.data
+    if (data?.code === 'request_unavailable' && Array.isArray(data.ids)) {
+      dropUnavailable(data.ids.filter((id): id is string => typeof id === 'string'))
+      return
+    }
+    toast.error(serverMessage(error, m.generation.createFailed))
+  }
+  finally {
+    creating.value = false
+  }
 }
 </script>
 
 <template>
   <div class="flex flex-col gap-6" :class="{ 'pb-56 sm:pb-32': selection.count.value > 0 }">
-    <header class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+    <header class="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
       <div class="flex flex-col gap-1">
         <h1 class="text-2xl font-semibold">{{ m.title }}</h1>
         <p class="max-w-2xl text-base-content/70">{{ m.description }}</p>
@@ -145,7 +163,7 @@ async function generate() {
 
     <!-- Bajo el pliegue: su JS llega y se hidrata cuando el navegador está libre (no al verse: la cola en curso debe estar
          viva al pulsar **Generar**); la primera página se pide en el navegador. -->
-    <div id="historial" ref="historySection" class="scroll-mt-20">
+    <div id="historial" class="scroll-mt-20">
       <LazyPrayerHistory hydrate-on-idle @collection="saveToCollection" />
     </div>
 
@@ -154,6 +172,7 @@ async function generate() {
       :count="selection.count.value"
       :images="selection.groups.value.length"
       :limit="selection.limitReached.value"
+      :busy="creating"
       @generate="generate"
       @clear="selection.clear()"
     />

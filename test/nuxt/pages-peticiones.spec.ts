@@ -7,7 +7,7 @@ import { nextTick } from 'vue'
 import { getQuery, readBody, setResponseStatus } from 'h3'
 import type { H3Event } from 'h3'
 import type { Me, Paginated, PrayerGeneratedImage, PrayerRequest } from '#shared/types/api'
-import PeticionesPage from '~/pages/peticiones.vue'
+import PeticionesPage from '~/pages/peticiones/index.vue'
 import { buttonsWithText, calls, failWith, flush, mockApi, resetCalls } from './helpers/api'
 import { generated, imageCollection, prayer } from './prayer-fixtures'
 

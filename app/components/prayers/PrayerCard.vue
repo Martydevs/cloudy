@@ -76,10 +76,6 @@ const photoFailed = ref(false)
       </div>
       <p v-if="request.note" class="break-words text-sm italic text-base-content/80">{{ request.note }}</p>
 
-      <div v-if="selected" class="flex flex-wrap gap-1">
-        <span class="badge badge-primary">{{ m.chosen }}</span>
-      </div>
-
       <p v-if="disabled && disabledReason" :id="reasonId" class="text-sm text-base-content/70">{{ disabledReason }}</p>
 
       <div class="relative z-10 mt-1 flex flex-wrap gap-2">

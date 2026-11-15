@@ -327,6 +327,15 @@ Never print or commit their values.
   downloads the photos. Any other call gets a 400. Scenarios are set per test with `setStubMode({ scenario, match })` (`match`: only calls with a photo URL containing it, e.g. a file id):
   `sin-imagen`, `sin-credito` (402), `clave-rechazada` (401 «User not found.»), `lento`, `falla-una-vez` (fails the first **two** affected calls, because the AI SDK retries once by itself). `seedPrayerRequest` takes `previewKey`
   to fake a legacy HEIC copy.
+  **Generation page (2026-11-15)**: «Generar imágenes» first calls `POST /api/peticiones/generaciones { groups }` (1–10 groups of 1–4 ids; `409 request_unavailable`
+  drops ids from the selection), then enqueues the groups with the returned `generationId` and navigates to `/peticiones/generaciones/<id>` (the page moved to
+  `app/pages/peticiones/index.vue`). `usePrayerLeaveGuard({ keep })` lets the queue pass between /peticiones and a generation without reset or warning; the
+  destination page takes over the guard. `POST /api/peticiones/imagenes` takes an optional `generationId` (`fileIds` must be one of its groups:
+  `404 generation_not_found`, `409 generation_mismatch`) and stores `prayer_images.generation_id` (migration `0013`, table `prayer_generations`; cron step 8 deletes
+  empty generations older than 30 days). `GET /api/peticiones/generaciones/:id` matches each group to its newest image (`sameRequests`); groups with no image and
+  not in the queue show «Sin terminar» + «Generar las faltantes». The page uses the generic `ui/Slideshow.vue` (+ `useSlideshow`: wrap-around, ← →, swipe, `?i=`)
+  and saves to the drive through the browser (`usePrayerDriveSave`: `fetch(previewUrl)` → `/api/uploads` → PUT → `complete`, one at a time). SQL that touches
+  `prayer_images` stays in `prayer-gallery.ts` (`architecture.spec.ts`); `prayer-generations.ts` only touches its own table.
   **Accepted LCP exception** (plan.md, Complexity Tracking): guest photos have no thumbnail, so the first card's photo is the LCP and can exceed 2.5 s on 4G. Only the first card
   renders its `src` in the SSR (`priority`, `fetchpriority="high"`) and the page adds a `preconnect` to the storage origin; `performance.spec.ts` asserts LCP for the card text
   (photos blocked), CLS and the 250 KB JS budget, and only reports the LCP with photos. Thumbnails were postponed by the team.

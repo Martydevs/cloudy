@@ -8,6 +8,36 @@
 
 **Input**: User description: "New Nuxt page as feature named Peticiones. On the peticiones i require to display the uploaded requests from @app/pages/upload.vue and link shared upload as multiselect radio buttons cards arranged in a grid of cols and rows, no table, then the selected cards transcription goes to api where consume the openrouter client in order to generate an image or images where each image maximum margin of upload content description can include 4 parragaphs, then the 5th will be placed in a second image displaying the pray requests of the day. the llm is a custom image type llm with system prompt and, part of the input goes a image as template where simply the llm will fill the empty indicated body space with the selected card content. Add filters by date, sorter asc and desc, infinite scrolling, responsive grid and search input. Include in the card the submitted image and make the ai transcript content editable so, if includes a [unlegible] like text, the user can update it before generate the image."
 
+> **Enmienda (2026-11-15) — Página de generación.** Una **generación** es todo lo que produce un clic en «Generar
+> imágenes», y ahora tiene su propia página, `/peticiones/generaciones/<id>`, con sus imágenes como pase de diapositivas:
+>
+> - **Flujo**: «Generar imágenes» primero llama a `POST /api/peticiones/generaciones { groups: string[][] }` (1–10 grupos de
+>   1–4 UUID, sin repetir peticiones; editor). El servidor comprueba que cada petición siga disponible (`409
+>   request_unavailable` con `data.ids`, que el navegador quita de la selección), guarda una fila en `prayer_generations` y
+>   responde `201 { id }`. El navegador encola las imágenes ligadas a ese id, vacía la selección y navega a la página. La
+>   cola (`usePrayerImages`) sigue igual (2 a la vez) y manda `{ fileIds, generationId }`; el servidor exige que `fileIds`
+>   sea uno de los grupos (`404 generation_not_found`, `409 generation_mismatch`, ninguno reintentable) y guarda
+>   `generation_id` en la imagen.
+> - **La cola no se pierde al pasar**: ir de /peticiones a una generación (y volver) no vacía la cola ni pide confirmación;
+>   la página de destino toma el guardián de salida mientras haya imágenes en cola o generándose.
+> - **Página**: encabezado («← Volver a Peticiones», «Generación del 15 nov, 10:32», autora y «3 de 5 listas»), un escenario
+>   grande con la proporción de la plantilla (‹ › con vuelta, ← → del teclado, deslizar en táctil), un pie anunciado
+>   («Imagen 3 de 8 · 4 peticiones · hace 2 minutos por Ana») y una fila de miniaturas (la actual con anillo primario,
+>   `aria-current`). Cada imagen aparece cuando termina; las que faltan muestran su estado (en cola, generándose, fallida
+>   con «Reintentar» si sirve, cancelada). Al recargar, los grupos sin imagen y fuera de la cola salen **«Sin terminar»**,
+>   con **«Generar las faltantes»**. La posición va en la query (`?i=3`).
+> - **Acciones**: «Descargar» (la actual), «Descargar varias» (elegir con casillas, «Todas»/«Limpiar», descarga de una en
+>   una, sin zip), «Guardar en el drive» (la actual o las elegidas: el navegador lee la imagen guardada y la sube con el
+>   flujo normal de subidas a la raíz de Archivos, de una en una, cancelable, con aviso «Ver en Archivos»; nombre
+>   `peticiones-AAAA-MM-DD-<6 del id>.<ext>`), «Guardar en colección» y «Volver».
+> - **Historial**: cada imagen que salió de una generación lleva **«Ver generación»**. Las imágenes anteriores no tienen
+>   generación (`generation_id` nulo).
+> - **Datos**: migración aditiva `0013` (tabla `prayer_generations`, columna `prayer_images.generation_id` con `ON DELETE SET
+>   NULL`). La limpieza diaria (paso 8) borra las generaciones de más de 30 días que se quedaron sin imágenes. Ver
+>   `data-model.md` § Generaciones.
+> - El pase de diapositivas es un componente genérico (`app/components/ui/Slideshow.vue` + `useSlideshow`), reutilizable en
+>   colecciones u otras páginas.
+
 > **Enmienda (2026-11-15) — el modelo lee las fotos; el equipo ya no escribe el texto.** Reemplaza el paso «Escribir» de
 > la enmienda del 2026-11-13:
 >

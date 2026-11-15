@@ -29,3 +29,10 @@ const dateFormat = new Intl.DateTimeFormat('es', { dateStyle: 'medium' })
 export function formatDate(iso: string): string {
   return dateFormat.format(new Date(iso))
 }
+
+const dayTimeFormat = new Intl.DateTimeFormat('es', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
+
+/** Día y hora sin año («15 nov, 10:32») en la zona horaria de quien mira: solo después de montar (ver `LocalTime`). */
+export function formatDayTime(iso: string): string {
+  return dayTimeFormat.format(new Date(iso))
+}

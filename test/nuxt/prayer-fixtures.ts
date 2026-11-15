@@ -27,6 +27,7 @@ export const generated = (n: number, changes: Partial<PrayerGeneratedImage> = {}
   requestCount: 2,
   author: { userId: 'u1', name: 'Ana', active: true },
   createdAt: new Date(Date.UTC(2026, 10, 12, 12) - n * 60_000).toISOString(),
+  generationId: null,
   ...changes,
 })
 

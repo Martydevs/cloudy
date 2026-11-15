@@ -1,7 +1,7 @@
 // Validadores de la página Peticiones (feature 007, data-model.md § Validación): la query del listado, el cuerpo de la
 // generación, el historial de imágenes y sus colecciones. El servidor es la autoridad; el cliente arma la misma query con
 // `usePrayerFilters` y valida el nombre de una colección con `prayerCollectionSchema` (app/utils/form-schemas.ts).
-import { PRAYER_HISTORY_MAX_LIMIT, PRAYER_HISTORY_PAGE, PRAYER_PER_IMAGE } from '../constants/prayers'
+import { PRAYER_GENERATION_MAX_IMAGES, PRAYER_HISTORY_MAX_LIMIT, PRAYER_HISTORY_PAGE, PRAYER_PER_IMAGE } from '../constants/prayers'
 import type { Field } from './core'
 import { array, int, object, oneOf, optional, str, uuid } from './core'
 import { songCollectionName } from './songs'
@@ -53,10 +53,25 @@ function fileIdList(): Field<string[]> {
 }
 
 /**
- * Cuerpo de `POST /api/peticiones/imagenes`: solo los ids. El modelo lee el texto en las fotos de los invitados; el servidor
- * comprueba que cada id siga siendo una imagen aprobada y visible y fija el orden.
+ * Cuerpo de `POST /api/peticiones/imagenes`: los ids y, si la imagen es parte de una generación, su id (los ids deben ser
+ * uno de sus grupos). El modelo lee el texto en las fotos de los invitados; el servidor comprueba que cada id siga siendo
+ * una imagen aprobada y visible y fija el orden.
  */
-export const prayerImageInput = object({ fileIds: fileIdList() })
+export const prayerImageInput = object({ fileIds: fileIdList(), generationId: optional(uuid()) })
+
+/** 1–10 grupos (uno por imagen) de 1–4 ids; una petición no se repite en toda la generación. */
+function generationGroups(): Field<string[][]> {
+  const list = array(fileIdList(), { min: 1, max: PRAYER_GENERATION_MAX_IMAGES, label: 'imágenes' })
+  return (input) => {
+    const res = list(input)
+    if (!res.ok) return res
+    const ids = res.value.flat()
+    return new Set(ids).size === ids.length ? res : { ok: false, error: 'No repitas peticiones en la misma generación' }
+  }
+}
+
+/** Cuerpo de `POST /api/peticiones/generaciones`: los grupos de la selección, en orden. */
+export const prayerGenerationInput = object({ groups: generationGroups() })
 
 /** Query de `GET /api/peticiones/imagenes`: `limit` 1–48 (12 por defecto) y `cursor` keyset opcional. */
 export const prayerHistoryQuery = object({

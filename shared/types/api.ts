@@ -228,7 +228,30 @@ export interface PrayerGeneratedImage {
   author: PrayerPerson
   /** ISO */
   createdAt: string
+  /** Generación de la que salió (`/peticiones/generaciones/:id`); `null` en las anteriores a esa página. */
+  generationId: string | null
 }
+
+/** Un grupo de una generación: las peticiones de una imagen y la imagen, si ya se guardó. */
+export interface PrayerGenerationGroup {
+  /** 1-based: la posición de la imagen en la generación. */
+  index: number
+  fileIds: string[]
+  /** La más reciente guardada con esas peticiones; `null` si todavía no se generó o falló. */
+  image: PrayerGeneratedImage | null
+}
+
+/** Todo lo que produjo un clic en «Generar imágenes» (`GET /api/peticiones/generaciones/:id`). */
+export interface PrayerGeneration {
+  id: string
+  /** ISO */
+  createdAt: string
+  author: PrayerPerson
+  groups: PrayerGenerationGroup[]
+}
+
+/** Respuesta `201` de `POST /api/peticiones/generaciones`. */
+export interface PrayerGenerationCreated { id: string }
 
 /** Colección del equipo con imágenes generadas. */
 export interface PrayerImageCollection {

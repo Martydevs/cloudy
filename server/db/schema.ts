@@ -338,6 +338,22 @@ export const songCollectionItems = pgTable('song_collection_items', {
 // ---------------------------------------------------------------- peticiones (feature 007, enmienda de historial)
 
 /**
+ * Generación (enmienda «Página de generación», 2026-11-15): todo lo que produce un clic en «Generar imágenes». Guarda los
+ * grupos de peticiones en orden (uno por imagen, 1–4 ids cada uno), nunca su texto. Sin imágenes y con más de 30 días, la
+ * limpieza diaria la borra.
+ */
+export const prayerGenerations = pgTable('prayer_generations', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  createdBy: text('created_by').notNull().references(() => profiles.userId),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  /** `string[][]`: un grupo de ids de `files` por imagen, en el orden de la generación. */
+  groups: jsonb('groups').$type<string[][]>().notNull(),
+}, t => [
+  index('prayer_generations_created_idx').on(t.createdAt.desc(), t.id.desc()),
+  check('prayer_generations_groups_count', sql`jsonb_typeof(${t.groups}) = 'array' AND jsonb_array_length(${t.groups}) BETWEEN 1 AND 10`),
+])
+
+/**
  * Imagen de «peticiones del día» ya generada y guardada en el bucket. Guarda los ids de sus peticiones (para «Generar de
  * nuevo»), nunca su texto. Sin colección, la limpieza diaria la borra a los 30 días.
  */
@@ -350,9 +366,12 @@ export const prayerImages = pgTable('prayer_images', {
   fileIds: uuid('file_ids').array().notNull(),
   createdBy: text('created_by').notNull().references(() => profiles.userId),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  /** Generación de la que salió; `null` en las imágenes anteriores a la página de generación o si la generación se borró. */
+  generationId: uuid('generation_id').references(() => prayerGenerations.id, { onDelete: 'set null' }),
 }, t => [
   uniqueIndex('prayer_images_storage_key_key').on(t.storageKey),
   index('prayer_images_history_idx').on(t.createdAt.desc(), t.id.desc()),
+  index('prayer_images_generation_idx').on(t.generationId).where(sql`${t.generationId} IS NOT NULL`),
   check('prayer_images_file_ids_count', sql`cardinality(${t.fileIds}) BETWEEN 1 AND 4`),
   check('prayer_images_size', sql`${t.sizeBytes} BETWEEN 1 AND 4000000`),
 ])
