@@ -139,6 +139,10 @@ describe('generatePrayerImage', () => {
     ['402', apiError(402), 'quota_exceeded'],
     ['429', apiError(429), 'rate_limited'],
     ['500', apiError(500), 'provider'],
+    // Clave revocada, sin permisos o preset inexistente: «Reintentar» no sirve (regresión: llegaba como `provider` → 502).
+    ['401', apiError(401), 'rejected'],
+    ['403', apiError(403), 'rejected'],
+    ['404', apiError(404), 'rejected'],
     ['timeout del intento', new DOMException('timeout', 'TimeoutError'), 'timeout'],
   ])('%s → %s, sin lanzar', async (_, thrown, code) => {
     const model = fails(thrown)
@@ -190,6 +194,17 @@ describe('generatePrayerImage', () => {
     expect(images.slice(1)).toEqual([URL_A, URL_B])
     expect(fetch).toHaveBeenCalledTimes(1)
     expect(parts.filter(part => part.type === 'text').map(part => part.text)).toEqual([buildPrayerPrompt(2), photoLabel(1), photoLabel(2)])
+  })
+
+  // Regresión: con una clave borrada en OpenRouter, la API responde 401 «User not found.» y la página mostraba un 502
+  // reintentable («El servicio de imágenes no respondió bien»).
+  it('OpenRouter responde 401 «User not found.» (clave borrada) → rejected', async () => {
+    vi.stubGlobal('useRuntimeConfig', () => ({ openrouterApikey: 'sk-or-v1-borrada', openrouterBaseUrl: 'http://openrouter.test/v1' }))
+    const fetch = vi.fn(async () => Response.json({ error: { message: 'User not found.', code: 401 } }, { status: 401 }))
+    vi.stubGlobal('fetch', fetch)
+    expect(await generatePrayerImage({ photos, template })).toEqual({ status: 'failed', error: 'rejected' })
+    // 401 no se reintenta: una sola llamada.
+    expect(fetch).toHaveBeenCalledTimes(1)
   })
 
   it('nunca registra las URLs de las fotos', async () => {

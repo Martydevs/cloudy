@@ -316,14 +316,16 @@ Never print or commit their values.
   **`422 unreadable_image`** (`data.ids`, not retryable; no server-side HEIC decoding). Each photo gets a `presignGet` URL of 600 s and goes to the model as a URL after the template, labelled
   «Foto de la petición N»; **no photo bytes pass through the function**: `resolvePrayerImageModel` wraps the model with `wrapLanguageModel` + `overrideSupportedUrls` (any `https://`),
   because `@openrouter/ai-sdk-provider` only forwards URLs ending in an image extension and guest keys have none (without it the AI SDK would download each photo in the function).
-  FR-022: the provider gets only the template and the photos, never names, notes, IPs or ids. The preset's **system prompt lives in OpenRouter** and must say the photos after the template
+  A key or preset that OpenRouter rejects (401/403/404, e.g. 401 «User not found.» for a deleted key) comes back from `#server/ai` as `rejected` and
+  reaches the browser as **503 `not_configured`** (no «Reintentar»), logged as `[prayer-image] not_configured (OpenRouter rejected the key or preset)`; it
+  used to show as a retryable 502 `provider`. FR-022: the provider gets only the template and the photos, never names, notes, IPs or ids. The preset's **system prompt lives in OpenRouter** and must say the photos after the template
   carry each request's text (no `<peticion>` tags any more). Gone: `PRAYER_TEXT_MAX_LENGTH`, `PRAYER_LONG_TEXT_CHARS`, `isLongText`, `PrayerImageRequestInput`. `prayer_images` keeps only
   `file_ids` (no migration); the history has **no** «Generar de nuevo»; search covers sender name and note only.
   Filters live in `usePrayerFilters` (search debounced 300 ms, cleared instantly; approval-date presets in
   the browser's local day sent as ISO instants, `to` exclusive). E2E run against the OpenRouter stub (`test/e2e/setup/openrouter-stub.ts`), which now serves **only** generation: calls are
   recognised by the preset or `modalities`, answered with `message.images` (a PNG fixture) and recorded in `prayerCalls()` (model, modalities, `template`, the `photos` URLs after it, the prompt); it never
   downloads the photos. Any other call gets a 400. Scenarios are set per test with `setStubMode({ scenario, match })` (`match`: only calls with a photo URL containing it, e.g. a file id):
-  `sin-imagen`, `sin-credito` (402), `lento`, `falla-una-vez` (fails the first **two** affected calls, because the AI SDK retries once by itself). `seedPrayerRequest` takes `previewKey`
+  `sin-imagen`, `sin-credito` (402), `clave-rechazada` (401 «User not found.»), `lento`, `falla-una-vez` (fails the first **two** affected calls, because the AI SDK retries once by itself). `seedPrayerRequest` takes `previewKey`
   to fake a legacy HEIC copy.
   **Accepted LCP exception** (plan.md, Complexity Tracking): guest photos have no thumbnail, so the first card's photo is the LCP and can exceed 2.5 s on 4G. Only the first card
   renders its `src` in the SSR (`priority`, `fetchpriority="high"`) and the page adds a `preconnect` to the storage origin; `performance.spec.ts` asserts LCP for the card text

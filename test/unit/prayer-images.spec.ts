@@ -145,11 +145,23 @@ describe('createPrayerImage', () => {
     ['too_large', 502, 'too_large'],
     ['timeout', 504, 'timeout'],
     ['invalid_input', 502, 'provider'],
+    ['rejected', 503, 'not_configured'],
   ] as const)('fallo %s → %i %s', async (failure, status, code) => {
     install([row(UUID)])
     ai.generatePrayerImage.mockResolvedValue({ status: 'failed', error: failure })
     const err = await expectStatus(createPrayerImage([UUID]), status)
     expect(err.data).toEqual({ code })
+  })
+
+  // Regresión: una clave borrada en OpenRouter llegaba al navegador como 502 `provider`, con «Reintentar».
+  it('clave o preset rechazados por OpenRouter → 503 not_configured, sin reintento, registrado como error con el motivo', async () => {
+    install([row(UUID)])
+    ai.generatePrayerImage.mockResolvedValue({ status: 'failed', error: 'rejected' })
+    const err = await expectStatus(createPrayerImage([UUID]), 503)
+    expect(err.data).toEqual({ code: 'not_configured' })
+    expect(err.message).toBe('La generación de imágenes no está configurada. Avisa a un administrador.')
+    expect(error).toHaveBeenCalledWith('[prayer-image] not_configured (OpenRouter rejected the key or preset)')
+    expect(warn).not.toHaveBeenCalled()
   })
 
   it('los registros solo llevan [prayer-image] <código>', async () => {

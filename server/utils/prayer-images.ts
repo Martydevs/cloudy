@@ -34,9 +34,14 @@ export function prayerError(code: PrayerErrorCode, data: Record<string, unknown>
   return createError({ statusCode, statusMessage, message: PRAYER_ERROR_MESSAGES[code], data: { code, ...data } })
 }
 
-/** `invalid_input` es un fallo interno (el endpoint ya validó): al cliente le llega como `provider`. */
+/**
+ * `invalid_input` es un fallo interno (el endpoint ya validó): al cliente le llega como `provider`. `rejected` (OpenRouter
+ * rechazó la clave o el preset) es, para el equipo, lo mismo que no tener clave: `not_configured`, sin «Reintentar».
+ */
 function httpCode(error: PrayerImageErrorCode): PrayerErrorCode {
-  return error === 'invalid_input' ? 'provider' : error
+  if (error === 'invalid_input') return 'provider'
+  if (error === 'rejected') return 'not_configured'
+  return error
 }
 
 /** La plantilla empaquetada como server asset (`nitro.serverAssets`); `null` si falta o está vacía. */
@@ -102,9 +107,11 @@ export async function createPrayerImage(fileIds: string[], { abortSignal }: { ab
   const result = await generatePrayerImage({ photos, template, abortSignal })
   if (result.status === 'failed') {
     const code = httpCode(result.error)
-    // Saldo agotado pide acción de un administrador: se registra como error.
-    const log = code === 'quota_exceeded' ? console.error : console.warn
-    log(`[prayer-image] ${code}`)
+    // Saldo agotado o clave/preset rechazados piden acción de un administrador: se registran como error.
+    const log = code === 'quota_exceeded' || code === 'not_configured' ? console.error : console.warn
+    log(result.error === 'rejected'
+      ? '[prayer-image] not_configured (OpenRouter rejected the key or preset)'
+      : `[prayer-image] ${code}`)
     throw prayerError(code)
   }
   return { mediaType: result.mediaType, data: result.data, count: photos.length }

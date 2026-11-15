@@ -15,11 +15,12 @@ export const PRAYER_PRESET = '@preset/pray-requests-image-generation'
  * las llamadas o solo para las que traen una foto cuya URL contiene `match` (p. ej. el id del archivo, que va en su clave):
  * - `sin-imagen`: responde sin `images` (→ `invalid_output`).
  * - `sin-credito`: 402 (→ `quota_exceeded`).
+ * - `clave-rechazada`: 401 «User not found.», como responde OpenRouter con una clave borrada (→ `not_configured`).
  * - `lento`: espera `prayerDelayMs` antes de responder.
  * - `falla-una-vez`: 500 en las **dos** primeras llamadas afectadas (el AI SDK reintenta una vez solo, `maxRetries: 1`),
  *   así la página ve el fallo; el **Reintentar** de la persona ya responde bien.
  */
-export const PRAYER_SCENARIOS = ['sin-imagen', 'sin-credito', 'lento', 'falla-una-vez'] as const
+export const PRAYER_SCENARIOS = ['sin-imagen', 'sin-credito', 'clave-rechazada', 'lento', 'falla-una-vez'] as const
 export type PrayerScenario = typeof PRAYER_SCENARIOS[number]
 /** Llamadas que fallan con `falla-una-vez` antes de responder bien. */
 const FAIL_ONCE_CALLS = 2
@@ -153,6 +154,10 @@ export async function startAiStub(): Promise<{ url: string, close: () => Promise
         if (has('sin-credito')) {
           record(402)
           return json(402, { error: { code: 402, message: 'Insufficient credits' } })
+        }
+        if (has('clave-rechazada')) {
+          record(401)
+          return json(401, { error: { code: 401, message: 'User not found.' } })
         }
         if (has('falla-una-vez') && failed < FAIL_ONCE_CALLS) {
           failed++

@@ -343,6 +343,26 @@ describe('US2 · generar las imágenes de peticiones del día', () => {
     await page.close()
   })
 
+  // Regresión: con una clave borrada, OpenRouter responde 401 «User not found.» y la página mostraba un 502 reintentable.
+  it('clave rechazada por OpenRouter: «no está configurada», sin Reintentar, y una sola llamada', async () => {
+    const [request] = await seedRequests('Clave rechazada', 1)
+    await setStubMode({ scenario: 'clave-rechazada' })
+    const page = await editorPage()
+    const statuses: number[] = []
+    page.on('response', (response) => {
+      if (response.request().method() === 'POST' && new URL(response.url()).pathname === '/api/peticiones/imagenes') statuses.push(response.status())
+    })
+    await openPage(page)
+    await generate(page, [request!.name])
+    await expect.poll(() => result(page, 1).getByRole('alert').isVisible(), { timeout: 30_000 }).toBe(true)
+    expect(await result(page, 1).getByRole('alert').innerText()).toBe(PRAYER_ERROR_MESSAGES.not_configured)
+    expect(await result(page, 1).getByRole('button', { name: 'Reintentar' }).count()).toBe(0)
+    expect(statuses).toEqual([503])
+    // Un 401 no se reintenta.
+    expect((await prayerCalls()).map(call => call.status)).toEqual([401])
+    await page.close()
+  })
+
   it('el servicio no devuelve imagen: el motivo con Reintentar', async () => {
     const [request] = await seedRequests('Sin imagen', 1)
     await setStubMode({ scenario: 'sin-imagen' })

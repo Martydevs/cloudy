@@ -22,6 +22,7 @@ export const prayerImageInputSchema = z.object({
 })
 
 /**
- * Por qué falló una imagen. `invalid_input` y `too_large` son propios de esta función.
+ * Por qué falló una imagen. `invalid_input` y `too_large` son propios de esta función. `rejected`: OpenRouter rechazó la
+ * clave o el preset (401, 403, 404, clave ilegible); reintentar no sirve, hace falta un administrador.
  */
-export type PrayerImageErrorCode = ProviderErrorCode | 'invalid_input' | 'too_large'
+export type PrayerImageErrorCode = ProviderErrorCode | 'invalid_input' | 'too_large' | 'rejected'

@@ -72,6 +72,8 @@ export async function generatePrayerImage(options: GeneratePrayerImageOptions): 
   catch (error) {
     // El plazo del llamador o el tope de 105 s.
     if (signal.aborted) return fail('timeout')
-    return fail(classifyProviderError(error).code)
+    const { code, persistent } = classifyProviderError(error)
+    // Clave revocada, sin permisos o preset inexistente: no es un fallo pasajero del servicio.
+    return fail(persistent && code === 'provider' ? 'rejected' : code)
   }
 }
