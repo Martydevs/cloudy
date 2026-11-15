@@ -116,7 +116,7 @@ describe('/upload', () => {
     await wrapper.get('form').trigger('submit')
     await flush(20)
     const post = calls.find(c => c.url === '/api/public/submissions')
-    expect(post?.body).toEqual({ senderName: 'Eva', note: 'Fotos', files: [{ name: 'foto.jpg', size: 1000, mimeType: 'image/jpeg', withTextSource: false }, { name: 'imagen.png', size: 1000, mimeType: 'image/png', withTextSource: false }] })
+    expect(post?.body).toEqual({ senderName: 'Eva', note: 'Fotos', files: [{ name: 'foto.jpg', size: 1000, mimeType: 'image/jpeg' }, { name: 'imagen.png', size: 1000, mimeType: 'image/png' }] })
     expect(sent).toEqual(['https://s3.test/g1', 'https://s3.test/g2'])
     expect(calls.some(c => c.url === '/api/public/submissions/sub1/complete')).toBe(true)
     expect(wrapper.text()).toContain('¡Gracias! Recibimos tu envío')

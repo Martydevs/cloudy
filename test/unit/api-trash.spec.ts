@@ -72,8 +72,8 @@ describe('POST /api/trash/:kind/:id/restore', () => {
     expect(fake.calls.find(c => c.method === 'set')?.args[0]).toMatchObject({
       deletedAt: null, deletedBy: null, trashRootId: null, name: 'foto.jpg', folderId: UUID2,
     })
-    // Restaurar conserva el texto leído (feature 002): no toca las columnas text_*.
-    expect(Object.keys(fake.calls.find(c => c.method === 'set')!.args[0] as object).some(k => k.startsWith('text'))).toBe(false)
+    // Restaurar no toca la copia de vista previa de una HEIC.
+    expect(Object.keys(fake.calls.find(c => c.method === 'set')!.args[0] as object)).not.toContain('previewKey')
     expect(activity(fake)).toEqual([expect.objectContaining({ action: 'file.restore', targetId: UUID, meta: null })])
   })
 
@@ -153,7 +153,7 @@ describe('DELETE /api/trash/:kind/:id', () => {
       [{ name: 'Ensayo', parentId: null }],
       { rows: [
         { purged: 1, id: UUID2, storage_key: `pre/files/${UUID2}`, thumb_key: `pre/thumbs/${UUID2}.webp` },
-        { purged: 1, id: UUID3, storage_key: `pre/files/${UUID3}`, thumb_key: null, text_source_key: `pre/textsrc/${UUID3}.jpg` },
+        { purged: 1, id: UUID3, storage_key: `pre/files/${UUID3}`, thumb_key: null, preview_key: `pre/textsrc/${UUID3}.jpg` },
       ] },
       [],
     ])
@@ -167,7 +167,7 @@ describe('DELETE /api/trash/:kind/:id', () => {
     expect(purgeSql).toContain('WITH RECURSIVE')
     expect(purgeSql).toContain('folder_id IN (SELECT id FROM tree)')
     expect(purgeSql).toContain('trash_root_id = id')
-    expect(purgeSql).toContain('RETURNING id, storage_key, thumb_key, text_source_key')
+    expect(purgeSql).toContain('RETURNING id, storage_key, thumb_key, preview_key')
     expect(s3.deleteMany).toHaveBeenCalledTimes(1)
     expect(new Set(s3.deleteMany.mock.calls[0]![0])).toEqual(new Set([
       '', `pre/files/${UUID2}`, `pre/thumbs/${UUID2}.webp`, `pre/files/${UUID3}`, `pre/thumbs/${UUID3}.webp`, `pre/textsrc/${UUID3}.jpg`,

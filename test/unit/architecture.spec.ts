@@ -205,10 +205,20 @@ describe('arquitectura de las capas', () => {
     expect(callers).toEqual([BOUNDARY])
   })
 
-  it('heic-to solo se carga con import() dinámico desde app/utils/heic-copy.ts', () => {
+  it('heic-to solo se carga con import() dinámico desde app/utils/heic-to-jpeg.ts', () => {
     const users = files.filter(f => imports(f.code).includes('heic-to')).map(f => f.path)
-    expect(users).toEqual(['app/utils/heic-copy.ts'])
-    expect(files.find(f => f.path === 'app/utils/heic-copy.ts')!.code).not.toMatch(/^import[^\n]+['"]heic-to['"]/m)
+    expect(users).toEqual(['app/utils/heic-to-jpeg.ts'])
+    expect(files.find(f => f.path === 'app/utils/heic-to-jpeg.ts')!.code).not.toMatch(/^import[^\n]+['"]heic-to['"]/m)
+  })
+
+  it('las HEIC se convierten a JPEG al subir: no queda la copia de vista previa ni los nombres de la lectura de texto', () => {
+    const gone = [
+      'checkTextSourceCopy', 'textSourceKeyFor', 'withTextSource', 'textSourceUploadUrl', 'textSourceKey', 'text_source_key', 'isImageTextEligible', 'MAX_IMAGE_TEXT_BYTES', 'makeTextSourceCopy', 'uploadTextSourceCopy',
+      'checkPreviewCopy', 'previewKeyFor', 'withPreview', 'previewUploadUrl', 'isPreviewEligible', 'MAX_PREVIEW_BYTES', 'makePreviewCopy', 'uploadPreviewCopy', 'shouldMakePreview',
+    ]
+    const offenders = files
+      .flatMap(f => gone.filter(name => new RegExp(`\\b${name}\\b`).test(f.code)).map(name => `${f.path} usa ${name}`))
+    expect(offenders).toEqual([])
   })
 })
 

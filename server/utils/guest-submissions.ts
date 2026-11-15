@@ -3,7 +3,6 @@ import { randomUUID } from 'node:crypto'
 import { createError, getRequestIP, readBody } from 'h3'
 import type { H3Event } from 'h3'
 import { canonicalMime, categoryOf, getExtension } from '#shared/constants/files'
-import { isImageTextEligible } from '#shared/constants/image-text'
 import type { GuestUploadTicket } from '#shared/types/api'
 import type { Validator } from '#shared/validation/core'
 import { checkUploadFile, sanitizeFileName } from '#shared/validation/files'
@@ -14,7 +13,6 @@ export interface GuestFileInput {
   name: string
   size: number
   mimeType: string
-  withTextSource?: boolean
 }
 
 export interface GuestSubmissionInput {
@@ -48,14 +46,13 @@ export async function readGuestSubmission<T>(event: H3Event, validator: Validato
       name: sanitizeFileName(typeof file.name === 'string' ? file.name : ''),
       size: typeof file.size === 'number' ? file.size : 0,
       mimeType: typeof file.mimeType === 'string' ? file.mimeType : '',
-      withTextSource: file.withTextSource === true,
     }
   })
   assertUploadable(cleaned)
   return unwrap(validator({ ...raw, files: cleaned }))
 }
 
-/** Registra el envío y sus archivos (`uploading`) y firma un PUT por archivo (más la copia JPEG de cada HEIC apta). */
+/** Registra el envío y sus archivos (`uploading`) y firma un PUT por archivo. */
 export async function createGuestSubmission(event: H3Event, input: GuestSubmissionInput): Promise<GuestSubmissionTicket> {
   assertUploadable(input.files)
   const ip = getRequestIP(event, { xForwardedFor: true }) ?? 'unknown'
@@ -63,12 +60,9 @@ export async function createGuestSubmission(event: H3Event, input: GuestSubmissi
   const note = input.note ?? null
 
   const submissionId = randomUUID()
-  const textSources = new Set<string>()
   const rows = input.files.map((file) => {
     const ext = getExtension(file.name)
     const id = randomUUID()
-    // Copia JPEG para leer el texto de una HEIC apta (feature 002, research A4).
-    if (file.withTextSource && ext === 'heic' && isImageTextEligible({ category: categoryOf(ext)!, extension: ext, size: file.size })) textSources.add(id)
     return {
       id,
       submissionId,
@@ -89,14 +83,10 @@ export async function createGuestSubmission(event: H3Event, input: GuestSubmissi
   ])
 
   const uploads = await Promise.all(rows.map(async (row): Promise<GuestUploadTicket> => {
-    const [uploadUrl, textSourceUploadUrl] = await Promise.all([
-      presignPut(row.storageKey, { contentType: row.mimeType, contentLength: row.sizeBytes }),
-      textSources.has(row.id) ? presignPut(textSourceKeyFor(row.id), { contentType: 'image/jpeg' }) : undefined,
-    ])
+    const uploadUrl = await presignPut(row.storageKey, { contentType: row.mimeType, contentLength: row.sizeBytes })
     return {
       fileId: row.id,
       uploadUrl,
-      ...(textSourceUploadUrl ? { textSourceUploadUrl } : {}),
       headers: { 'content-type': row.mimeType },
     }
   }))

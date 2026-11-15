@@ -38,7 +38,7 @@ describe('GuestUploadForm', () => {
     await wrapper.get('form').trigger('submit')
     await flush(20)
     const post = calls.find(c => c.url === '/api/public/submissions')
-    expect(post?.body).toEqual({ senderName: 'Eva', note: 'Fotos del culto', files: [{ name: 'foto.jpg', size: 1000, mimeType: 'image/jpeg', withTextSource: false }] })
+    expect(post?.body).toEqual({ senderName: 'Eva', note: 'Fotos del culto', files: [{ name: 'foto.jpg', size: 1000, mimeType: 'image/jpeg' }] })
     expect(wrapper.emitted('done')).toEqual([[{ accepted: 1, rejected: 0 }]])
     // La confirmación ofrece otro envío con el mismo nombre (no hay que pedir acceso).
     expect(wrapper.text()).toContain('¡Gracias! Recibimos tu envío')

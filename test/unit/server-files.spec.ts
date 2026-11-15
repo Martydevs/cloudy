@@ -28,6 +28,7 @@ const fileRow = {
   sizeBytes: 2048,
   storageKey: 'files/f1',
   thumbKey: 'thumbs/f1.webp',
+  previewKey: null,
   uploadStatus: 'ready' as const,
   origin: 'team' as const,
   uploadedBy: 'u1',
@@ -62,6 +63,7 @@ describe('mapeos', () => {
       category: 'image',
       sizeBytes: 2048,
       hasThumbnail: true,
+      hasPreview: false,
       origin: 'team',
       uploadedBy: { id: 'u1', name: 'Ana' },
       guestName: null,
@@ -71,6 +73,10 @@ describe('mapeos', () => {
     })
     expect(toFileItem({ ...fileRow, uploadedBy: null, origin: 'guest', guestName: 'Luis', thumbKey: null }).uploadedBy).toBeNull()
     expect(toFileItem({ ...fileRow, uploaderName: null }).uploadedBy).toEqual({ id: 'u1', name: 'Usuario' })
+    // La copia de vista previa de una HEIC llega como booleano; la clave del bucket nunca sale al cliente.
+    const heic = toFileItem({ ...fileRow, extension: 'heic', previewKey: 'textsrc/f1.jpg' })
+    expect(heic.hasPreview).toBe(true)
+    expect(JSON.stringify(heic)).not.toContain('textsrc')
   })
 
   it('toFolderItem', () => {
@@ -201,11 +207,11 @@ describe('folderItemCountSql', () => {
   })
 })
 
-describe('fileColumns (feature 002)', () => {
-  it('los listados no traen las columnas del texto leído, que se pide aparte', async () => {
+describe('fileColumns', () => {
+  it('los listados traen la clave de la vista previa (para hasPreview) y ninguna columna del texto retirado', async () => {
     const { fileColumns } = await import('../../server/utils/files')
     const keys = Object.keys(fileColumns)
-    expect(keys).toEqual(expect.arrayContaining(['id', 'name', 'thumbKey', 'uploaderName']))
+    expect(keys).toEqual(expect.arrayContaining(['id', 'name', 'thumbKey', 'previewKey', 'uploaderName']))
     expect(keys.filter(k => k.startsWith('text'))).toEqual([])
   })
 })

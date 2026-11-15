@@ -17,7 +17,7 @@ const F1 = '9b2c1f0e-1d2c-4e5f-8a9b-0c1d2e3f4a5b'
 
 const file = (changes: Partial<FileItem> = {}): FileItem => ({
   id: F1, folderId: null, name: 'foto.jpg', extension: 'jpg', mimeType: 'image/jpeg', category: 'image', sizeBytes: 2048,
-  hasThumbnail: false, origin: 'team', uploadedBy: { id: 'u1', name: 'Ana' }, guestName: null,
+  hasThumbnail: false, hasPreview: false, origin: 'team', uploadedBy: { id: 'u1', name: 'Ana' }, guestName: null,
   createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), ...changes,
 })
 const folder: FolderItem = { id: D1, name: 'Domingo', parentId: null, createdAt: '', updatedAt: '', itemCount: 2 }

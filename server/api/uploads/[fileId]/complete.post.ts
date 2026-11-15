@@ -2,7 +2,6 @@
 import { eq } from 'drizzle-orm'
 import { createError } from 'h3'
 import type { FileItem } from '#shared/types/api'
-import { isImageTextEligible } from '#shared/constants/image-text'
 import { youtubeImportSource } from '#shared/validation/youtube'
 import { files } from '../../../db/schema'
 import { deleteMany, head, readRange } from '../../../utils/storage'
@@ -48,12 +47,6 @@ export default defineEventHandler(async (event): Promise<FileItem> => {
     ])
     return rows[0]!
   })
-
-  // Copia JPEG de una HEIC: se valida aquí para que la limpieza diaria pueda borrarla junto al original. La subida
-  // nunca falla por ella.
-  if (row.extension === 'heic' && isImageTextEligible({ category: row.category, extension: row.extension, size: Number(row.sizeBytes) })) {
-    await checkTextSourceCopy({ table: 'files', id: row.id })
-  }
 
   return toFileItem({ ...updated, uploaderName: profile.name })
 })

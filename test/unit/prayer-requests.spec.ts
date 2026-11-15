@@ -57,7 +57,7 @@ describe('listPrayerRequests', () => {
     const fake = installNitro([[]])
     await listPrayerRequests({})
     const columns = Object.keys(fake.calls.find(c => c.method === 'select')!.args[0] as object)
-    for (const heavy of ['storageKey', 'thumbKey', 'sizeBytes', 'mimeType', 'textSourceKey', 'guestName']) expect(columns).not.toContain(heavy)
+    for (const heavy of ['storageKey', 'thumbKey', 'sizeBytes', 'mimeType', 'previewKey', 'guestName']) expect(columns).not.toContain(heavy)
   })
 
   it('orden desc por defecto y asc a pedido, sobre (reviewed_at en ms, id)', async () => {

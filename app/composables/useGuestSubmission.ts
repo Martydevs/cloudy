@@ -1,6 +1,5 @@
 // Envío de un invitado (FR-016): validar en local → presignar el lote → PUT de 3 en 3 → un solo `complete`.
-import { getExtension, MAX_GUEST_FILES } from '#shared/constants/files'
-import { isImageTextEligible } from '#shared/constants/image-text'
+import { MAX_GUEST_FILES } from '#shared/constants/files'
 import type { GuestUploadTicket } from '#shared/types/api'
 import { checkUploadFile } from '#shared/validation/files'
 import type { UploadItem } from '~/composables/useUploader'
@@ -13,10 +12,6 @@ export interface SubmissionResult {
 }
 
 const CONCURRENCY = 3
-
-/** HEIC apta: sube además su copia JPEG para leer el texto (feature 002, research A4). */
-const wantsTextSource = (file: File | undefined) =>
-  !!file && getExtension(file.name) === 'heic' && isImageTextEligible({ extension: 'heic', size: file.size })
 
 export const OPEN_SUBMISSIONS_URL = '/api/public/submissions'
 
@@ -57,6 +52,18 @@ export function useGuestSubmission({ createUrl = OPEN_SUBMISSIONS_URL }: GuestSu
     items.value = items.value.filter(i => i.id !== id)
   }
 
+  /** HEIC → JPEG: el JPEG reemplaza al archivo en la cola (nombre y tamaño incluidos). Nunca rechaza. */
+  async function convertHeic(id: string) {
+    const file = sources.get(id)
+    if (!file || !(await shouldConvertHeic(file))) return
+    patch(id, { preparing: true })
+    const jpeg = await convertHeicToJpeg(file)
+    patch(id, { preparing: false })
+    if (!jpeg || !sources.has(id)) return
+    sources.set(id, jpeg)
+    patch(id, { name: jpeg.name, size: jpeg.size })
+  }
+
   async function submit(form: { senderName: string, note: string }): Promise<SubmissionResult | null> {
     const queued = items.value.filter(i => i.status === 'queued')
     if (queued.length === 0) {
@@ -66,6 +73,8 @@ export function useGuestSubmission({ createUrl = OPEN_SUBMISSIONS_URL }: GuestSu
     status.value = 'submitting'
     error.value = ''
     try {
+      // Cada HEIC se convierte a JPEG y se envía en su lugar (la HEIC no se guarda); si no se puede, va tal cual.
+      await Promise.all(queued.map(item => convertHeic(item.id)))
       const ticket = await $fetch<{ submissionId: string, uploads: GuestUploadTicket[] }>(createUrl, {
         method: 'POST',
         body: {
@@ -75,17 +84,8 @@ export function useGuestSubmission({ createUrl = OPEN_SUBMISSIONS_URL }: GuestSu
             name: item.name,
             size: item.size,
             mimeType: sources.get(item.id)?.type ?? '',
-            withTextSource: wantsTextSource(sources.get(item.id)),
           })),
         },
-      })
-
-      // Las copias JPEG de las HEIC se convierten y suben en paralelo con los originales; nunca rechazan.
-      const textSources = queued.flatMap((item, index) => {
-        const url = ticket.uploads[index]?.textSourceUploadUrl
-        if (!url) return []
-        patch(item.id, { preparing: true })
-        return [uploadTextSourceCopy(sources.get(item.id)!, url).finally(() => patch(item.id, { preparing: false }))]
       })
 
       // Las subidas van de 3 en 3; `uploads` llega en el mismo orden que `files`.
@@ -103,7 +103,6 @@ export function useGuestSubmission({ createUrl = OPEN_SUBMISSIONS_URL }: GuestSu
         }
       }
       await Promise.all(Array.from({ length: Math.min(CONCURRENCY, queued.length) }, worker))
-      await Promise.all(textSources)
 
       const outcome = await $fetch<{ status: 'pending' } & SubmissionResult>(`/api/public/submissions/${ticket.submissionId}/complete`, { method: 'POST' })
       for (const item of queued) patch(item.id, { status: 'done', progress: 100 })

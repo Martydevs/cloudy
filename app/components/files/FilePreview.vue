@@ -6,6 +6,10 @@ const props = defineProps<{ file: FileItem }>()
 // El contenido se sirve con una redirección a una URL firmada; audio y video piden rangos al bucket.
 const src = computed(() => `/api/files/${props.file.id}/content`)
 const isPdf = computed(() => props.file.extension === 'pdf')
+// Solo Safari decodifica HEIC. Las nuevas se suben ya convertidas a JPEG; una HEIC antigua muestra su copia JPEG de
+// vista previa si la tiene y, si no, cae al recuadro de descarga.
+const isHeic = computed(() => props.file.extension === 'heic')
+const imageSrc = computed(() => (isHeic.value ? `/api/files/${props.file.id}/preview` : src.value))
 const failed = ref(false)
 </script>
 
@@ -13,8 +17,8 @@ const failed = ref(false)
   <div class="flex min-h-48 items-center justify-center overflow-hidden rounded-box border border-base-300 bg-base-200">
     <!-- Caja de proporción fija (CLS): la altura no depende de la imagen, que se ajusta dentro. -->
     <img
-      v-if="file.category === 'image' && file.extension !== 'heic' && !failed"
-      :src="src"
+      v-if="file.category === 'image' && (!isHeic || file.hasPreview) && !failed"
+      :src="imageSrc"
       :alt="file.name"
       class="aspect-[4/3] max-h-[70dvh] w-full object-contain"
       decoding="async"

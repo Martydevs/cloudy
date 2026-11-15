@@ -98,7 +98,7 @@ describe('Inicio', () => {
     mockApi('GET', '/api/dashboard', summary({
       recentFiles: [{
         id: 'f1', folderId: null, name: 'foto.jpg', extension: 'jpg', mimeType: 'image/jpeg', category: 'image', sizeBytes: 10,
-        hasThumbnail: false, origin: 'team', uploadedBy: null, guestName: null, createdAt: new Date().toISOString(), updatedAt: '',
+        hasThumbnail: false, hasPreview: false, origin: 'team', uploadedBy: null, guestName: null, createdAt: new Date().toISOString(), updatedAt: '',
       }],
     }))
     const wrapper = await mountSuspended(HomePage)

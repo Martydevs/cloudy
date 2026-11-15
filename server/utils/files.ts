@@ -8,18 +8,13 @@ import { files, folders, profiles } from '../db/schema'
 export type FileRow = typeof files.$inferSelect
 export type FolderRow = typeof folders.$inferSelect
 
-/**
- * Columnas de `files` sin la clave de la copia JPEG de los HEIC (solo la usa la limpieza) + nombre de quien subió
- * (requiere `leftJoin(profiles, …)`).
- */
-const { textSourceKey: _textSourceKey, ...listedColumns } = getTableColumns(files)
-
+/** Columnas de `files` + nombre de quien subió (requiere `leftJoin(profiles, …)`). */
 export const fileColumns = {
-  ...listedColumns,
+  ...getTableColumns(files),
   uploaderName: profiles.name,
 }
 
-export type FileWithUploader = Omit<FileRow, 'textSourceKey'> & { uploaderName: string | null }
+export type FileWithUploader = FileRow & { uploaderName: string | null }
 
 export function toFileItem(row: FileWithUploader, extra: Partial<Pick<FileItem, 'path' | 'commentCount'>> = {}): FileItem {
   return {
@@ -31,6 +26,8 @@ export function toFileItem(row: FileWithUploader, extra: Partial<Pick<FileItem, 
     category: row.category,
     sizeBytes: Number(row.sizeBytes),
     hasThumbnail: !!row.thumbKey,
+    // Un booleano, nunca la clave del bucket.
+    hasPreview: !!row.previewKey,
     origin: row.origin,
     uploadedBy: row.uploadedBy ? { id: row.uploadedBy, name: row.uploaderName ?? 'Usuario' } : null,
     guestName: row.guestName,

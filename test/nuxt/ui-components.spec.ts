@@ -25,6 +25,7 @@ const file = (changes: Partial<FileItem> = {}): FileItem => ({
   category: 'image',
   sizeBytes: 2048,
   hasThumbnail: true,
+  hasPreview: false,
   origin: 'team',
   uploadedBy: { id: 'u1', name: 'Ana' },
   guestName: null,
@@ -494,12 +495,22 @@ describe('FilePreview', () => {
     expect(wrapper.find(selector).attributes('src')).toBe('/api/files/f1/content')
   })
 
-  it('otros formatos y HEIC ofrecen descargar; una imagen que falla también', async () => {
+  it('una HEIC con copia JPEG muestra la vista previa; si la copia no carga, ofrece descargar el original', async () => {
+    const heic = await mountSuspended(FilePreview, { props: { file: file({ extension: 'heic', name: 'IMG.heic', hasPreview: true }) } })
+    expect(heic.get('img').attributes('src')).toBe('/api/files/f1/preview')
+    expect(heic.get('img').attributes('alt')).toBe('IMG.heic')
+    await heic.get('img').trigger('error')
+    expect(heic.find('img').exists()).toBe(false)
+    expect(heic.get('a[download]').attributes('href')).toBe('/api/files/f1/content?download=1')
+  })
+
+  it('otros formatos y HEIC sin copia ofrecen descargar; una imagen que falla también', async () => {
     const pptx = await mountSuspended(FilePreview, { props: { file: file({ category: 'presentation', extension: 'pptx', name: 'd.pptx' }) } })
     expect(pptx.get('a[download]').attributes('href')).toBe('/api/files/f1/content?download=1')
     expect(pptx.text()).toContain('no tiene vista previa')
     const heic = await mountSuspended(FilePreview, { props: { file: file({ extension: 'heic' }) } })
     expect(heic.find('img').exists()).toBe(false)
+    expect(heic.get('a[download]').attributes('href')).toBe('/api/files/f1/content?download=1')
 
     const broken = await mountSuspended(FilePreview, { props: { file: file() } })
     await broken.get('img').trigger('error')

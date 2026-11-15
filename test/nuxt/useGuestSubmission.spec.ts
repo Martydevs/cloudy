@@ -1,5 +1,6 @@
-// Envío de invitado con copia JPEG de las HEIC (feature 002, research A4): la conversión corre en paralelo
-// con la subida del original y la copia se sube antes de `complete`; nunca impide el envío.
+// Envío de invitado con HEIC: cada HEIC se convierte a JPEG antes de pedir las firmas y se envía el JPEG en su lugar;
+// si no se puede convertir, va la HEIC original. happy-dom no es un dispositivo Apple: las HEIC llevan su firma real
+// para que se conviertan igual (D2a).
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setResponseStatus } from 'h3'
 import type { GuestUploadTicket } from '#shared/types/api'
@@ -9,8 +10,10 @@ import { behaviors, FakeXHR, resetXhr, sent } from './helpers/xhr'
 const heic = vi.hoisted(() => ({ heicTo: vi.fn() }))
 vi.mock('heic-to', () => ({ heicTo: heic.heicTo }))
 
+const HEIC_HEADER = new Uint8Array([0, 0, 0, 24, 0x66, 0x74, 0x79, 0x70, 0x68, 0x65, 0x69, 0x63, 0, 0, 0, 0])
+
 const file = (name: string, type: string, size: number) => {
-  const f = new File(['x'], name, { type })
+  const f = new File([type === 'image/heic' ? HEIC_HEADER : 'x'], name, { type })
   Object.defineProperty(f, 'size', { value: size })
   return f
 }
@@ -18,12 +21,11 @@ const file = (name: string, type: string, size: number) => {
 function mockSubmission() {
   mockApi('POST', '/api/public/submissions', (event) => {
     setResponseStatus(event, 201)
-    const body = calls.at(-1)!.body as { files: { withTextSource: boolean }[] }
-    const uploads: GuestUploadTicket[] = body.files.map((f, i) => ({
+    const body = calls.at(-1)!.body as { files: unknown[] }
+    const uploads: GuestUploadTicket[] = body.files.map((_, i) => ({
       fileId: `g${i + 1}`,
       uploadUrl: `https://s3.test/g${i + 1}`,
-      headers: { 'content-type': 'image/heic' },
-      ...(f.withTextSource ? { textSourceUploadUrl: `https://s3.test/textsrc/g${i + 1}.jpg` } : {}),
+      headers: { 'content-type': 'image/jpeg' },
     }))
     return { submissionId: 'sub1', uploads }
   })
@@ -42,40 +44,49 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
-describe('useGuestSubmission · copia JPEG de las HEIC', () => {
-  it('pide withTextSource solo para HEIC aptas, convierte en paralelo y sube la copia antes de complete', async () => {
+describe('useGuestSubmission · HEIC convertida a JPEG', () => {
+  it('convierte cada HEIC antes de pedir las firmas y envía el JPEG con su nombre .jpg', async () => {
     let convert!: (blob: Blob) => void
     heic.heicTo.mockImplementation(() => new Promise<Blob>(resolve => (convert = resolve)))
     const submission = useGuestSubmission()
-    submission.add([file('IMG_1.heic', 'image/heic', 3_000_000), file('foto.jpg', 'image/jpeg', 1000)])
+    submission.add([file('IMG_1.HEIC', 'image/heic', 3_000_000), file('foto.jpg', 'image/jpeg', 1000)])
     const done = submission.submit({ senderName: 'Eva', note: '' })
     await flush(20)
 
-    const body = calls.find(c => c.url === '/api/public/submissions')!.body as { files: { name: string, withTextSource: boolean }[] }
-    expect(body.files.map(f => [f.name, f.withTextSource])).toEqual([['IMG_1.heic', true], ['foto.jpg', false]])
-    // Los originales ya subieron mientras la copia se sigue convirtiendo; complete espera a la copia.
-    expect(sent).toEqual(['https://s3.test/g1', 'https://s3.test/g2'])
+    // Mientras convierte no se crea el envío.
     expect(submission.items.value[0]).toMatchObject({ preparing: true })
-    expect(calls.some(c => c.url === '/api/public/submissions/sub1/complete')).toBe(false)
+    expect(calls.some(c => c.url === '/api/public/submissions')).toBe(false)
     expect(submission.status.value).toBe('submitting')
 
     convert(new Blob(['jpeg'], { type: 'image/jpeg' }))
     expect(await done).toEqual({ accepted: 2, rejected: 0 })
-    expect(sent).toEqual(['https://s3.test/g1', 'https://s3.test/g2', 'https://s3.test/textsrc/g1.jpg'])
-    expect(submission.items.value[0]).toMatchObject({ preparing: false, status: 'done' })
+    const body = calls.find(c => c.url === '/api/public/submissions')!.body as { files: Record<string, unknown>[] }
+    expect(body.files).toEqual([
+      { name: 'IMG_1.jpg', size: 4, mimeType: 'image/jpeg' },
+      { name: 'foto.jpg', size: 1000, mimeType: 'image/jpeg' },
+    ])
+    expect(sent).toEqual(['https://s3.test/g1', 'https://s3.test/g2'])
+    expect(submission.items.value[0]).toMatchObject({ preparing: false, status: 'done', name: 'IMG_1.jpg', size: 4 })
   })
 
-  it('si la copia falla el envío termina igual', async () => {
-    heic.heicTo.mockResolvedValue(new Blob(['jpeg'], { type: 'image/jpeg' }))
-    behaviors.set('https://s3.test/textsrc/g1.jpg', 403)
-    const submission = useGuestSubmission()
-    submission.add([file('IMG_1.heic', 'image/heic', 3_000_000)])
-    expect(await submission.submit({ senderName: 'Eva', note: '' })).toEqual({ accepted: 2, rejected: 0 })
-
+  it('si la conversión falla se envía la HEIC original', async () => {
     heic.heicTo.mockRejectedValue(new Error('libheif'))
-    const again = useGuestSubmission()
-    again.add([file('IMG_2.heic', 'image/heic', 3_000_000)])
-    expect(await again.submit({ senderName: 'Eva', note: '' })).toEqual({ accepted: 2, rejected: 0 })
-    expect(calls.filter(c => c.url === '/api/public/submissions/sub1/complete')).toHaveLength(2)
+    const submission = useGuestSubmission()
+    submission.add([file('IMG_2.heic', 'image/heic', 3_000_000)])
+    expect(await submission.submit({ senderName: 'Eva', note: '' })).toEqual({ accepted: 2, rejected: 0 })
+    const body = calls.find(c => c.url === '/api/public/submissions')!.body as { files: Record<string, unknown>[] }
+    expect(body.files).toEqual([{ name: 'IMG_2.heic', size: 3_000_000, mimeType: 'image/heic' }])
+    expect(submission.items.value[0]).toMatchObject({ preparing: false, status: 'done', name: 'IMG_2.heic' })
+  })
+
+  it('si el envío falla y se reintenta, no vuelve a convertir', async () => {
+    heic.heicTo.mockResolvedValue(new Blob(['jpeg'], { type: 'image/jpeg' }))
+    behaviors.set('https://s3.test/g1', 'network')
+    const submission = useGuestSubmission()
+    submission.add([file('IMG_3.heic', 'image/heic', 3_000_000)])
+    expect(await submission.submit({ senderName: 'Eva', note: '' })).toBeNull()
+    behaviors.clear()
+    expect(await submission.submit({ senderName: 'Eva', note: '' })).toEqual({ accepted: 2, rejected: 0 })
+    expect(heic.heicTo).toHaveBeenCalledTimes(1)
   })
 })

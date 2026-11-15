@@ -30,7 +30,7 @@ const comment = (changes: Partial<Comment> = {}): Comment => ({
 
 const file = (changes: Partial<FileItem> = {}): FileItem => ({
   id: F1, folderId: null, name: 'guion.pdf', extension: 'pdf', mimeType: 'application/pdf', category: 'document', sizeBytes: 2048,
-  hasThumbnail: false, origin: 'team', uploadedBy: { id: 'u1', name: 'Ana' }, guestName: null,
+  hasThumbnail: false, hasPreview: false, origin: 'team', uploadedBy: { id: 'u1', name: 'Ana' }, guestName: null,
   createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), ...changes,
 })
 

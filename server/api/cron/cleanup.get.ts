@@ -39,10 +39,10 @@ export default defineEventHandler(async (event): Promise<CleanupReport> => {
       .returning({ id: guestSubmissions.id })
     if (expired.length === 0) break
     const ids = expired.map(r => r.id)
-    const objects = await db.select({ id: guestSubmissionFiles.id, storageKey: guestSubmissionFiles.storageKey, textSourceKey: guestSubmissionFiles.textSourceKey })
+    const objects = await db.select({ storageKey: guestSubmissionFiles.storageKey, previewKey: guestSubmissionFiles.previewKey })
       .from(guestSubmissionFiles)
       .where(inArray(guestSubmissionFiles.submissionId, ids))
-    await deleteMany(objects.flatMap(o => [o.storageKey, o.textSourceKey ?? '', textSourceKeyFor(o.id)]))
+    await deleteMany(objects.flatMap(o => [o.storageKey, o.previewKey ?? '']))
     await db.delete(guestSubmissionFiles).where(inArray(guestSubmissionFiles.submissionId, ids))
     report.expiredSubmissions += ids.length
     if (expired.length < BATCH) break
@@ -55,7 +55,7 @@ export default defineEventHandler(async (event): Promise<CleanupReport> => {
       .where(and(eq(files.uploadStatus, 'uploading'), lt(files.createdAt, orphanLimit)))
       .limit(BATCH)
     if (orphans.length === 0) break
-    await deleteMany(orphans.flatMap(o => [o.storageKey, thumbKeyFor(o.id), textSourceKeyFor(o.id)]))
+    await deleteMany(orphans.flatMap(o => [o.storageKey, thumbKeyFor(o.id)]))
     await db.delete(files).where(inArray(files.id, orphans.map(o => o.id)))
     report.orphanUploads += orphans.length
     if (orphans.length < BATCH) break
@@ -69,7 +69,7 @@ export default defineEventHandler(async (event): Promise<CleanupReport> => {
       .where(and(eq(guestSubmissionFiles.uploadStatus, 'uploading'), lt(guestSubmissions.createdAt, orphanLimit)))
       .limit(BATCH)
     if (orphans.length === 0) break
-    await deleteMany(orphans.flatMap(o => [o.storageKey, textSourceKeyFor(o.id)]))
+    await deleteMany(orphans.map(o => o.storageKey))
     await db.delete(guestSubmissionFiles).where(inArray(guestSubmissionFiles.id, orphans.map(o => o.id)))
     report.orphanUploads += orphans.length
     if (orphans.length < BATCH) break

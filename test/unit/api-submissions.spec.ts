@@ -129,7 +129,7 @@ describe('POST /api/public/submissions/:id/complete', () => {
     const rate = fake.calls.find(c => c.method === 'values')?.args[0] as { key: string }
     expect(rate.key).toMatch(/^guest-complete:[0-9a-f]{64}$/)
     expect(rate.key).not.toContain('203.0.113.7')
-    expect(s3.deleteMany).toHaveBeenCalledWith(['pre/guest/s/y', `pre/textsrc/${F2}.jpg`])
+    expect(s3.deleteMany).toHaveBeenCalledWith(['pre/guest/s/y'])
     const sets = fake.calls.filter(c => c.method === 'set').map(c => c.args[0])
     expect(sets[0]).toEqual({ uploadStatus: 'ready' })
     expect(sets[1]).toMatchObject({ completedAt: expect.any(Date) })
@@ -283,14 +283,14 @@ describe('POST /api/submissions/:id/approve', () => {
 
 describe('POST /api/submissions/:id/reject', () => {
   it('marca como rechazado, borra objetos y archivos y registra el motivo', async () => {
-    const fake = installNitro([[submission({ status: 'rejected' })], [{ id: F1, storageKey: 'a', textSourceKey: null }, { id: F2, storageKey: 'b', textSourceKey: `pre/textsrc/${F2}.jpg` }], [], []])
+    const fake = installNitro([[submission({ status: 'rejected' })], [{ id: F1, storageKey: 'a', previewKey: null }, { id: F2, storageKey: 'b', previewKey: `pre/textsrc/${F2}.jpg` }], [], []])
     const handler = await loadHandler('api/submissions/[id]/reject.post.ts')
     const event = makeEvent({ method: 'POST', params: { id: SUB }, body: { reason: 'Borrosa' } })
     expect(await handler(event)).toBeNull()
     expect(event.node.res.statusCode).toBe(204)
     expect(fake.calls.find(c => c.method === 'set')?.args[0]).toMatchObject({ status: 'rejected', rejectionReason: 'Borrosa', reviewedBy: 'u1' })
-    // También la copia JPEG de cada HEIC (feature 002), derivada del id aunque la columna esté vacía.
-    expect(s3.deleteMany).toHaveBeenCalledWith(['a', '', `pre/textsrc/${F1}.jpg`, 'b', `pre/textsrc/${F2}.jpg`, `pre/textsrc/${F2}.jpg`])
+    // También la copia de vista previa de una HEIC antigua, si la tiene.
+    expect(s3.deleteMany).toHaveBeenCalledWith(['a', '', 'b', `pre/textsrc/${F2}.jpg`])
     expect(fake.calls.some(c => c.method === 'delete')).toBe(true)
     expect(fake.calls.find(c => c.method === 'values')?.args[0]).toMatchObject({ action: 'submission.reject', meta: { reason: 'Borrosa' } })
   })
@@ -312,10 +312,10 @@ describe('POST /api/submissions/:id/reject', () => {
   })
 })
 
-describe('copia JPEG de los HEIC de invitados', () => {
-  const HEIC_HEADER = new Uint8Array([0, 0, 0, 24, 0x66, 0x74, 0x79, 0x70, 0x68, 0x65, 0x69, 0x63])
-
-  it('POST /api/public/submissions firma la copia JPEG solo para una HEIC apta que la pide', async () => {
+// Las HEIC de invitados llegan ya convertidas a JPEG; si la conversión falló llega la HEIC y se guarda tal cual. Solo
+// las HEIC antiguas pueden traer copia de vista previa (`preview_key`), que la aprobación pasa al archivo.
+describe('HEIC de invitados', () => {
+  it('POST /api/public/submissions firma solo los archivos (una bandera withPreview vieja se ignora)', async () => {
     installNitro([[{ count: 1 }], [], []])
     const handler = await loadHandler('api/public/submissions/index.post.ts')
     const res = await handler(makeEvent({
@@ -323,63 +323,24 @@ describe('copia JPEG de los HEIC de invitados', () => {
       body: {
         senderName: 'Eva',
         files: [
-          { name: 'IMG_1.heic', size: 3_000_000, mimeType: 'image/heic', withTextSource: true },
-          { name: 'IMG_2.heic', size: 3_000_000, mimeType: 'image/heic' },
-          { name: 'IMG_3.heic', size: 6_000_000, mimeType: 'image/heic', withTextSource: true },
-          { name: 'foto.jpg', size: 8386, mimeType: 'image/jpeg', withTextSource: true },
+          { name: 'IMG_1.heic', size: 3_000_000, mimeType: 'image/heic', withPreview: true },
+          { name: 'IMG_2.jpg', size: 8386, mimeType: 'image/jpeg' },
         ],
       },
-    })) as { uploads: { fileId: string, textSourceUploadUrl?: string }[] }
-    expect(res.uploads[0]!.textSourceUploadUrl).toBe(`https://s3.test/put/pre/textsrc/${res.uploads[0]!.fileId}.jpg`)
-    expect(res.uploads.slice(1).map(u => u.textSourceUploadUrl)).toEqual([undefined, undefined, undefined])
-    expect(s3.presignPut).toHaveBeenCalledWith(`pre/textsrc/${res.uploads[0]!.fileId}.jpg`, { contentType: 'image/jpeg' })
+    })) as { uploads: Record<string, unknown>[] }
+    expect(res.uploads.map(u => Object.keys(u).sort())).toEqual([['fileId', 'headers', 'uploadUrl'], ['fileId', 'headers', 'uploadUrl']])
+    expect(s3.presignPut).toHaveBeenCalledTimes(2)
+    expect(s3.presignPut.mock.calls.map(c => c[0]).some(key => String(key).includes('textsrc'))).toBe(false)
   })
 
-  const complete = async (files: Record<string, unknown>[], overrides: Record<string, unknown> = {}) => {
-    const checkTextSourceCopy = vi.fn(async () => true)
-    installNitro([[{ count: 1 }], [submission({ completedAt: null })], files.map(f => guestFile({ uploadStatus: 'uploading', ...f })), [], []], { checkTextSourceCopy, ...overrides })
+  it('complete cierra el envío sin buscar copias ni programar nada en segundo plano', async () => {
+    s3.head.mockResolvedValue({ size: 3_000_000 })
+    s3.readRange.mockResolvedValue(new Uint8Array([0, 0, 0, 24, 0x66, 0x74, 0x79, 0x70, 0x68, 0x65, 0x69, 0x63]))
+    installNitro([[{ count: 1 }], [submission({ completedAt: null })], [guestFile({ uploadStatus: 'uploading', originalName: 'IMG.heic', extension: 'heic', mimeType: 'image/heic', sizeBytes: 3_000_000 })], []])
     const handler = await loadHandler('api/public/submissions/[id]/complete.post.ts')
-    const body = await handler(makeEvent({ auth: undefined, method: 'POST', params: { id: SUB } }))
-    return { body, checkTextSourceCopy }
-  }
-
-  it('complete cierra el envío sin programar nada en segundo plano', async () => {
-    s3.head.mockResolvedValue({ size: 8386 })
-    s3.readRange.mockResolvedValue(JPEG)
-    const { body, checkTextSourceCopy } = await complete([{}])
-    expect(body).toEqual({ status: 'pending', accepted: 1, rejected: 0 })
+    expect(await handler(makeEvent({ auth: undefined, method: 'POST', params: { id: SUB } }))).toEqual({ status: 'pending', accepted: 1, rejected: 0 })
+    expect(s3.head).toHaveBeenCalledTimes(1)
     expect(backgroundTasks).toHaveLength(0)
-    // Una JPG no lleva copia.
-    expect(checkTextSourceCopy).not.toHaveBeenCalled()
-  })
-
-  it('valida la copia de cada HEIC apta; lo que no es imagen apta no la busca', async () => {
-    s3.head.mockResolvedValue({ size: 3_000_000 })
-    s3.readRange.mockResolvedValue(HEIC_HEADER)
-    const heic = { originalName: 'IMG.heic', extension: 'heic', mimeType: 'image/heic', sizeBytes: 3_000_000 }
-    const valid = await complete([heic])
-    expect(valid.checkTextSourceCopy).toHaveBeenCalledWith({ table: 'guest_submission_files', id: F1 })
-
-    const missing = await complete([heic], { checkTextSourceCopy: vi.fn(async () => false) })
-    expect(missing.body).toEqual({ status: 'pending', accepted: 1, rejected: 0 })
-
-    s3.head.mockResolvedValue({ size: 10 })
-    s3.readRange.mockResolvedValue(new TextEncoder().encode('hola'))
-    const notImage = await complete([{ originalName: 'n.txt', extension: 'txt', mimeType: 'text/plain', category: 'document', sizeBytes: 10 }])
-    expect(notImage.checkTextSourceCopy).not.toHaveBeenCalled()
-  })
-
-  it('valida todas las copias HEIC a la vez, sin esperar una para empezar la siguiente', async () => {
-    s3.head.mockResolvedValue({ size: 3_000_000 })
-    s3.readRange.mockResolvedValue(HEIC_HEADER)
-    const heic = { originalName: 'IMG.heic', extension: 'heic', mimeType: 'image/heic', sizeBytes: 3_000_000 }
-    let release!: () => void
-    const gate = new Promise<void>((resolve) => { release = resolve })
-    const checkTextSourceCopy = vi.fn(async () => { await gate; return true })
-    const pending = complete([heic, { ...heic, id: F2 }], { checkTextSourceCopy })
-    await vi.waitFor(() => expect(checkTextSourceCopy).toHaveBeenCalledTimes(2))
-    release()
-    expect((await pending).body).toEqual({ status: 'pending', accepted: 2, rejected: 0 })
   })
 
   it('GET /api/submissions ya no trae texto de las imágenes', async () => {
@@ -393,13 +354,13 @@ describe('copia JPEG de los HEIC de invitados', () => {
     expect(fake.db.execute).not.toHaveBeenCalled()
   })
 
-  it('approve copia solo text_source_key al archivo', async () => {
+  it('approve pasa al archivo la copia de vista previa de una HEIC antigua (preview_key)', async () => {
     const fake = installNitro([[submission()], [guestFile()], [], { rows: [{ id: F1 }] }, [{ id: SUB }], [], []])
     const handler = await loadHandler('api/submissions/[id]/approve.post.ts')
     await handler(makeEvent({ method: 'POST', params: { id: SUB }, body: { folderId: null } }))
     const insert = sqlText(fake.db.execute.mock.calls[0]![0])
-    expect(insert).toContain('text_source_key')
-    expect(insert).toContain('g.text_source_key')
+    expect(insert).toContain('preview_key')
+    expect(insert).toContain('g.preview_key')
     expect(insert).not.toContain('text_status')
     expect(insert).not.toContain('text_content')
     expect(insert).toContain('JOIN guest_submission_files g ON g.id = v.id')

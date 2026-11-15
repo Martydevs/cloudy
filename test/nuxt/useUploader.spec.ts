@@ -48,8 +48,8 @@ class FakeXHR {
   }
 }
 
-const file = (name: string, type = 'image/jpeg', size = 1000) => {
-  const f = new File(['x'], name, { type })
+const file = (name: string, type = 'image/jpeg', size = 1000, bytes: BlobPart = 'x') => {
+  const f = new File([bytes], name, { type })
   Object.defineProperty(f, 'size', { value: size })
   return f
 }
@@ -225,66 +225,96 @@ describe('useUploader', () => {
   })
 })
 
-// Feature 002: una HEIC apta sube además su copia JPEG para leer el texto, en paralelo con el original.
-describe('useUploader · copia JPEG de una HEIC', () => {
-  const heicFile = () => file('IMG_0001.heic', 'image/heic', 3_000_000)
+// Una HEIC se convierte a JPEG en el navegador y se sube el JPEG en su lugar (la HEIC no se guarda).
+// happy-dom no es un dispositivo Apple: la HEIC lleva su firma real para que se convierta igual (D2a).
+const HEIC_HEADER = new Uint8Array([0, 0, 0, 24, 0x66, 0x74, 0x79, 0x70, 0x68, 0x65, 0x69, 0x63, 0, 0, 0, 0])
 
-  function mockHeicTicket() {
-    mockApi('POST', '/api/uploads', () => {
-      ticket++
-      const body = calls.at(-1)?.body as { withTextSource?: boolean }
-      return {
-        fileId: `up${ticket}`,
-        uploadUrl: `https://s3.test/up${ticket}`,
-        headers: { 'content-type': 'image/heic' },
-        ...(body.withTextSource ? { textSourceUploadUrl: `https://s3.test/textsrc/up${ticket}.jpg` } : {}),
-      }
-    })
-  }
+describe('useUploader · HEIC convertida a JPEG', () => {
+  const heicFile = (name = 'IMG_0001.heic') => file(name, 'image/heic', 3_000_000, HEIC_HEADER)
+  const jpeg = () => new Blob(['jpeg-convertido'], { type: 'image/jpeg' })
 
-  it('pide la firma con withTextSource, sube el original sin esperar la conversión y la copia antes de complete', async () => {
-    mockHeicTicket()
+  it('convierte antes de pedir la firma ("Preparando…") y sube el JPEG con su nombre .jpg', async () => {
     let convert!: (blob: Blob) => void
     heic.heicTo.mockImplementation(() => new Promise<Blob>(resolve => (convert = resolve)))
     const uploader = useUploader({ folderId: null })
-    uploader.add([heicFile()])
+    uploader.add([heicFile('IMG_0001.HEIC')])
     await flush(20)
 
-    expect(calls.find(c => c.url === '/api/uploads')?.body).toMatchObject({ withTextSource: true })
-    expect(sent).toContain('https://s3.test/up1')
-    expect(uploader.items.value[0]).toMatchObject({ status: 'uploading', preparing: true })
-    expect(calls.some(c => c.url === '/api/uploads/up1/complete')).toBe(false)
+    // Mientras convierte no se pide firma ni se sube nada.
+    expect(uploader.items.value[0]).toMatchObject({ status: 'uploading', preparing: true, name: 'IMG_0001.HEIC' })
+    expect(calls.some(c => c.url === '/api/uploads')).toBe(false)
+    expect(sent).toEqual([])
 
-    convert(new Blob(['jpeg'], { type: 'image/jpeg' }))
+    convert(jpeg())
     await flush(20)
-    expect(sent).toContain('https://s3.test/textsrc/up1.jpg')
-    expect(headersByUrl.get('https://s3.test/textsrc/up1.jpg')).toEqual({ 'content-type': 'image/jpeg' })
-    expect(sent.indexOf('https://s3.test/textsrc/up1.jpg')).toBeGreaterThan(sent.indexOf('https://s3.test/up1'))
-    expect(uploader.items.value[0]).toMatchObject({ status: 'done', preparing: false })
-    expect(calls.some(c => c.url === '/api/uploads/up1/complete')).toBe(true)
+    expect(calls.find(c => c.url === '/api/uploads')?.body).toMatchObject({ name: 'IMG_0001.jpg', mimeType: 'image/jpeg', size: 15 })
+    expect(calls.find(c => c.url === '/api/uploads')?.body).not.toHaveProperty('withPreview')
+    expect(sent).toEqual(['https://s3.test/up1'])
+    expect(uploader.items.value[0]).toMatchObject({ status: 'done', preparing: false, name: 'IMG_0001.jpg', size: 15 })
   })
 
-  it('si la conversión o el PUT de la copia fallan, el archivo se sube igual', async () => {
-    mockHeicTicket()
+  it('la miniatura sale del JPEG convertido, nunca de la HEIC', async () => {
+    const bitmap = vi.fn(async () => ({ width: 4032, height: 3024, close: vi.fn() }))
+    vi.stubGlobal('createImageBitmap', bitmap)
+    const toBlob = vi.spyOn(HTMLCanvasElement.prototype, 'toBlob').mockImplementation(function (cb: BlobCallback) {
+      cb(new Blob(['thumb'], { type: 'image/webp' }))
+    })
+    mockApi('POST', '/api/uploads', { fileId: 'up1', uploadUrl: 'https://s3.test/up1', thumbUploadUrl: 'https://s3.test/up1-thumb', headers: { 'content-type': 'image/jpeg' } })
+    heic.heicTo.mockResolvedValue(jpeg())
+    const uploader = useUploader({ folderId: null })
+    uploader.add([heicFile()])
+    await flush(30)
+
+    expect(bitmap).toHaveBeenCalledTimes(1)
+    expect((bitmap.mock.calls[0] as unknown as [File])[0]).toMatchObject({ name: 'IMG_0001.jpg', type: 'image/jpeg' })
+    expect(calls.find(c => c.url === '/api/uploads')?.body).toMatchObject({ withThumbnail: true })
+    expect(sent).toEqual(['https://s3.test/up1', 'https://s3.test/up1-thumb'])
+    toBlob.mockRestore()
+  })
+
+  it('si la conversión falla se sube la HEIC original', async () => {
     heic.heicTo.mockRejectedValue(new Error('libheif'))
     const uploader = useUploader({ folderId: null })
     uploader.add([heicFile()])
     await flush(20)
-    expect(uploader.items.value[0]).toMatchObject({ status: 'done', preparing: false })
-    expect(sent).not.toContain('https://s3.test/textsrc/up1.jpg')
-
-    heic.heicTo.mockResolvedValue(new Blob(['jpeg'], { type: 'image/jpeg' }))
-    behaviors.set('https://s3.test/textsrc/up2.jpg', 403)
-    uploader.add([heicFile()])
-    await flush(20)
-    expect(uploader.items.value[1]).toMatchObject({ status: 'done' })
+    expect(calls.find(c => c.url === '/api/uploads')?.body).toMatchObject({ name: 'IMG_0001.heic', mimeType: 'image/heic', size: 3_000_000 })
+    expect(uploader.items.value[0]).toMatchObject({ status: 'done', preparing: false, name: 'IMG_0001.heic' })
   })
 
-  it('un JPEG o una HEIC de más de 5 MB no piden copia', async () => {
+  it('un reintento sube el JPEG ya convertido, sin volver a convertir', async () => {
+    heic.heicTo.mockResolvedValue(jpeg())
+    behaviors.set('https://s3.test/up1', 'network')
     const uploader = useUploader({ folderId: null })
-    uploader.add([file('foto.jpg'), file('grande.heic', 'image/heic', 6_000_000)])
+    uploader.add([heicFile()])
     await flush(20)
-    expect(calls.filter(c => c.url === '/api/uploads').map(c => (c.body as { withTextSource: boolean }).withTextSource)).toEqual([false, false])
+    expect(uploader.items.value[0]).toMatchObject({ status: 'error', retryable: true, name: 'IMG_0001.jpg' })
+
+    uploader.retry(uploader.items.value[0]!.id)
+    await flush(20)
+    expect(heic.heicTo).toHaveBeenCalledTimes(1)
+    expect(calls.filter(c => c.url === '/api/uploads').map(c => (c.body as { name: string }).name)).toEqual(['IMG_0001.jpg', 'IMG_0001.jpg'])
+    expect(uploader.items.value[0]).toMatchObject({ status: 'done' })
+  })
+
+  it('cancelar mientras convierte no pide firma ni sube nada', async () => {
+    let convert!: (blob: Blob) => void
+    heic.heicTo.mockImplementation(() => new Promise<Blob>(resolve => (convert = resolve)))
+    const uploader = useUploader({ folderId: null })
+    uploader.add([heicFile()])
+    await flush(10)
+    uploader.cancel(uploader.items.value[0]!.id)
+    convert(jpeg())
+    await flush(20)
+    expect(uploader.items.value).toEqual([])
+    expect(calls.some(c => c.url === '/api/uploads')).toBe(false)
+    expect(sent).toEqual([])
+  })
+
+  it('un JPEG, una HEIC de más de 5 MB o un archivo .heic que no lo es (fuera de Apple) no se convierten', async () => {
+    const uploader = useUploader({ folderId: null })
+    uploader.add([file('foto.jpg'), file('grande.heic', 'image/heic', 6_000_000, HEIC_HEADER), file('falsa.heic', 'image/heic', 3_000_000)])
+    await flush(20)
+    expect(calls.filter(c => c.url === '/api/uploads').map(c => (c.body as { name: string }).name).sort()).toEqual(['falsa.heic', 'foto.jpg', 'grande.heic'])
     expect(heic.heicTo).not.toHaveBeenCalled()
   })
 })

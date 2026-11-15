@@ -1,8 +1,9 @@
-// Miniatura WEBP de 320 px generada en el navegador (research R9): el servidor no procesa imágenes.
+// Miniatura WEBP de 320 px generada en el navegador (research R9): el servidor no procesa imágenes. Una HEIC ya llega
+// convertida a JPEG (`heic-to-jpeg.ts`).
 const DECODABLE = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif'])
 const MAX_SIDE = 320
 
-export async function makeThumbnail(file: File): Promise<Blob | null> {
+export async function makeThumbnail(file: Blob): Promise<Blob | null> {
   if (!DECODABLE.has(file.type)) return null
   try {
     const bitmap = await createImageBitmap(file)
@@ -15,7 +16,7 @@ export async function makeThumbnail(file: File): Promise<Blob | null> {
     return await new Promise<Blob | null>(resolve => canvas.toBlob(resolve, 'image/webp', 0.8))
   }
   catch {
-    // HEIC u otros formatos que el navegador no decodifica: se muestra el ícono de la categoría.
+    // Formatos que el navegador no decodifica: se muestra el ícono de la categoría.
     return null
   }
 }

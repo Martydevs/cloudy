@@ -2,7 +2,6 @@
 // inválidos y cierra el envío con `completed_at`, que dispara el aviso en vivo (T120a).
 import { and, eq, inArray, isNull } from 'drizzle-orm'
 import { createError, getRequestIP } from 'h3'
-import { isImageTextEligible } from '#shared/constants/image-text'
 import { guestSubmissionFiles, guestSubmissions } from '../../../../db/schema'
 import { deleteMany, head, readRange } from '../../../../utils/storage'
 
@@ -42,7 +41,7 @@ export default defineEventHandler(async (event): Promise<{ status: 'pending', ac
 
   // Sin huérfanos (Constitución II): los objetos y filas inválidos se eliminan.
   if (rejected.length > 0) {
-    await deleteMany(files.filter(f => rejected.includes(f.id)).flatMap(f => [f.storageKey, textSourceKeyFor(f.id)]))
+    await deleteMany(files.filter(f => rejected.includes(f.id)).map(f => f.storageKey))
     await db.delete(guestSubmissionFiles).where(inArray(guestSubmissionFiles.id, rejected))
   }
 
@@ -59,14 +58,6 @@ export default defineEventHandler(async (event): Promise<{ status: 'pending', ac
     db.update(guestSubmissionFiles).set({ uploadStatus: 'ready' }).where(inArray(guestSubmissionFiles.id, accepted)),
     db.update(guestSubmissions).set({ completedAt: new Date() }).where(and(eq(guestSubmissions.id, id), isNull(guestSubmissions.completedAt))),
   ])
-
-  // Copias JPEG de las HEIC: se validan aquí para que la limpieza diaria pueda borrarlas junto al original, todas a la
-  // vez para no sumar viajes al bucket a la latencia de la respuesta. Ningún fallo suyo cambia la respuesta.
-  await Promise.all(files
-    .filter(f => accepted.includes(f.id)
-      && f.extension === 'heic'
-      && isImageTextEligible({ category: f.category, extension: f.extension, size: Number(f.sizeBytes) }))
-    .map(f => checkTextSourceCopy({ table: 'guest_submission_files', id: f.id })))
 
   return { status: 'pending', accepted: accepted.length, rejected: rejected.length }
 })

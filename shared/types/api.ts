@@ -68,6 +68,11 @@ export interface FileItem {
   category: FileCategory
   sizeBytes: number
   hasThumbnail: boolean
+  /**
+   * Una HEIC antigua con copia JPEG de vista previa (`GET /api/files/:id/preview`). Las HEIC nuevas se convierten a
+   * JPEG al subir y ya no llevan copia; esto solo cubre las que se subieron antes.
+   */
+  hasPreview: boolean
   origin: FileOrigin
   uploadedBy: { id: string, name: string } | null
   guestName: string | null
@@ -182,16 +187,12 @@ export interface UploadTicket {
   fileId: string
   uploadUrl: string
   thumbUploadUrl?: string
-  /** PUT de la copia JPEG de una HEIC apta (`textsrc/<id>.jpg`). */
-  textSourceUploadUrl?: string
   headers: Record<string, string>
 }
 
 export interface GuestUploadTicket {
   fileId: string
   uploadUrl: string
-  /** PUT de la copia JPEG de una HEIC apta (`textsrc/<id>.jpg`). */
-  textSourceUploadUrl?: string
   headers: Record<string, string>
 }
 

@@ -1,5 +1,6 @@
 // Validación del contenido real por firma binaria (magic bytes), research R6 / FR-009.
 // Recibe los primeros 4 KB del objeto; no depende de librerías externas.
+import { hasHeicBrand } from '#shared/constants/heic'
 
 const ascii = (bytes: Uint8Array, start: number, length: number) =>
   String.fromCharCode(...bytes.subarray(start, start + length))
@@ -12,7 +13,6 @@ const isOle = (b: Uint8Array) => startsWith(b, [0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0x
 const isRiff = (b: Uint8Array, format: string) => ascii(b, 0, 4) === 'RIFF' && ascii(b, 8, 4) === format
 const ftypBrand = (b: Uint8Array) => ascii(b, 4, 4) === 'ftyp' ? ascii(b, 8, 4) : null
 
-const HEIC_BRANDS = new Set(['heic', 'heix', 'heim', 'heis', 'hevc', 'hevx', 'mif1', 'msf1'])
 const QUICKTIME_ATOMS = new Set(['moov', 'mdat', 'wide', 'free', 'skip', 'pnot'])
 
 /** Texto del contenedor ZIP visible en los primeros bytes (nombres de entradas y XML sin comprimir). */
@@ -72,7 +72,7 @@ export function matchesSignature(ext: string, bytes: Uint8Array): boolean {
     case 'webp':
       return isRiff(bytes, 'WEBP')
     case 'heic':
-      return HEIC_BRANDS.has(ftypBrand(bytes) ?? '')
+      return hasHeicBrand(bytes)
     case 'mp4':
     case 'm4a':
       return ftypBrand(bytes) !== null

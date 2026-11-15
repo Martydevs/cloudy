@@ -149,6 +149,44 @@ describe('US1 · archivos del equipo', () => {
     await page.close()
   })
 
+  // HEIC → JPEG al subir: la foto se guarda como JPEG y la HEIC no se sube. Chromium no es un dispositivo Apple: la HEIC
+  // se convierte igual porque su firma es de HEIC (`heic-to` es wasm y corre en cualquier navegador).
+  it('una HEIC se convierte y se guarda como JPEG, con miniatura y vista previa normales', async () => {
+    const page = await createPage(undefined, { viewport: viewports.desktop })
+    await signedInAs(page, 'editor', 'files-heic')
+    await page.goto(`${E2E_URL}/archivos`)
+    await waitForHydration(page)
+
+    const tickets: Record<string, unknown>[] = []
+    const puts: string[] = []
+    page.on('request', (request) => {
+      if (request.method() === 'POST' && new URL(request.url()).pathname === '/api/uploads') tickets.push(request.postDataJSON())
+      if (request.method() === 'PUT') puts.push(new URL(request.url()).pathname)
+    })
+
+    await uploadFiles(page, ['nota.heic'])
+    const dialog = await waitForQueue(page)
+    // La cola ya muestra el nombre del JPEG.
+    expect(await dialog.getByText('nota.jpg').count()).toBe(1)
+    await dialog.getByRole('button', { name: 'Listo' }).click()
+
+    expect(tickets).toEqual([expect.objectContaining({ name: 'nota.jpg', mimeType: 'image/jpeg', withThumbnail: true })])
+    // El original JPEG y su miniatura; ninguna HEIC ni copia aparte.
+    expect(puts).toHaveLength(2)
+    expect(puts.some(p => p.includes('/textsrc/'))).toBe(false)
+
+    const card = page.getByRole('link', { name: /^Abrir nota( \(\d+\))?\.jpg$/ }).first()
+    await expect.poll(() => card.getByRole('img').isVisible(), { timeout: 15_000 }).toBe(true)
+    expect(await page.getByRole('link', { name: /^Abrir nota.*\.heic$/ }).count()).toBe(0)
+
+    // El detalle lo trata como cualquier JPEG: la vista previa es el propio archivo.
+    await card.click()
+    await page.waitForURL(/\/archivos\/ver\//)
+    const preview = page.locator('img[src$="/content"]')
+    await expect.poll(() => preview.evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth > 0), { timeout: 15_000 }).toBe(true)
+    await page.close()
+  })
+
   it('las APIs de archivos validan el tamaño y el tipo antes de firmar', async () => {
     const page = await createPage()
     await signedInAs(page, 'editor', 'files-api')

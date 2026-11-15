@@ -32,7 +32,7 @@ const me: Me = {
 
 const file: FileItem = {
   id: 'f1', folderId: null, name: 'foto.jpg', extension: 'jpg', mimeType: 'image/jpeg', category: 'image', sizeBytes: 1,
-  hasThumbnail: false, origin: 'team', uploadedBy: null, guestName: null, createdAt: '', updatedAt: '',
+  hasThumbnail: false, hasPreview: false, origin: 'team', uploadedBy: null, guestName: null, createdAt: '', updatedAt: '',
 }
 const folder: FolderItem = { id: 'd1', name: 'Domingo', parentId: null, createdAt: '', updatedAt: '' }
 

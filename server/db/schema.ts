@@ -95,12 +95,13 @@ export const folders = pgTable('folders', {
 ])
 
 /**
- * Copia JPEG `textsrc/<id>.jpg` que sube el navegador cuando el original es HEIC: misma columna en `files` y
- * `guest_submission_files`. Resto de la feature 002 (el texto extraído) retirado; la copia se conserva y la limpieza
- * diaria la borra junto al original.
+ * Copia JPEG de vista previa `textsrc/<id>.jpg` de una HEIC **antigua** (solo Safari decodifica HEIC): misma columna
+ * en `files` y `guest_submission_files`. Desde que las HEIC se convierten a JPEG en el navegador ya no se escribe;
+ * queda para mostrar las HEIC subidas antes (`GET /api/files/:id/preview`) y para que la aprobación la pase al archivo
+ * y la papelera, el rechazo y la limpieza diaria la borren con el original.
  */
-const textSourceColumns = () => ({
-  textSourceKey: text('text_source_key'),
+const previewColumns = () => ({
+  previewKey: text('preview_key'),
 })
 
 // ---------------------------------------------------------------- guest submissions
@@ -138,7 +139,7 @@ export const guestSubmissionFiles = pgTable('guest_submission_files', {
   sizeBytes: bigint('size_bytes', { mode: 'number' }).notNull(),
   storageKey: text('storage_key').notNull().unique(),
   uploadStatus: uploadStatus('upload_status').notNull().default('uploading'),
-  ...textSourceColumns(),
+  ...previewColumns(),
 }, t => [
   index('guest_submission_files_submission_idx').on(t.submissionId),
 ])
@@ -167,7 +168,7 @@ export const files = pgTable('files', {
   deletedAt: timestamp('deleted_at', { withTimezone: true }),
   deletedBy: text('deleted_by').references(() => profiles.userId),
   trashRootId: uuid('trash_root_id'),
-  ...textSourceColumns(),
+  ...previewColumns(),
 }, t => [
   index('files_folder_created_idx').on(t.folderId, t.createdAt.desc()),
   index('files_category_idx').on(t.category),

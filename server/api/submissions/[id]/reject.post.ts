@@ -21,11 +21,11 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 409, statusMessage: 'Conflict', message: 'Este envío ya fue revisado por otra persona' })
   }
 
-  const guestFiles = await db.select({ id: guestSubmissionFiles.id, storageKey: guestSubmissionFiles.storageKey, textSourceKey: guestSubmissionFiles.textSourceKey })
+  const guestFiles = await db.select({ storageKey: guestSubmissionFiles.storageKey, previewKey: guestSubmissionFiles.previewKey })
     .from(guestSubmissionFiles)
     .where(eq(guestSubmissionFiles.submissionId, id))
-  // También la copia JPEG de cada HEIC (feature 002), aunque la subida no se completara.
-  await deleteMany(guestFiles.flatMap(f => [f.storageKey, f.textSourceKey ?? '', textSourceKeyFor(f.id)]))
+  // También la copia de vista previa de una HEIC antigua, si la tiene.
+  await deleteMany(guestFiles.flatMap(f => [f.storageKey, f.previewKey ?? '']))
   await db.batch([
     db.delete(guestSubmissionFiles).where(eq(guestSubmissionFiles.submissionId, id)),
     activityInsert(profile, 'submission.reject', { type: 'submission', id, label: updated.senderName }, { reason: reason || null }),

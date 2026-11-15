@@ -74,7 +74,7 @@ export const messages = {
     renameFailed: `No pudimos renombrar. ${RETRY}`,
     moveFailed: `No pudimos mover el elemento. ${RETRY}`,
     trashFailed: `No pudimos eliminarlo. ${RETRY}`,
-    /** Fila de la cola mientras se genera la copia JPEG de una HEIC. */
+    /** Fila de la cola mientras una HEIC se convierte a JPEG. */
     preparing: 'Preparando…',
   },
   trash: {

@@ -48,13 +48,13 @@ export default defineEventHandler(async (event): Promise<{ files: FileItem[] }> 
       // Depende del UPDATE: solo inserta si este mismo revisor acaba de aprobar el envío.
       db.execute<{ id: string }>(sql`
         INSERT INTO files (id, folder_id, name, extension, mime_type, category, size_bytes, storage_key, upload_status, origin, guest_name, submission_id,
-          text_source_key)
+          preview_key)
         SELECT v.id, ${folderId}::uuid, v.name, v.extension, v.mime_type, v.category, v.size_bytes, v.storage_key, 'ready', 'guest', gs.sender_name, gs.id,
-          g.text_source_key
+          g.preview_key
         FROM (VALUES ${values}) AS v(id, name, extension, mime_type, category, size_bytes, storage_key)
         JOIN guest_submissions gs ON gs.id = ${id}::uuid AND gs.status = 'approved'
           AND gs.reviewed_by = ${profile.userId} AND gs.reviewed_at = ${reviewedAt.toISOString()}::timestamptz
-        -- La copia JPEG de una HEIC pasa al archivo para que la limpieza diaria la borre con él.
+        -- La copia de vista previa de una HEIC antigua (si la tiene) pasa al archivo: la muestra y la limpieza la borra con él.
         JOIN guest_submission_files g ON g.id = v.id
         RETURNING id
       `),

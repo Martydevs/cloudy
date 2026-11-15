@@ -1,6 +1,6 @@
 // Cámara dentro de Cloudy (feature 003, research B8): funciones puras de la foto. La foto sale como JPEG de
-// ≤ 5 MB, igual que la copia de una HEIC (`heic-copy.ts`), para que la lectura de texto (feature 002) la acepte.
-import { MAX_IMAGE_TEXT_BYTES } from '#shared/constants/image-text'
+// ≤ 5 MB, el mismo tope que el JPEG de una HEIC convertida (`heic-to-jpeg.ts`).
+import { MAX_HEIC_CONVERSION_BYTES } from '#shared/constants/heic'
 
 const QUALITY = 0.85
 /** Segundo intento si la primera pasada supera 5 MB. */
@@ -44,5 +44,5 @@ function toBlob(canvas: HTMLCanvasElement, quality: number): Promise<Blob> {
 /** JPEG a calidad 0.85; si pasa de 5 MB, una segunda pasada a 0.7. */
 export async function encodeJpeg(canvas: HTMLCanvasElement): Promise<Blob> {
   const first = await toBlob(canvas, QUALITY)
-  return first.size > MAX_IMAGE_TEXT_BYTES ? toBlob(canvas, RETRY_QUALITY) : first
+  return first.size > MAX_HEIC_CONVERSION_BYTES ? toBlob(canvas, RETRY_QUALITY) : first
 }
