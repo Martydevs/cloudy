@@ -4,9 +4,29 @@
 **Context**: closes the open point §2.4 of `HANDOFF-008-remove-text-extraction.md` in the opposite direction to
 "remove it": instead of retiring the HEIC → JPEG copy, it is kept, gated on Apple devices and finally **used**.
 
-> This is a draft. §2 lists four decisions that change the shape of the work; confirm them before writing code.
-> The new session can promote this to `specs/009-heic-apple-uploads/` through `/speckit-specify` if the team wants
-> the full Spec Kit trail (recommended: it touches an API contract and a migration).
+> **Status (2026-11-14): implemented on `development`, with D1 changed to B** (no Spec Kit trail, by decision).
+> Decisions taken: **D1 = B** (replace the original: the HEIC is converted to JPEG in the browser and the JPEG is
+> uploaded *as the file*, `IMG_0001.heic` → `IMG_0001.jpg`; the HEIC is not stored). It was first built as A (companion
+> preview) and switched to B at the user's request the same day. **D2 = D2a** (Apple check is a pre-filter; elsewhere the
+> `ftyp` brand is checked before loading `heic-to`) · **D3 = rename** (`preview_key`, migration `0012_preview_key.sql`,
+> hand-written `RENAME COLUMN`) · **D4 = keep the 5 MB cap** (HEICs > 5 MB, or whose JPEG stays > 5 MB, are uploaded as
+> HEIC; a failed conversion also uploads the HEIC, so an upload is never blocked).
+>
+> Delivered: `shared/device.ts` + `app/utils/device.ts`, `shared/constants/heic.ts` (replaces `image-text.ts`; also owns
+> the HEIC brand check used by `server/utils/file-signature.ts`), `app/utils/heic-to-jpeg.ts` (replaces `heic-copy.ts`),
+> both upload composables convert before asking for the ticket. The copy-*writing* side is gone (`withTextSource`,
+> `textSourceUploadUrl`, `checkTextSourceCopy`, derived-key deletes). The *read* side stays for HEICs that already have a
+> legacy copy: `preview_key`, `FileItem.hasPreview`, `GET /api/files/:id/preview`, the `FilePreview` HEIC branch, approval
+> carrying the key, and the column-based deletes in trash/reject/cron. Tests: `test/unit/device.spec.ts`,
+> `test/unit/heic.spec.ts`, `test/nuxt/heic-to-jpeg.spec.ts`, the composable/API specs, and an e2e in
+> `test/e2e/files.spec.ts` that uploads a real HEIC from Chromium and checks it is stored as `nota.jpg`.
+>
+> **Pending, for a person**: run `bun run db:migrate` (development) and `bun run db:migrate:prod` **before** deploying
+> (the code reads `preview_key`). The test branch was migrated by the e2e setup. One manual pass from a real
+> iPhone/iPad (§5.3) is still owed.
+>
+> Complexity Tracking (Constitution II): `isApplePlatform` is new code because VueUse has no UA/platform composable;
+> it is ~10 lines, pure and table-tested.
 
 ---
 

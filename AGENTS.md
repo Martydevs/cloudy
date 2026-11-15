@@ -8,7 +8,7 @@ send material from a public page into an approval queue that the team reviews li
 file. Keep this guide aligned with it whenever the constitution is amended.
 
 **Active feature**: `specs/008-remove-text-extraction/` — the AI image-text extraction of feature 002 was **removed** (migration `0011`): no more OpenRouter vision reads on staff uploads or
-guest submissions, no `text_*` columns beyond `text_source_key`, no search by transcript. Peticiones was reworked: every approved guest image is selectable and the team types each
+guest submissions, no `text_*` columns (the HEIC copy's `text_source_key` was later renamed `preview_key`, migration `0012`, and is now read-only for legacy files, see "HEIC → JPEG" in Known gotchas), no search by transcript. Peticiones was reworked: every approved guest image is selectable and the team types each
 request's text in `PrayerComposeDialog` right before generating; the text is never stored (in-memory only) and travels in `POST /api/peticiones/imagenes`.
 Previous: `specs/007-peticiones-imagenes/` (Peticiones page: approved guest prayer-request images shown as selectable cards
 turned into "prayer requests of the day" images, up to 4 requests per image, by the OpenRouter preset `@preset/pray-requests-image-generation` over a bundled template; no new
@@ -200,10 +200,23 @@ Never print or commit their values.
   lives in `useState`, not in a local ref.
 - Nitro's `event.waitUntil` is not wired on Vercel Node: background work uses `waitUntil` from
   `@vercel/functions`, only through `server/utils/background.ts`.
-- `heic-to` only works in the browser: load it with a dynamic `import()` (`app/utils/heic-copy.ts`). The HEIC → JPEG copy
-  (`withTextSource`, `textsrc/<id>.jpg`, `files.text_source_key`, `checkTextSourceCopy` in `server/utils/uploads.ts`) is all
-  that survives of feature 002: nothing reads the copies any more, but they are still uploaded and the daily cron still
-  deletes them with the original. Removing the pipeline is a separate, deliberate decision.
+- HEIC → JPEG (`PLAN-heic-apple-uploads.md`): only Safari decodes HEIC, so every upload path (staff `useUploader`, guest
+  `useGuestSubmission`) **converts a HEIC to JPEG in the browser and uploads the JPEG instead** (`IMG_0001.heic` →
+  `IMG_0001.jpg`, a normal JPEG with a normal thumbnail); the HEIC is not stored. Conversion runs before the ticket is
+  requested (queue row shows «Preparando…», then the new name and size); a retry reuses the converted file. Rules:
+  `shared/constants/heic.ts` (`isHeicConvertible`: HEIC ≤ `MAX_HEIC_CONVERSION_BYTES` = 5 MB; JPEG output ≤ 5 MB, quality
+  0.85 → 0.7). If the HEIC is bigger, or conversion fails, the original HEIC is uploaded as-is (never block an upload).
+  `heic-to` only works in the browser: load it with a dynamic `import()`, only from `app/utils/heic-to-jpeg.ts`
+  (`architecture.spec.ts`). `shouldConvertHeic(file)` is the gate: on an Apple device (`isAppleDevice()` → pure
+  `isApplePlatform` in `shared/device.ts`, UA table in `test/unit/device.spec.ts`) the extension is enough; elsewhere the
+  `ftyp` brand (`hasHeicBrand`) is checked first, so a HEIC that reached Windows/Android still converts. The server needs
+  nothing special: a converted file is just a JPEG.
+  **Legacy copies**: HEICs uploaded before this kept a JPEG companion copy (`textsrc/<id>.jpg`, column `preview_key`,
+  renamed from `text_source_key` in migration `0012`). Nothing writes it any more, but it is still read: `FileItem.hasPreview`,
+  `GET /api/files/:id/preview` (302) and `FilePreview` show old HEICs through it, approval carries it from
+  `guest_submission_files` to `files`, and trash purge / reject / the daily cron delete it with the original. The bucket
+  prefix `textsrc/` is kept (no `CopyObject` in Neon Object Storage). e2e (`files.spec.ts`) uploads
+  `test/fixtures/files/nota.heic` from Chromium and checks it is stored as `nota.jpg` with a thumbnail and a decoded preview.
 - Nitro auto-imports everything under `server/utils/**`, subfolders included. Code that must stay behind a boundary
   (the AI layer) lives outside it in `server/ai/` and is imported explicitly as `#server/ai`, only from
   `server/utils/prayer-images.ts`; `test/unit/architecture.spec.ts` enforces it.

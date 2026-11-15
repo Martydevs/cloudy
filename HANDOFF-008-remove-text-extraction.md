@@ -123,6 +123,11 @@ Hoy es código vivo que no sirve a nadie (ver §1). Retirarla tocaría: `withTex
 `app/utils/heic-copy.ts`, la dependencia `heic-to`, `checkTextSourceCopy`, la columna `text_source_key` (otra migración)
 y la limpieza en cron/papelera/rechazo. Quedaría una decisión del equipo; dejarla también es válido.
 
+> **Cerrada (2026-11-14)**: las HEIC se convierten a JPEG en el navegador y se sube el JPEG en su lugar (la HEIC no se
+> guarda); la copia aparte ya no se escribe, solo se lee para las HEIC antiguas (`preview_key`, migración `0012`). Ver
+> `PLAN-heic-apple-uploads.md`. `shared/constants/image-text.ts` ahora es `shared/constants/heic.ts` y
+> `app/utils/heic-copy.ts` es `app/utils/heic-to-jpeg.ts`.
+
 ---
 
 ## 3. Cosas que conviene saber al retomar
