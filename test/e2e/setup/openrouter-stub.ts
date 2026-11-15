@@ -1,7 +1,8 @@
 // Stub local de la API de chat completions de OpenRouter para los e2e. La app de pruebas lo usa vía
 // `NUXT_OPENROUTER_BASE_URL`; los e2e nunca llaman a OpenRouter.
-// Generación de imágenes de peticiones (feature 007, research D15): se reconoce por el preset o por `modalities` con
-// `image`, responde `message.images` con un PNG y se registra en `prayer`. Es el único caso de uso de IA que queda.
+// Generación de imágenes de peticiones (feature 007, research D15; feature 008: el modelo lee las fotos): se reconoce por el
+// preset o por `modalities` con `image`, responde `message.images` con un PNG y se registra en `prayer`. Es el único caso de
+// uso de IA que queda. El stub no descarga las fotos: solo cuenta y guarda sus URLs.
 import { readFileSync } from 'node:fs'
 import { createServer } from 'node:http'
 import type { AddressInfo } from 'node:net'
@@ -10,14 +11,16 @@ import type { AddressInfo } from 'node:net'
 export const PRAYER_PRESET = '@preset/pray-requests-image-generation'
 
 /**
- * Escenarios de la generación, por palabra clave en el texto de alguna petición:
+ * Escenarios de la generación. Ya no hay texto que leer: se fijan por prueba con `/__stub/mode` (`setStubMode`), para todas
+ * las llamadas o solo para las que traen una foto cuya URL contiene `match` (p. ej. el id del archivo, que va en su clave):
  * - `sin-imagen`: responde sin `images` (→ `invalid_output`).
  * - `sin-credito`: 402 (→ `quota_exceeded`).
  * - `lento`: espera `prayerDelayMs` antes de responder.
- * - `falla-una-vez`: 500 en las **dos** primeras llamadas con ese texto (el AI SDK reintenta una vez solo, `maxRetries: 1`),
+ * - `falla-una-vez`: 500 en las **dos** primeras llamadas afectadas (el AI SDK reintenta una vez solo, `maxRetries: 1`),
  *   así la página ve el fallo; el **Reintentar** de la persona ya responde bien.
  */
 export const PRAYER_SCENARIOS = ['sin-imagen', 'sin-credito', 'lento', 'falla-una-vez'] as const
+export type PrayerScenario = typeof PRAYER_SCENARIOS[number]
 /** Llamadas que fallan con `falla-una-vez` antes de responder bien. */
 const FAIL_ONCE_CALLS = 2
 
@@ -25,12 +28,10 @@ const FAIL_ONCE_CALLS = 2
 export interface PrayerCall {
   model: string | null
   modalities: string[]
-  /** Llegó una parte `data:image/jpeg` (la plantilla). */
+  /** La primera imagen es un `data:image/jpeg` (la plantilla). */
   template: boolean
-  /** Etiquetas `<peticion …>` del prompt. */
-  tags: number
-  /** Texto de cada `<peticion>`, en orden. */
-  texts: string[]
+  /** URL de cada foto de petición (las imágenes después de la plantilla), en orden: https firmada o `data:image/…`. */
+  photos: string[]
   /** Todo el texto del mensaje de usuario (para afirmar que no viajan nombres ni notas). */
   prompt: string
   /** Estado HTTP con el que respondió el stub. */
@@ -40,9 +41,13 @@ export interface PrayerCall {
 export interface StubMode {
   /** Retraso de una generación con `lento`. */
   prayerDelayMs: number
+  /** Escenario activo; `null` = responde bien. */
+  scenario: PrayerScenario | null
+  /** Si está, el escenario solo afecta a las llamadas con alguna foto cuya URL contiene este texto. */
+  match: string | null
 }
 
-const DEFAULT_MODE: StubMode = { prayerDelayMs: 4000 }
+const DEFAULT_MODE: StubMode = { prayerDelayMs: 4000, scenario: null, match: null }
 
 export interface StubCalls {
   /** Generaciones de imágenes de peticiones, en orden de llegada. */
@@ -79,13 +84,12 @@ function partsOf(body: ChatBody): { text: string, imageUrls: string[] } {
 
 function prayerCallOf(body: ChatBody): Omit<PrayerCall, 'status'> {
   const { text, imageUrls } = partsOf(body)
-  const texts = [...text.matchAll(/<peticion\b[^>]*>([\s\S]*?)<\/peticion>/g)].map(match => match[1]!)
+  const template = imageUrls[0]?.startsWith('data:image/jpeg') ?? false
   return {
     model: typeof body.model === 'string' ? body.model : null,
     modalities: Array.isArray(body.modalities) ? body.modalities.filter((m): m is string => typeof m === 'string') : [],
-    template: imageUrls.some(url => url.startsWith('data:image/jpeg')),
-    tags: (text.match(/<peticion\b/g) ?? []).length,
-    texts,
+    template,
+    photos: template ? imageUrls.slice(1) : imageUrls,
     prompt: text,
   }
 }
@@ -111,8 +115,8 @@ export async function startAiStub(): Promise<{ url: string, close: () => Promise
   const png = `data:image/png;base64,${readFileSync(new URL('../../fixtures/files/imagen.png', import.meta.url)).toString('base64')}`
   let mode: StubMode = { ...DEFAULT_MODE }
   let calls: StubCalls = emptyCalls()
-  /** Llamadas vistas por prompt con `falla-una-vez`. */
-  let failOnce = new Map<string, number>()
+  /** Llamadas afectadas por `falla-una-vez` desde que se fijó el modo. */
+  let failed = 0
 
   const server = createServer(async (req, res) => {
     const chunks: Buffer[] = []
@@ -125,12 +129,13 @@ export async function startAiStub(): Promise<{ url: string, close: () => Promise
 
     if (req.method === 'POST' && req.url === '/__stub/mode') {
       mode = { ...DEFAULT_MODE, ...(raw ? JSON.parse(raw) as Partial<StubMode> : {}) }
+      failed = 0
       return json(200, mode)
     }
     if (req.method === 'POST' && req.url === '/__stub/reset') {
       mode = { ...DEFAULT_MODE }
       calls = emptyCalls()
-      failOnce = new Map()
+      failed = 0
       return json(200, calls)
     }
     if (req.method === 'GET' && req.url === '/__stub/calls') return json(200, calls)
@@ -140,20 +145,19 @@ export async function startAiStub(): Promise<{ url: string, close: () => Promise
 
       if (body && isGeneration(body)) {
         const call = prayerCallOf(body)
-        const has = (keyword: typeof PRAYER_SCENARIOS[number]) => call.texts.some(text => text.includes(keyword))
+        const { match } = mode
+        const affected = match === null || call.photos.some(url => url.includes(match))
+        const has = (scenario: PrayerScenario) => affected && mode.scenario === scenario
         const record = (status: number) => calls.prayer.push({ ...call, status })
         if (has('lento')) await new Promise(r => setTimeout(r, mode.prayerDelayMs))
         if (has('sin-credito')) {
           record(402)
           return json(402, { error: { code: 402, message: 'Insufficient credits' } })
         }
-        if (has('falla-una-vez')) {
-          const seen = (failOnce.get(call.prompt) ?? 0) + 1
-          failOnce.set(call.prompt, seen)
-          if (seen <= FAIL_ONCE_CALLS) {
-            record(500)
-            return json(500, { error: { code: 500, message: 'stub failure' } })
-          }
+        if (has('falla-una-vez') && failed < FAIL_ONCE_CALLS) {
+          failed++
+          record(500)
+          return json(500, { error: { code: 500, message: 'stub failure' } })
         }
         record(200)
         return json(200, imageCompletion(body.model, has('sin-imagen') ? null : png))

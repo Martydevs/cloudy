@@ -59,6 +59,20 @@ Respuesta `200` — `Paginated<PrayerRequest>` (`shared/types/api.ts`):
 
 ## 2. `POST /api/peticiones/imagenes`
 
+> **Enmienda (2026-11-15) — el modelo lee las fotos.** Vigente sobre lo de abajo:
+>
+> - Cuerpo (`prayerImageInput`): `{ "fileIds": ["uuid", …] }`, de 1 a 4, sin repetidos (los ids se normalizan a minúsculas).
+>   Ni texto ni nada más.
+> - Flujo: `requireRole('editor')` → `readValid` → `hitRateLimit('peticiones-img:<userId>', 60/h)` →
+>   `createPrayerImage(fileIds)`: `loadEligibleRequests` (condiciones del listado; devuelve solo `id`, `storageKey`,
+>   `previewKey`, `mimeType`, en orden `(reviewed_at, created_at, id)`) ⇒ `409 request_unavailable` si falta alguna →
+>   `photoSource` por foto (copia JPEG `previewKey` si existe; si no, el original JPEG/PNG/WebP/GIF) ⇒ `422 unreadable_image`
+>   (`data.ids`) si alguna no tiene fuente legible → plantilla y clave ⇒ `503 not_configured` → `presignGet(key, {}, 600)`
+>   por foto → `generatePrayerImage({ photos: [{ url, mediaType }], template })` → subida al bucket, fila y `201` (§ 5).
+> - Error nuevo: `422` · `unreadable_image` (+ `data.ids`) · una HEIC sin copia JPEG · **No** reintentable. Un `422` sin
+>   `data.code` sigue siendo la validación del cuerpo.
+> - Ya no aplican: `text_status`, `paragraphs`, el texto en el cuerpo (enmienda 2026-11-13) ni FR-027.
+
 Cuerpo (`prayerImageInput`): `{ "fileIds": ["uuid", …] }` — de 1 a 4, sin repetidos. **El navegador no manda texto**: el servidor lo lee en ese momento (FR-027).
 
 Flujo (`server/utils/prayer-images.ts`):
@@ -133,6 +147,15 @@ Limpieza diaria (`GET /api/cron/cleanup`, paso 7): `expiredPrayerImages` = imág
 borradas en lotes de 500 (filas, luego objetos).
 
 ## 4. Frontera con el proveedor (`server/ai/prayer-image/`)
+
+> **Enmienda (2026-11-15).** `generatePrayerImage({ photos, template, model?, abortSignal? })` con
+> `photos: { url: string /* https firmada */, mediaType: 'image/jpeg' | 'image/png' | 'image/webp' | 'image/gif' }[]` (1–4)
+> en lugar de `paragraphs`; fuera de rango, URL no https o formato no admitido ⇒ `failed/invalid_input` sin llamar. Mensaje de
+> usuario: `[text: buildPrayerPrompt(n), file: plantilla JPEG (bytes), …por foto: text: «Foto de la petición i», file: URL]`.
+> `resolvePrayerImageModel` envuelve el modelo con `wrapLanguageModel` (`overrideSupportedUrls`: `data:image/…` y cualquier
+> `https://`): `@openrouter/ai-sdk-provider` solo acepta como URL las que terminan en `.jpg/.jpeg/.png/.gif/.webp`, y las
+> claves de los invitados no tienen extensión, así que sin eso el AI SDK descargaría las fotos en la función. Así OpenRouter
+> recibe `image_url.url` = la URL firmada y la descarga él. Exporta además `PRAYER_PHOTO_MEDIA_TYPES` y el tipo `PrayerPhotoInput`.
 
 ```ts
 // server/ai/index.ts (nuevas exportaciones)

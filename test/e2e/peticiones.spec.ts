@@ -1,13 +1,13 @@
-// T033 / T051 / T066 / T077 — Página Peticiones (feature 007, quickstart § 3): tarjetas de peticiones aprobadas, selección,
-// el diálogo donde se escribe el texto de cada una, generación de imágenes contra el stub de OpenRouter (guardadas en el
-// historial, enmienda de historial) y filtros. Los datos se siembran en la rama de pruebas con `seedPrayerRequest`; las
-// aprobaciones de esta corrida son las más recientes (otros archivos e2e corren antes, uno a la vez), así que salen primero
-// en la rejilla. El texto ya no se guarda: cada prueba lo escribe en el diálogo.
+// T033 / T051 / T066 / T077 — Página Peticiones (feature 007, quickstart § 3; feature 008): tarjetas de peticiones
+// aprobadas, selección, generación de imágenes contra el stub de OpenRouter (guardadas en el historial, enmienda de
+// historial) y filtros. Los datos se siembran en la rama de pruebas con `seedPrayerRequest`; las aprobaciones de esta corrida
+// son las más recientes (otros archivos e2e corren antes, uno a la vez), así que salen primero en la rejilla. Ya no hay texto
+// que escribir: «Generar imágenes» encola al instante y el modelo recibe la plantilla y las fotos (URLs firmadas).
 import { createPage, setup } from '@nuxt/test-utils/e2e'
 import type { Cookie, Page } from 'playwright-core'
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { PRAYER_ERROR_MESSAGES } from '../../shared/constants/prayers'
-import { E2E_URL, prayerCalls, profileUserId, resetStub, runId, seedPrayerRequest, signedInAs, testSql, viewports, waitForHydration } from './setup/fixtures'
+import { E2E_URL, prayerCalls, profileUserId, resetStub, runId, seedPrayerRequest, setStubMode, signedInAs, testSql, viewports, waitForHydration } from './setup/fixtures'
 import type { Credentials, PrayerSeed } from './setup/fixtures'
 
 await setup({ host: E2E_URL, browser: true })
@@ -55,16 +55,16 @@ async function seedMany(prefix: string, count: number, extra: PrayerSeed = {}): 
 }
 
 /**
- * Siembra una petición por cada texto; la primera queda como la aprobada más reciente (sale primero en la rejilla y última
- * en las imágenes). El texto no se guarda en la base: viaja de vuelta para escribirlo en el diálogo de generación.
+ * Siembra `count` peticiones y devuelve nombre e id de archivo; la primera queda como la aprobada más reciente (sale primero
+ * en la rejilla y última en las imágenes).
  */
-async function seedTexts(prefix: string, texts: string[], extra: PrayerSeed = {}): Promise<{ name: string, fileId: string, text: string }[]> {
+async function seedRequests(prefix: string, count: number, extra: PrayerSeed = {}): Promise<{ name: string, fileId: string }[]> {
   const base = Date.now()
-  const seeded: { name: string, fileId: string, text: string }[] = []
-  for (const [i, text] of texts.entries()) {
+  const seeded: { name: string, fileId: string }[] = []
+  for (let i = 0; i < count; i++) {
     const name = `${prefix} ${String(i + 1).padStart(2, '0')} ${runId()}`
     const { fileId } = await seedPrayerRequest(owner, { senderName: name, reviewedAt: new Date(base - i * 1000), ...extra })
-    seeded.push({ name, fileId, text })
+    seeded.push({ name, fileId })
   }
   return seeded
 }
@@ -126,16 +126,11 @@ describe('US1 · ver las peticiones y elegir cuáles proyectar', () => {
     await popup.close()
     expect(await box(page, names[3]!).isChecked()).toBe(false)
     await expect.poll(() => bar(page).innerText()).toContain('2 peticiones → 1 imagen')
-
-    await bar(page).getByRole('button', { name: 'Escribir textos y generar' }).click()
-    const dialog = page.getByRole('dialog', { name: 'Escribe el texto de cada petición' })
-    await expect.poll(() => dialog.innerText()).toContain(names[0])
-    expect(await dialog.innerText()).toContain(names[2])
-    await dialog.getByRole('button', { name: 'Cerrar' }).first().click()
+    expect(await bar(page).getByRole('button', { name: 'Generar imágenes', exact: true }).isEnabled()).toBe(true)
     await page.close()
   })
 
-  it('cualquier petición aprobada se puede marcar: el texto se escribe al generar', async () => {
+  it('cualquier petición aprobada se puede marcar: el modelo lee el texto en la foto', async () => {
     const [name] = await seedMany('Marcable', 1)
     const page = await editorPage()
     await openPage(page)
@@ -201,54 +196,51 @@ describe('US2 · generar las imágenes de peticiones del día', () => {
     return ids
   }
 
-  /** Abre el diálogo con las tarjetas elegidas (sin escribir nada todavía). */
-  async function openCompose(page: Page, names: string[]) {
+  /** Elige las tarjetas y pulsa «Generar imágenes»: se encola sin diálogo y la selección se vacía. */
+  async function generate(page: Page, names: string[]) {
     for (const name of names) await box(page, name).check()
-    await bar(page).getByRole('button', { name: 'Escribir textos y generar' }).click()
-    const dialog = page.getByRole('dialog', { name: 'Escribe el texto de cada petición' })
-    await expect.poll(() => dialog.isVisible()).toBe(true)
-    return dialog
+    await bar(page).getByRole('button', { name: 'Generar imágenes', exact: true }).click()
+    await expect.poll(() => bar(page).count()).toBe(0)
   }
 
-  /** Elige las tarjetas, escribe el texto de cada una en el diálogo y genera. */
-  async function generate(page: Page, entries: { name: string, text: string }[]) {
-    const dialog = await openCompose(page, entries.map(e => e.name))
-    for (const { name, text } of entries) await dialog.getByLabel(name, { exact: true }).fill(text)
-    await dialog.getByRole('button', { name: 'Generar imágenes', exact: true }).click()
-    await expect.poll(() => dialog.isVisible()).toBe(false)
-  }
+  /** Las fotos de una llamada apuntan a estos archivos (su id va en la clave del bucket), en este orden. */
+  const photosOf = (photos: string[], fileIds: string[]) => photos.map(url => fileIds.findIndex(id => url.includes(id)))
 
   beforeEach(async () => {
     await resetStub()
   })
 
-  it('5 → 2 imágenes: la plantilla y los textos (sin nombres ni notas) viajan al stub; se guardan en el historial, sobreviven a una recarga, se descargan, se amplían y se generan de nuevo', async () => {
-    const texts = ['Uno', 'Dos', 'Tres', 'Cuatro', 'Cinco'].map(word => `Petición ${word} ${runId()}`)
-    const seeded = await seedTexts('Generar', texts, { note: `Nota privada ${runId()}` })
+  it('5 → 2 imágenes sin diálogo: la plantilla y las fotos (URLs firmadas, sin nombres ni notas) viajan al stub; se guardan en el historial, sobreviven a una recarga, se descargan y se amplían', async () => {
+    const seeded = await seedRequests('Generar', 5, { note: `Nota privada ${runId()}` })
+    const fileIds = seeded.map(s => s.fileId)
     const page = await editorPage()
     const ids = trackSaved(page)
     await openPage(page)
-    await generate(page, seeded)
+    await generate(page, seeded.map(s => s.name))
+    expect(await page.getByRole('dialog').count()).toBe(0)
+    await expect.poll(() => page.getByText('2 imágenes en cola').isVisible()).toBe(true)
 
     await expect.poll(() => ids.length, { timeout: 30_000 }).toBe(2)
     for (const { id } of ids) await expect.poll(() => saved(page, id).isVisible(), { timeout: 10_000 }).toBe(true)
     // Lo guardado sale de la cola: ya no hay tarjetas en curso.
     await expect.poll(() => page.getByRole('list', { name: 'Imágenes en curso' }).count()).toBe(0)
-    // La selección se conserva para corregir y volver a generar.
-    expect(await bar(page).innerText()).toContain('5 peticiones → 2 imágenes')
 
     const calls = await prayerCalls()
     expect(calls).toHaveLength(2)
     // Orden de aprobación: la más antigua (la última sembrada) abre la primera imagen.
-    const byTags = [...calls].sort((a, b) => b.tags - a.tags)
-    expect(byTags.map(c => c.texts)).toEqual([[texts[4], texts[3], texts[2], texts[1]], [texts[0]]])
+    const byPhotos = [...calls].sort((a, b) => b.photos.length - a.photos.length)
+    expect(byPhotos.map(c => photosOf(c.photos, fileIds))).toEqual([[4, 3, 2, 1], [0]])
     for (const call of calls) {
       expect(call).toMatchObject({ model: '@preset/pray-requests-image-generation', template: true, status: 200 })
       expect(call.modalities).toContain('image')
+      // Cada foto llega como URL firmada del bucket (OpenRouter la descarga) y con su rótulo.
+      for (const url of call.photos) expect(url).toMatch(/^https:\/\/.+X-Amz-Signature=/)
+      expect(call.prompt).toContain('Foto de la petición 1')
       for (const { name } of seeded) expect(call.prompt).not.toContain(name)
       expect(call.prompt).not.toContain('Nota privada')
+      for (const id of fileIds) expect(call.prompt).not.toContain(id)
     }
-    // La fila guarda los ids de sus peticiones, nunca su texto.
+    // La fila guarda los ids de sus peticiones.
     const four = ids.find(i => i.fileIds.length === 4)!
     const one = ids.find(i => i.fileIds.length === 1)!
     expect(one.fileIds).toEqual([seeded[0]!.fileId])
@@ -271,39 +263,58 @@ describe('US2 · generar las imágenes de peticiones del día', () => {
     await preview.getByRole('button', { name: 'Cerrar' }).first().click()
     await expect.poll(() => preview.isVisible()).toBe(false)
 
-    // El menú del historial ya no ofrece **Generar de nuevo**: el texto no se guarda en ningún lado.
+    // El menú del historial no ofrece **Generar de nuevo**.
     await saved(page, one.id).getByRole('button', { name: 'Opciones de la imagen' }).click()
     expect(await page.getByRole('menuitem', { name: 'Generar de nuevo' }).count()).toBe(0)
     await page.keyboard.press('Escape')
     await page.close()
   })
 
-  it('sin escribir el texto no se puede generar, y el diálogo dice cuántos faltan', async () => {
-    const seeded = await seedTexts('Falta texto', [`Uno ${runId()}`, `Dos ${runId()}`])
+  it('una sola petición: una imagen con la plantilla y su foto', async () => {
+    const [request] = await seedRequests('Una sola', 1)
     const page = await editorPage()
+    const ids = trackSaved(page)
     await openPage(page)
-    const dialog = await openCompose(page, seeded.map(s => s.name))
-    const generar = dialog.getByRole('button', { name: 'Generar imágenes', exact: true })
-    await expect.poll(() => dialog.innerText()).toContain('Falta el texto de 2 peticiones')
-    expect(await generar.isDisabled()).toBe(true)
-    // Con una escrita sigue faltando la otra.
-    await dialog.getByLabel(seeded[0]!.name, { exact: true }).fill(seeded[0]!.text)
-    await expect.poll(() => dialog.innerText()).toContain('Falta el texto de 1 petición')
-    expect(await generar.isDisabled()).toBe(true)
-    await dialog.getByLabel(seeded[1]!.name, { exact: true }).fill(seeded[1]!.text)
-    await expect.poll(() => generar.isDisabled()).toBe(false)
+    await generate(page, [request!.name])
+    await expect.poll(() => ids.length, { timeout: 30_000 }).toBe(1)
+    const [call] = await prayerCalls()
+    expect(call).toMatchObject({ template: true, status: 200 })
+    expect(photosOf(call!.photos, [request!.fileId])).toEqual([0])
+    await page.close()
+  })
+
+  it('una HEIC antigua va con su copia JPEG; una HEIC sin copia queda fallida con su motivo, sin Reintentar ni llamar al modelo', async () => {
+    const copy = `e2e/${runId()}/textsrc/copia-${Date.now()}.jpg`
+    const [legacy] = await seedRequests('HEIC con copia', 1, { fixtureName: 'nota.heic', previewKey: copy })
+    const page = await editorPage()
+    const ids = trackSaved(page)
+    await openPage(page)
+    await generate(page, [legacy!.name])
+    await expect.poll(() => ids.length, { timeout: 30_000 }).toBe(1)
+    const [call] = await prayerCalls()
+    expect(call!.photos).toHaveLength(1)
+    expect(call!.photos[0]).toContain(copy)
+
+    await resetStub()
+    const [raw] = await seedRequests('HEIC sin copia', 1, { fixtureName: 'nota.heic' })
+    await openPage(page)
+    await generate(page, [raw!.name])
+    // `openPage` recarga la página: la cola vuelve a numerar desde 1.
+    await expect.poll(() => result(page, 1).getByRole('alert').isVisible(), { timeout: 30_000 }).toBe(true)
+    expect(await result(page, 1).getByRole('alert').innerText()).toBe(PRAYER_ERROR_MESSAGES.unreadable_image)
+    expect(await result(page, 1).getByRole('button', { name: 'Reintentar' }).count()).toBe(0)
     expect(await prayerCalls()).toHaveLength(0)
     await page.close()
   })
 
   it('un fallo del servicio muestra el motivo y Reintentar solo en esa imagen; la otra se guarda', async () => {
     // La más antigua (última) cae en la imagen 1 junto con otras tres; la más reciente sola en la 2.
-    const texts = [`Sigue bien ${runId()}`, `B ${runId()}`, `C ${runId()}`, `D ${runId()}`, `falla-una-vez ${runId()}`]
-    const seeded = await seedTexts('Falla', texts)
+    const seeded = await seedRequests('Falla', 5)
+    await setStubMode({ scenario: 'falla-una-vez', match: seeded[4]!.fileId })
     const page = await editorPage()
     const ids = trackSaved(page)
     await openPage(page)
-    await generate(page, seeded)
+    await generate(page, seeded.map(s => s.name))
 
     await expect.poll(() => result(page, 1).getByRole('alert').isVisible(), { timeout: 30_000 }).toBe(true)
     expect(await result(page, 1).getByRole('alert').innerText()).toBe(PRAYER_ERROR_MESSAGES.provider)
@@ -318,11 +329,12 @@ describe('US2 · generar las imágenes de peticiones del día', () => {
   })
 
   it('sin crédito: el motivo sin Reintentar y nada se guarda', async () => {
-    const [request] = await seedTexts('Sin credito', [`sin-credito ${runId()}`])
+    const [request] = await seedRequests('Sin credito', 1)
+    await setStubMode({ scenario: 'sin-credito' })
     const page = await editorPage()
     const ids = trackSaved(page)
     await openPage(page)
-    await generate(page, [request!])
+    await generate(page, [request!.name])
     await expect.poll(() => result(page, 1).getByRole('alert').isVisible(), { timeout: 30_000 }).toBe(true)
     expect(await result(page, 1).getByRole('alert').innerText()).toBe(PRAYER_ERROR_MESSAGES.quota_exceeded)
     expect(await result(page, 1).getByRole('button', { name: 'Reintentar' }).count()).toBe(0)
@@ -331,8 +343,20 @@ describe('US2 · generar las imágenes de peticiones del día', () => {
     await page.close()
   })
 
-  it('una petición enviada a la papelera tras elegirla → 409: se retira de la selección con un aviso', async () => {
-    const [kept, trashed] = await seedTexts('Papelera', [`Se queda ${runId()}`, `Se va ${runId()}`])
+  it('el servicio no devuelve imagen: el motivo con Reintentar', async () => {
+    const [request] = await seedRequests('Sin imagen', 1)
+    await setStubMode({ scenario: 'sin-imagen' })
+    const page = await editorPage()
+    await openPage(page)
+    await generate(page, [request!.name])
+    await expect.poll(() => result(page, 1).getByRole('alert').isVisible(), { timeout: 30_000 }).toBe(true)
+    expect(await result(page, 1).getByRole('alert').innerText()).toBe(PRAYER_ERROR_MESSAGES.invalid_output)
+    expect(await result(page, 1).getByRole('button', { name: 'Reintentar' }).isVisible()).toBe(true)
+    await page.close()
+  })
+
+  it('una petición enviada a la papelera tras elegirla → 409: el motivo sin Reintentar y nada llega al modelo', async () => {
+    const [kept, trashed] = await seedRequests('Papelera', 2)
     const page = await editorPage()
     await openPage(page)
     for (const { name } of [kept!, trashed!]) await box(page, name).check()
@@ -340,22 +364,18 @@ describe('US2 · generar las imágenes de peticiones del día', () => {
     // Otra persona la envía a la papelera mientras tanto (rama de pruebas, como `seedPrayerRequest({ deleted: true })`).
     await testSql()`UPDATE files SET deleted_at = now(), deleted_by = ${owner}, trash_root_id = id WHERE id = ${trashed!.fileId}`
 
-    const dialog = page.getByRole('dialog', { name: 'Escribe el texto de cada petición' })
-    await bar(page).getByRole('button', { name: 'Escribir textos y generar' }).click()
-    for (const entry of [kept!, trashed!]) await dialog.getByLabel(entry.name, { exact: true }).fill(entry.text)
-    await dialog.getByRole('button', { name: 'Generar imágenes', exact: true }).click()
+    await bar(page).getByRole('button', { name: 'Generar imágenes', exact: true }).click()
     await expect.poll(() => page.getByText('Quitamos 1 petición que ya no está disponible').isVisible(), { timeout: 30_000 }).toBe(true)
     expect(await result(page, 1).getByRole('alert').innerText()).toBe(PRAYER_ERROR_MESSAGES.request_unavailable)
     expect(await result(page, 1).getByRole('button', { name: 'Reintentar' }).count()).toBe(0)
-    expect(await box(page, trashed!.name).isChecked()).toBe(false)
-    expect(await box(page, kept!.name).isChecked()).toBe(true)
-    await expect.poll(() => bar(page).innerText()).toContain('1 petición → 1 imagen')
+    expect(await box(page, kept!.name).isChecked()).toBe(false)
     expect(await prayerCalls()).toHaveLength(0)
     await page.close()
   })
 
   it('salir con una imagen generándose pide confirmación; una ya guardada no', async () => {
-    const [slow, quick] = await seedTexts('Salir', [`lento antes de salir ${runId()}`, `Rápida ${runId()}`])
+    const [slow, quick] = await seedRequests('Salir', 2)
+    await setStubMode({ scenario: 'lento', match: slow!.fileId })
     const page = await editorPage()
     const ids = trackSaved(page)
     await openPage(page)
@@ -367,7 +387,7 @@ describe('US2 · generar las imágenes de peticiones del día', () => {
     const dialog = page.getByRole('dialog', { name: '¿Salir de Peticiones?' })
 
     // Guardada: salir no pregunta (se vuelve a la página para la segunda parte).
-    await generate(page, [quick!])
+    await generate(page, [quick!.name])
     await expect.poll(() => ids.length, { timeout: 30_000 }).toBe(1)
     await leave()
     await page.waitForURL(url => url.pathname === '/')
@@ -375,7 +395,7 @@ describe('US2 · generar las imágenes de peticiones del día', () => {
     await openPage(page)
 
     // Generándose (el stub tarda con «lento»): pregunta; Cancelar se queda.
-    await generate(page, [slow!])
+    await generate(page, [slow!.name])
     await expect.poll(() => result(page, 1).getByRole('status').isVisible()).toBe(true)
     await leave()
     await expect.poll(() => dialog.isVisible()).toBe(true)
@@ -392,22 +412,17 @@ describe('US2 · generar las imágenes de peticiones del día', () => {
     await page.close()
   })
 
-  it('con la red cortada la imagen queda en error reintentable con un mensaje accionable y la selección se conserva', async () => {
-    const [request] = await seedTexts('Sin red', [`Sin conexión ${runId()}`])
+  it('con la red cortada la imagen queda en error reintentable con un mensaje accionable', async () => {
+    const [request] = await seedRequests('Sin red', 1)
     const page = await editorPage()
     const ids = trackSaved(page)
     await openPage(page)
     await box(page, request!.name).check()
-    await bar(page).getByRole('button', { name: 'Escribir textos y generar' }).click()
-    const dialog = page.getByRole('dialog', { name: 'Escribe el texto de cada petición' })
-    await dialog.getByLabel(request!.name, { exact: true }).fill(request!.text)
     await page.context().setOffline(true)
-    await dialog.getByRole('button', { name: 'Generar imágenes', exact: true }).click()
+    await bar(page).getByRole('button', { name: 'Generar imágenes', exact: true }).click()
 
     await expect.poll(() => result(page, 1).getByRole('alert').isVisible(), { timeout: 30_000 }).toBe(true)
     expect(await result(page, 1).getByRole('alert').innerText()).toContain('Se perdió la conexión al generar la imagen')
-    expect(await box(page, request!.name).isChecked()).toBe(true)
-    expect(await bar(page).innerText()).toContain('1 petición → 1 imagen')
 
     await page.context().setOffline(false)
     await result(page, 1).getByRole('button', { name: 'Reintentar' }).click()
@@ -435,8 +450,8 @@ describe('US4 · buscar, filtrar por fecha y ordenar', () => {
 
   it('la búsqueda no distingue tildes y cubre el nombre y la nota', async () => {
     const token = `tk${runId()}`
-    const [withAccent] = await seedTexts('Busqueda', ['n/a'], { note: `Una oración especial ${token}` })
-    const [named] = await seedTexts(`Lucía ${token}`, ['n/a'], { note: `Otra cosa ${token}` })
+    const [withAccent] = await seedRequests('Busqueda', 1, { note: `Una oración especial ${token}` })
+    const [named] = await seedRequests(`Lucía ${token}`, 1, { note: `Otra cosa ${token}` })
     const page = await editorPage()
     await openPage(page)
 
@@ -500,12 +515,11 @@ describe('US4 · buscar, filtrar por fecha y ordenar', () => {
     await search(page, `nadie-${token}`)
     await expect.poll(() => page.getByText('No hay peticiones con esos filtros').isVisible()).toBe(true)
     expect(await bar(page).innerText()).toContain('2 peticiones → 1 imagen')
-    // Las elegidas siguen en el diálogo de generación aunque el filtro las oculte.
-    await bar(page).getByRole('button', { name: 'Escribir textos y generar' }).click()
-    const chosen = page.getByRole('dialog', { name: 'Escribe el texto de cada petición' })
-    await expect.poll(() => chosen.innerText()).toContain(names[0])
-    expect(await chosen.innerText()).toContain(names[1])
-    await chosen.getByRole('button', { name: 'Cerrar' }).first().click()
+    // Las elegidas se generan aunque el filtro las oculte.
+    await resetStub()
+    await bar(page).getByRole('button', { name: 'Generar imágenes', exact: true }).click()
+    await expect.poll(async () => (await prayerCalls()).length, { timeout: 30_000 }).toBe(1)
+    expect((await prayerCalls())[0]!.photos).toHaveLength(2)
 
     await page.getByRole('button', { name: 'Quitar filtros' }).last().click()
     await expect.poll(() => page.getByText('No hay peticiones con esos filtros').isVisible()).toBe(false)

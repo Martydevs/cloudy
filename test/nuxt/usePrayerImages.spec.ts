@@ -1,6 +1,7 @@
 // T047 — Cola de imágenes de peticiones (feature 007, research D8, enmienda de historial): una imagen por grupo, 2 a la vez,
 // la imagen guardada sale de la cola y entra arriba en el historial, errores en español con reintento solo cuando sirve, 409
-// que retira peticiones, cancelar, generar de nuevo, descartar y el aviso al salir solo con algo en curso.
+// que retira peticiones, cancelar, generar de nuevo, descartar y el aviso al salir solo con algo en curso. Feature 008: cada
+// petición viaja solo con su id (`{ fileIds }`); el modelo lee el texto en las fotos.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { readBody, setResponseStatus } from 'h3'
 import type { H3Event } from 'h3'
@@ -26,9 +27,9 @@ const saved = (fileIds: string[]): PrayerGeneratedImage => ({
   createdAt: '2026-11-12T10:00:00.000Z',
 })
 const png: Reply = async (event) => {
-  const body = await readBody<{ requests: { fileId: string }[] }>(event)
+  const body = await readBody<{ fileIds: string[] }>(event)
   setResponseStatus(event, 201)
-  return saved(body.requests.map(r => r.fileId))
+  return saved(body.fileIds)
 }
 const fail = (status: number, data?: Record<string, unknown>): Reply => (event) => {
   setResponseStatus(event, status)
@@ -47,9 +48,8 @@ function hold(id: string, reply: Reply = png) {
 const release = (id: string) => gates.get(id)?.()
 
 const posts = () => calls.filter(c => c.method === 'POST' && c.url === '/api/peticiones/imagenes')
-/** Peticiones elegidas con su texto, tal como las guarda `usePrayerSelection`. */
-const group = (...ids: string[]) => ids.map(id => ({ request: { id } as PrayerRequest, text: `texto ${id}` }))
-const sent = (...ids: string[]) => ids.map(fileId => ({ fileId, text: `texto ${fileId}` }))
+/** Peticiones elegidas, tal como las guarda `usePrayerSelection`. */
+const group = (...ids: string[]) => ids.map(id => ({ id, senderName: `Invitado ${id}`, note: `nota ${id}` }) as PrayerRequest)
 
 const added = () => useState<PrayerGeneratedImage[]>(PRAYER_HISTORY_ADDED_KEY, () => []).value
 
@@ -61,8 +61,8 @@ beforeEach(() => {
   useState<PrayerGeneratedImage[]>(PRAYER_HISTORY_ADDED_KEY).value = []
   useToast().toasts.value = []
   mockApi('POST', '/api/peticiones/imagenes', async (event: H3Event) => {
-    const body = await readBody<{ requests: { fileId: string }[] }>(event)
-    return (replies.get(body.requests[0]!.fileId) ?? png)(event)
+    const body = await readBody<{ fileIds: string[] }>(event)
+    return (replies.get(body.fileIds[0]!) ?? png)(event)
   })
 })
 
@@ -72,16 +72,23 @@ afterEach(() => {
 })
 
 describe('usePrayerImages', () => {
-  it('un elemento por grupo, con índice 1-based y las peticiones con su texto en orden', async () => {
+  it('un elemento por grupo, con índice 1-based y los ids en orden; el POST lleva solo { fileIds }', async () => {
     const images = usePrayerImages()
     expect(images.enqueue([group('a', 'b', 'c', 'd'), group('e')])).toBe(2)
-    expect(images.items.value.map(i => [i.key, i.index, i.requests])).toEqual([
-      ['img-1', 1, sent('a', 'b', 'c', 'd')],
-      ['img-2', 2, sent('e')],
+    expect(images.items.value.map(i => [i.key, i.index, i.fileIds])).toEqual([
+      ['img-1', 1, ['a', 'b', 'c', 'd']],
+      ['img-2', 2, ['e']],
     ])
     expect(images.hasItems.value).toBe(true)
     await flush(10)
-    expect(posts().map(c => c.body)).toEqual([{ requests: sent('a', 'b', 'c', 'd') }, { requests: sent('e') }])
+    // Ni texto, ni nombre, ni nota: solo los ids.
+    expect(posts().map(c => c.body)).toEqual([{ fileIds: ['a', 'b', 'c', 'd'] }, { fileIds: ['e'] }])
+  })
+
+  it('grupos vacíos no encolan nada', () => {
+    const images = usePrayerImages()
+    expect(images.enqueue([[]])).toBe(0)
+    expect(images.items.value).toEqual([])
   })
 
   it('nunca más de 2 a la vez; la tercera arranca cuando termina una', async () => {
@@ -136,6 +143,7 @@ describe('usePrayerImages', () => {
     ['save_failed', 502, true],
     ['quota_exceeded', 503, false],
     ['not_configured', 503, false],
+    ['unreadable_image', 422, false],
   ] as const)('el código %s del servidor fija el mensaje y si se puede reintentar', async (code, status, retryable) => {
     replies.set('a', fail(status, { code }))
     const images = usePrayerImages()
@@ -224,11 +232,26 @@ describe('usePrayerImages', () => {
     images.regenerate('img-2')
     await flush(10)
     expect(posts().length).toBe(before + 1)
-    expect(posts().at(-1)!.body).toEqual({ requests: sent('b') })
+    expect(posts().at(-1)!.body).toEqual({ fileIds: ['b'] })
     expect(images.items.value).toEqual([])
     // Reintentar algo que no falló no hace nada.
     images.retry('img-1')
     expect(posts().length).toBe(before + 1)
+  })
+
+  it('unreadable_image muestra el texto de la foto ilegible y no ofrece reintentar', async () => {
+    replies.set('a', fail(422, { code: 'unreadable_image', ids: ['a'] }))
+    const images = usePrayerImages()
+    images.enqueue([group('a')])
+    await flush(10)
+    expect(images.items.value[0]).toMatchObject({
+      status: 'failed',
+      errorCode: 'unreadable_image',
+      retryable: false,
+      error: 'Alguna foto no se puede leer. Quítala de tu selección o pídele al invitado que la envíe de nuevo en JPG o PNG.',
+    })
+    images.retry('img-1')
+    expect(images.items.value[0]!.status).toBe('failed')
   })
 
   it('una fallida no reintentable no vuelve a la cola', async () => {

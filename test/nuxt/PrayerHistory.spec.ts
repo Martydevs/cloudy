@@ -153,7 +153,7 @@ describe('PrayerHistory', () => {
   })
 
   it('la cola en curso va arriba, y una imagen recién guardada entra primera sin repetirse', async () => {
-    useState<PrayerImageItem[]>('prayer-images').value = [{ key: 'img-1', index: 1, requests: [{ fileId: 'a', text: 'Ana' }], status: 'running' }]
+    useState<PrayerImageItem[]>('prayer-images').value = [{ key: 'img-1', index: 1, fileIds: ['a'], status: 'running' }]
     const wrapper = await mountSuspended(PrayerHistory)
     await flush(10)
     const html = wrapper.html()
@@ -169,7 +169,7 @@ describe('PrayerHistory', () => {
 
   it('sin historial pero con una imagen en curso no muestra el vacío', async () => {
     mockApi('GET', '/api/peticiones/imagenes', { items: [], nextCursor: null })
-    useState<PrayerImageItem[]>('prayer-images').value = [{ key: 'img-1', index: 1, requests: [{ fileId: 'a', text: 'Ana' }], status: 'failed', retryable: false, error: 'x' }]
+    useState<PrayerImageItem[]>('prayer-images').value = [{ key: 'img-1', index: 1, fileIds: ['a'], status: 'failed', retryable: false, error: 'x' }]
     const wrapper = await mountSuspended(PrayerHistory)
     await flush(10)
     expect(wrapper.text()).not.toContain('Aún no hay imágenes generadas')

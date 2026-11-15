@@ -195,7 +195,7 @@ describe('/peticiones', () => {
     expect(wrapper.find('[aria-label="Selección de peticiones"]').exists()).toBe(false)
   })
 
-  it('cualquier petición aprobada se puede elegir: el texto se escribe al generar', async () => {
+  it('cualquier petición aprobada se puede elegir: el modelo lee el texto en la foto', async () => {
     mockApi('GET', '/api/peticiones', { items: [prayer(1)], nextCursor: null })
     const wrapper = await mountSuspended(PeticionesPage)
     await flush()
@@ -205,8 +205,7 @@ describe('/peticiones', () => {
 
   describe('US2 · generar', () => {
     const saved = async (event: H3Event): Promise<PrayerGeneratedImage> => {
-      const { requests } = await readBody<{ requests: { fileId: string }[] }>(event)
-      const fileIds = requests.map(r => r.fileId)
+      const { fileIds } = await readBody<{ fileIds: string[] }>(event)
       setResponseStatus(event, 201)
       return generated(fileIds.length === 4 ? 1 : 2, { fileIds, requestCount: fileIds.length })
     }
@@ -229,69 +228,30 @@ describe('/peticiones', () => {
 
     type Page = Awaited<ReturnType<typeof mountSuspended<typeof PeticionesPage>>>
 
-    /** Abre `LazyPrayerComposeDialog` (un `import()`: su chunk puede tardar más que unos ticks). */
-    async function openCompose(wrapper: Page) {
-      await buttonsWithText(wrapper, 'Escribir textos y generar')[0]!.trigger('click')
-      await vi.waitFor(() => expect(document.body.querySelector('dialog textarea')).not.toBeNull(), { timeout: 5000 })
-      return wrapper.findAll('dialog').at(-1)!
+    /** «Generar imágenes» de la barra: encola sin diálogo. */
+    async function generate(wrapper: Page) {
+      await buttonsWithText(wrapper.get('[aria-label="Selección de peticiones"]'), 'Generar imágenes')[0]!.trigger('click')
+      await flush(15)
     }
 
-    const fill = async (dialog: ReturnType<Page['findAll']>[number], text = 'Oremos por Ana') => {
-      for (const area of dialog.findAll('textarea')) await area.setValue(text)
-      await flush()
-    }
-
-    it('«Escribir textos y generar» abre el diálogo agrupado por imagen; sin textos no deja generar', async () => {
-      const wrapper = await choose(5)
-      const dialog = await openCompose(wrapper)
-      expect(dialog.findAll('textarea')).toHaveLength(5)
-      expect(dialog.text()).toContain('Imagen 1')
-      expect(dialog.text()).toContain('Imagen 2')
-      expect(dialog.text()).toContain('5 peticiones → 2 imágenes')
-      expect(dialog.text()).toContain('crédito')
-      expect(dialog.text()).toContain('Falta el texto de 5 peticiones')
-      expect(buttonsWithText(dialog, 'Generar imágenes')[0]!.attributes('disabled')).toBeDefined()
-      expect(posts()).toHaveLength(0)
-      wrapper.unmount()
-    })
-
-    it('cerrar el diálogo no encola nada y conserva los textos escritos', async () => {
-      const wrapper = await choose(2)
-      let dialog = await openCompose(wrapper)
-      await fill(dialog, 'Oremos por Ana')
-      await buttonsWithText(dialog, 'Cerrar')[0]!.trigger('click')
-      await flush()
-      expect(posts()).toHaveLength(0)
-      expect(usePrayerSelection().ordered.value.map(e => e.text)).toEqual(['Oremos por Ana', 'Oremos por Ana'])
-      dialog = await openCompose(wrapper)
-      expect(dialog.findAll('textarea').map(a => (a.element as HTMLTextAreaElement).value)).toEqual(['Oremos por Ana', 'Oremos por Ana'])
-      wrapper.unmount()
-    })
-
-    it('«Quitar» saca la petición de la selección desde el diálogo', async () => {
-      const wrapper = await choose(2)
-      const dialog = await openCompose(wrapper)
-      await dialog.get('button[aria-label="Quitar la petición de Invitado 1"]').trigger('click')
-      await flush()
-      expect(usePrayerSelection().count.value).toBe(1)
-      wrapper.unmount()
-    })
-
-    it('al generar encola los grupos con su texto, el historial los recibe (abajo) y se conserva la selección', async () => {
+    it('«Generar imágenes» encola al instante, sin diálogo: solo ids, el historial los recibe y la selección se vacía', async () => {
       const scroll = vi.fn()
       Element.prototype.scrollIntoView = scroll
       const wrapper = await choose(5)
-      const dialog = await openCompose(wrapper)
-      await fill(dialog, 'Oremos por Ana')
-      await buttonsWithText(dialog, 'Generar imágenes')[0]!.trigger('click')
-      await flush(15)
-      const bodies = posts().map(c => (c.body as { requests: { fileId: string, text: string }[] }).requests)
-      expect(bodies.map(r => r.length)).toEqual([4, 1])
-      expect(bodies.flat().every(r => r.text === 'Oremos por Ana')).toBe(true)
+      await generate(wrapper)
+      expect(document.body.querySelector('dialog textarea')).toBeNull()
+      const bodies = posts().map(c => c.body as Record<string, unknown>)
+      expect(bodies.map(body => Object.keys(body))).toEqual([['fileIds'], ['fileIds']])
+      expect(bodies.map(body => (body.fileIds as string[]).length)).toEqual([4, 1])
+      // Ni nombres ni notas viajan al servidor.
+      expect(JSON.stringify(bodies)).not.toMatch(/Invitado|nota/i)
+      expect(useToast().toasts.value.map(t => t.message)).toContain('2 imágenes en cola')
       // `LazyPrayerHistory` es un `import()`: con la suite completa su chunk puede tardar más que unos ticks.
       await vi.waitFor(() => expect(wrapper.findAll('ul[aria-label="Imágenes generadas"] > li')).toHaveLength(2), { timeout: 5000 })
       expect(wrapper.find('[aria-label="Imágenes en curso"]').exists()).toBe(false)
-      expect(usePrayerSelection().count.value).toBe(5)
+      // Un segundo clic no puede gastar crédito dos veces: la barra desaparece con la selección.
+      expect(usePrayerSelection().count.value).toBe(0)
+      expect(wrapper.find('[aria-label="Selección de peticiones"]').exists()).toBe(false)
       expect(scroll).toHaveBeenCalled()
       // El historial va después de la rejilla.
       const html = wrapper.html()
@@ -299,25 +259,41 @@ describe('/peticiones', () => {
       wrapper.unmount()
     })
 
-    it('un texto demasiado largo bloquea la generación', async () => {
+    it('una sola petición sale en una imagen', async () => {
       const wrapper = await choose(1)
-      const dialog = await openCompose(wrapper)
-      await fill(dialog, 'a'.repeat(10_001))
-      expect(dialog.text()).toContain('El texto es demasiado largo')
-      expect(buttonsWithText(dialog, 'Generar imágenes')[0]!.attributes('disabled')).toBeDefined()
-      expect(posts()).toHaveLength(0)
+      await generate(wrapper)
+      expect(posts().map(c => c.body)).toEqual([{ fileIds: [prayer(1).id] }])
+      expect(useToast().toasts.value.map(t => t.message)).toContain('1 imagen en cola')
       wrapper.unmount()
     })
 
-    it('un 409 retira de la selección las peticiones no disponibles y avisa', async () => {
+    it('una foto ilegible queda fallida con su mensaje y sin «Reintentar»', async () => {
       mockApi('POST', '/api/peticiones/imagenes', (event: H3Event) => {
+        setResponseStatus(event, 422)
+        return { statusCode: 422, message: 'x', data: { code: 'unreadable_image', ids: [prayer(1).id] } }
+      })
+      const wrapper = await choose(1)
+      await generate(wrapper)
+      await vi.waitFor(() => expect(wrapper.text()).toContain('Alguna foto no se puede leer'), { timeout: 5000 })
+      const queue = wrapper.get('[aria-label="Imágenes en curso"]')
+      expect(buttonsWithText(queue, 'Reintentar')).toHaveLength(0)
+      wrapper.unmount()
+    })
+
+    it('un 409 retira de la selección las peticiones no disponibles (aunque se hayan vuelto a elegir) y avisa', async () => {
+      let answer: (() => void) | undefined
+      mockApi('POST', '/api/peticiones/imagenes', async (event: H3Event) => {
+        await new Promise<void>(resolve => (answer = resolve))
         setResponseStatus(event, 409)
         return { statusCode: 409, message: 'x', data: { code: 'request_unavailable', ids: [prayer(2).id] } }
       })
       const wrapper = await choose(2)
-      const dialog = await openCompose(wrapper)
-      await fill(dialog)
-      await buttonsWithText(dialog, 'Generar imágenes')[0]!.trigger('click')
+      await generate(wrapper)
+      expect(usePrayerSelection().count.value).toBe(0)
+      // Mientras se genera, la persona vuelve a elegir las dos.
+      for (const box of wrapper.findAll('input[type="checkbox"]').slice(0, 2)) await box.trigger('change')
+      expect(usePrayerSelection().count.value).toBe(2)
+      answer?.()
       await flush(15)
       expect(usePrayerSelection().isSelected(prayer(2).id)).toBe(false)
       expect(usePrayerSelection().count.value).toBe(1)
@@ -328,10 +304,7 @@ describe('/peticiones', () => {
     it('con imágenes generándose, salir pide confirmación; aceptarla cancela la cola', async () => {
       mockApi('POST', '/api/peticiones/imagenes', () => new Promise(() => {}))
       const wrapper = await choose(1)
-      const dialog = await openCompose(wrapper)
-      await fill(dialog)
-      await buttonsWithText(dialog, 'Generar imágenes')[0]!.trigger('click')
-      await flush(15)
+      await generate(wrapper)
       expect(usePrayerImages().needsLeaveGuard.value).toBe(true)
       const router = useRouter()
       const leaving = router.push('/archivos')
@@ -351,10 +324,7 @@ describe('/peticiones', () => {
 
     it('una imagen ya guardada no pide confirmación al salir', async () => {
       const wrapper = await choose(1)
-      const dialog = await openCompose(wrapper)
-      await fill(dialog)
-      await buttonsWithText(dialog, 'Generar imágenes')[0]!.trigger('click')
-      await flush(15)
+      await generate(wrapper)
       expect(usePrayerImages().items.value).toEqual([])
       expect(usePrayerImages().needsLeaveGuard.value).toBe(false)
       wrapper.unmount()
@@ -366,10 +336,7 @@ describe('/peticiones', () => {
       const idle = new Event('beforeunload', { cancelable: true })
       window.dispatchEvent(idle)
       expect(idle.defaultPrevented).toBe(false)
-      const dialog = await openCompose(wrapper)
-      await fill(dialog)
-      await buttonsWithText(dialog, 'Generar imágenes')[0]!.trigger('click')
-      await flush(15)
+      await generate(wrapper)
       const busy = new Event('beforeunload', { cancelable: true })
       window.dispatchEvent(busy)
       expect(busy.defaultPrevented).toBe(true)

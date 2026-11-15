@@ -1,17 +1,23 @@
-// Capa de aplicación de las imágenes de peticiones (feature 007, contracts/api.md § 2): comprueba en el servidor que las
-// peticiones sigan disponibles, carga la plantilla, llama a la IA y traduce cada fallo a HTTP. Único importador de
-// `#server/ai`; el SQL vive en `prayer-requests.ts`, `prayer-gallery.ts` y `prayer-collections.ts`. Al proveedor solo
-// viajan los textos y la plantilla (FR-022) y el registro solo lleva códigos.
+// Capa de aplicación de las imágenes de peticiones (feature 007, contracts/api.md § 2; feature 008: el modelo lee las
+// fotos): comprueba en el servidor que las peticiones sigan disponibles y se puedan leer, firma una URL de lectura corta por
+// foto, carga la plantilla, llama a la IA y traduce cada fallo a HTTP. Único importador de `#server/ai`; el SQL vive en
+// `prayer-requests.ts`, `prayer-gallery.ts` y `prayer-collections.ts`. Al proveedor solo viajan la plantilla y las fotos de
+// los invitados, nunca nombres, notas, IP ni ids (FR-022), y el registro solo lleva códigos.
 import { createError } from 'h3'
-import { generatePrayerImage } from '#server/ai'
-import type { PrayerImageErrorCode } from '#server/ai'
+import { generatePrayerImage, PRAYER_PHOTO_MEDIA_TYPES } from '#server/ai'
+import type { PrayerImageErrorCode, PrayerPhotoInput } from '#server/ai'
 import type { PrayerErrorCode } from '#shared/constants/prayers'
 import { PRAYER_ERROR_MESSAGES } from '#shared/constants/prayers'
-import type { PrayerImageRequestInput } from '#shared/validation/prayers'
+import type { PrayerPhoto } from './prayer-requests'
 import { loadEligibleRequests } from './prayer-requests'
+import { presignGet } from './storage'
+
+/** Vida de la URL firmada de cada foto: cubre una generación de 105 s con su reintento y la descarga de OpenRouter. */
+const PHOTO_URL_TTL_SEC = 600
 
 const STATUS: Record<PrayerErrorCode, [number, string]> = {
   request_unavailable: [409, 'Conflict'],
+  unreadable_image: [422, 'Unprocessable Entity'],
   not_configured: [503, 'Service Unavailable'],
   quota_exceeded: [503, 'Service Unavailable'],
   rate_limited: [429, 'Too Many Requests'],
@@ -48,17 +54,37 @@ export interface PrayerImage {
   count: number
 }
 
+type PhotoSource = { key: string, mediaType: PrayerPhotoInput['mediaType'] }
+
+const isReadable = (mime: string): mime is PrayerPhotoInput['mediaType'] =>
+  (PRAYER_PHOTO_MEDIA_TYPES as readonly string[]).includes(mime)
+
 /**
- * Genera una imagen con 1–4 peticiones (ya validadas por el endpoint). El texto es el que escribió el equipo; el servidor
- * solo comprueba que cada petición siga siendo una imagen aprobada y visible, y fija el orden de los párrafos. Lanza
+ * Qué objeto del bucket ve el modelo: la copia JPEG de una HEIC antigua si existe; si no, el original cuando es JPEG, PNG,
+ * WebP o GIF. Las subidas nuevas ya llegan convertidas a JPEG desde el navegador; queda fuera la HEIC que no se pudo
+ * convertir (más de 5 MB o falló la conversión): `null`.
+ */
+export function photoSource(photo: Pick<PrayerPhoto, 'storageKey' | 'previewKey' | 'mimeType'>): PhotoSource | null {
+  if (photo.previewKey) return { key: photo.previewKey, mediaType: 'image/jpeg' }
+  const mime = photo.mimeType.toLowerCase() === 'image/jpg' ? 'image/jpeg' : photo.mimeType.toLowerCase()
+  return isReadable(mime) ? { key: photo.storageKey, mediaType: mime } : null
+}
+
+/**
+ * Genera una imagen con 1–4 peticiones (ya validadas por el endpoint). El modelo lee el texto de cada foto; el servidor
+ * comprueba que cada petición siga siendo una imagen aprobada, visible y legible, y fija el orden de las fotos. Lanza
  * errores HTTP con `data.code`.
  */
-export async function createPrayerImage(requests: PrayerImageRequestInput[], { abortSignal }: { abortSignal?: AbortSignal } = {}): Promise<PrayerImage> {
-  const { found, missing } = await loadEligibleRequests(requests.map(request => request.fileId))
+export async function createPrayerImage(fileIds: string[], { abortSignal }: { abortSignal?: AbortSignal } = {}): Promise<PrayerImage> {
+  const { found, missing } = await loadEligibleRequests(fileIds)
   if (missing.length > 0) throw prayerError('request_unavailable', { ids: missing })
   // El orden lo decide el servidor (aprobación, envío, id), no el navegador.
-  const texts = new Map(requests.map(request => [request.fileId, request.text.trim()]))
-  const paragraphs = found.map(request => texts.get(request.id) ?? '')
+  const sources = found.map(photo => ({ id: photo.id, source: photoSource(photo) }))
+  const unreadable = sources.filter(entry => !entry.source).map(entry => entry.id)
+  if (unreadable.length > 0) {
+    console.warn('[prayer-image] unreadable_image')
+    throw prayerError('unreadable_image', { ids: unreadable })
+  }
 
   // Sin clave o sin plantilla no se llama a nadie.
   const template = useRuntimeConfig().openrouterApikey?.trim() ? await loadTemplate() : null
@@ -67,7 +93,13 @@ export async function createPrayerImage(requests: PrayerImageRequestInput[], { a
     throw prayerError('not_configured')
   }
 
-  const result = await generatePrayerImage({ paragraphs, template, abortSignal })
+  // URLs firmadas: OpenRouter descarga cada foto directo del bucket y sus bytes no pasan por esta función.
+  const photos: PrayerPhotoInput[] = await Promise.all(sources.map(async ({ source }) => ({
+    url: await presignGet(source!.key, {}, PHOTO_URL_TTL_SEC),
+    mediaType: source!.mediaType,
+  })))
+
+  const result = await generatePrayerImage({ photos, template, abortSignal })
   if (result.status === 'failed') {
     const code = httpCode(result.error)
     // Saldo agotado pide acción de un administrador: se registra como error.
@@ -75,5 +107,5 @@ export async function createPrayerImage(requests: PrayerImageRequestInput[], { a
     log(`[prayer-image] ${code}`)
     throw prayerError(code)
   }
-  return { mediaType: result.mediaType, data: result.data, count: paragraphs.length }
+  return { mediaType: result.mediaType, data: result.data, count: photos.length }
 }

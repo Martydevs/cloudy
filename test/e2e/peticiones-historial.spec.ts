@@ -40,16 +40,13 @@ async function generateOne(page: Page, owner: string, label: string): Promise<st
   await waitForHydration(page)
   await page.getByRole('checkbox', { name: `Elegir la petición de ${senderName}`, exact: true }).check()
   const response = page.waitForResponse(r => r.request().method() === 'POST' && new URL(r.url()).pathname === '/api/peticiones/imagenes')
-  await page.getByRole('region', { name: 'Selección de peticiones' }).getByRole('button', { name: 'Escribir textos y generar' }).click()
-  const dialog = page.getByRole('dialog', { name: 'Escribe el texto de cada petición' })
-  await dialog.getByLabel(senderName, { exact: true }).fill(`Oremos por ${label} ${runId()}`)
-  await dialog.getByRole('button', { name: 'Generar imágenes', exact: true }).click()
+  // Sin diálogo: encola al instante y la selección se vacía.
+  await page.getByRole('region', { name: 'Selección de peticiones' }).getByRole('button', { name: 'Generar imágenes', exact: true }).click()
   const res = await response
   expect(res.status()).toBe(201)
   const { id } = await res.json() as { id: string }
   // Fuera de un `it` (también se usa en `beforeAll`): espera de Playwright en vez de `expect.poll`.
   await saved(page, id).waitFor({ state: 'visible', timeout: 15_000 })
-  await page.getByRole('region', { name: 'Selección de peticiones' }).getByRole('button', { name: 'Limpiar' }).click()
   return id
 }
 

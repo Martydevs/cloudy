@@ -21,8 +21,6 @@ const requests = usePrayerRequests(filters.query)
 const { items, firstPage, error, pending, loadingMore, moreError, done } = requests
 const selection = usePrayerSelection()
 const images = usePrayerImages()
-/** Diálogo donde se escribe el texto de cada petición elegida antes de generar. */
-const composing = ref(false)
 const historySection = useTemplateRef<HTMLElement>('historySection')
 const approvedHeading = useId()
 
@@ -50,11 +48,15 @@ images.onUnavailable((ids) => {
   toast.info(m.removedUnavailable(ids.length))
 })
 
-/** El diálogo ya confirmó: aquí solo se encola y se baja al historial, donde está la cola. */
+/**
+ * Encola una imagen por grupo de 4 y baja al historial, donde está la cola. El modelo lee el texto en las fotos, así que no
+ * hay paso intermedio. La selección se vacía: un segundo clic no gasta crédito dos veces.
+ */
 async function generate() {
   const queued = images.enqueue(selection.groups.value)
-  if (queued > 0) toast.info(m.compose.queued(queued))
-  // La selección y sus textos se conservan para poder corregir y volver a generar.
+  if (queued === 0) return
+  toast.info(m.queuedImages(queued))
+  selection.clear()
   await nextTick()
   const smooth = import.meta.client && !window.matchMedia('(prefers-reduced-motion: reduce)').matches
   historySection.value?.scrollIntoView({ behavior: smooth ? 'smooth' : 'auto', block: 'start' })
@@ -152,17 +154,8 @@ async function generate() {
       :count="selection.count.value"
       :images="selection.groups.value.length"
       :limit="selection.limitReached.value"
-      @generate="composing = true"
-      @clear="selection.clear()"
-    />
-
-    <LazyPrayerComposeDialog
-      v-if="composing"
-      :groups="selection.groups.value"
-      @text="(id, text) => selection.setText(id, text)"
-      @remove="id => selection.remove([id])"
       @generate="generate"
-      @close="composing = false"
+      @clear="selection.clear()"
     />
 
     <LazyPrayerCollectionDialog

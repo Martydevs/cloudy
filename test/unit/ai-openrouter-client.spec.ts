@@ -3,7 +3,13 @@ import type { RuntimeConfig } from 'nuxt/schema'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const sdk = vi.hoisted(() => {
-  const provider = vi.fn((modelId: string) => ({ modelId }))
+  // Un modelo de OpenRouter mínimo: solo acepta como URL las que terminan en extensión de imagen.
+  const provider = vi.fn((modelId: string) => ({
+    specificationVersion: 'v4' as const,
+    provider: 'openrouter',
+    modelId,
+    supportedUrls: { 'image/*': [/^https?:\/\/.+\.(jpg|jpeg|png|gif|webp)(?:[?#].*)?$/i] },
+  }))
   return { provider, createOpenRouter: vi.fn(() => provider) }
 })
 vi.mock('@openrouter/ai-sdk-provider', () => ({ createOpenRouter: sdk.createOpenRouter }))
@@ -38,9 +44,21 @@ describe('ids de preset', () => {
 
 describe('resolvePrayerImageModel', () => {
   it('con clave devuelve el preset de peticiones con modalities de imagen y la misma URL base', () => {
-    expect(resolvePrayerImageModel(config('sk-or-x', 'http://127.0.0.1:4010'))).toEqual({ modelId: OPENROUTER_PRAY_REQUESTS_MODEL })
+    expect(resolvePrayerImageModel(config('sk-or-x', 'http://127.0.0.1:4010'))).toMatchObject({ provider: 'openrouter', modelId: OPENROUTER_PRAY_REQUESTS_MODEL })
     expect(sdk.createOpenRouter).toHaveBeenLastCalledWith({ apiKey: 'sk-or-x', baseURL: 'http://127.0.0.1:4010' })
     expect(sdk.provider).toHaveBeenCalledWith(OPENROUTER_PRAY_REQUESTS_MODEL, { extraBody: { modalities: ['image', 'text'] } })
+  })
+
+  // Las fotos de los invitados son URLs firmadas de claves sin extensión: tienen que llegar a OpenRouter como URL, sin que
+  // el AI SDK las descargue en la función (feature 008).
+  it('acepta como URL cualquier imagen https (firmada y sin extensión) y los data URI, pero no http', async () => {
+    const model = resolvePrayerImageModel(config('sk-or-x')) as unknown as { supportedUrls: Record<string, RegExp[]> | PromiseLike<Record<string, RegExp[]>> }
+    const patterns = (await model.supportedUrls)['image/*']!
+    const accepted = (url: string) => patterns.some(re => re.test(url))
+    expect(accepted('https://bucket.test/b/guest/s1/abc?X-Amz-Signature=f00')).toBe(true)
+    expect(accepted('https://bucket.test/b/textsrc/abc.jpg?X-Amz-Signature=f00')).toBe(true)
+    expect(accepted('data:image/jpeg;base64,/9j/')).toBe(true)
+    expect(accepted('http://bucket.test/b/guest/s1/abc')).toBe(false)
   })
 
   it('sin URL base va a OpenRouter', () => {

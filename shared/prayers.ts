@@ -1,12 +1,6 @@
-// Reglas puras de la página Peticiones (feature 007, research D10): cuánto texto cabe en una imagen y cómo se reparten
-// las peticiones elegidas. Sin dependencias de Nuxt.
-import { PRAYER_LONG_TEXT_CHARS } from './constants/prayers'
+// Reglas puras de la página Peticiones (feature 007, research D10): en qué orden van las peticiones elegidas y cómo se
+// reparten en imágenes. Sin dependencias de Nuxt.
 import type { PrayerRequest } from './types/api'
-
-/** Más largo que esto solo avisa «puede no caber»; no bloquea la generación. */
-export function isLongText(text: string | null | undefined): boolean {
-  return (text?.length ?? 0) > PRAYER_LONG_TEXT_CHARS
-}
 
 type Orderable = Pick<PrayerRequest, 'id' | 'approvedAt' | 'sentAt'>
 

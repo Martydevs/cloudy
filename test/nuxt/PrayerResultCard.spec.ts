@@ -7,7 +7,7 @@ import type { PrayerImageItem } from '~/composables/usePrayerImages'
 import { buttonsWithText } from './helpers/api'
 
 const item = (changes: Partial<PrayerImageItem> = {}): PrayerImageItem =>
-  ({ key: 'img-1', index: 1, requests: [{ fileId: 'a', text: 'Ana' }, { fileId: 'b', text: 'Luis' }], status: 'running', ...changes })
+  ({ key: 'img-1', index: 1, fileIds: ['a', 'b'], status: 'running', ...changes })
 
 const labels = (wrapper: { findAll: (s: string) => { text: () => string }[] }) => wrapper.findAll('button').map(b => b.text().trim())
 
@@ -37,7 +37,7 @@ describe('PrayerResultCard', () => {
   })
 
   it('cancelada: Volver a poner en cola y Descartar; una sola petición dice «1 petición»', async () => {
-    const wrapper = await mountSuspended(PrayerResultCard, { props: { item: item({ status: 'canceled', requests: [{ fileId: 'a', text: 'Ana' }] }) } })
+    const wrapper = await mountSuspended(PrayerResultCard, { props: { item: item({ status: 'canceled', fileIds: ['a'] }) } })
     expect(labels(wrapper)).toEqual(['Volver a poner en cola', 'Descartar'])
     expect(wrapper.text()).toContain('1 petición')
   })

@@ -24,7 +24,7 @@ const titleId = useId()
     <div class="flex flex-col gap-3 p-4">
       <div class="flex flex-wrap items-center justify-between gap-2">
         <h3 :id="titleId" class="font-semibold">{{ m.resultAlt(item.index) }}</h3>
-        <span class="text-sm text-base-content/70">{{ pluralize(item.requests.length, 'petición', 'peticiones') }}</span>
+        <span class="text-sm text-base-content/70">{{ pluralize(item.fileIds.length, 'petición', 'peticiones') }}</span>
       </div>
 
       <template v-if="active">

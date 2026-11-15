@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // Barra de la selección de Peticiones (feature 007, forma de `SongSelectionBar`): fija abajo, al alcance del pulgar, con el
-// área segura inferior y apoyada encima de las bandejas de YouTube y Canciones. Dice cuántas imágenes saldrán y abre el
-// diálogo donde se escribe el texto de cada petición antes de generar.
+// área segura inferior y apoyada encima de las bandejas de YouTube y Canciones. Dice cuántas imágenes saldrán y las pone en
+// cola al instante: el modelo lee el texto en las fotos (feature 008).
 const props = withDefaults(defineProps<{ count: number, images: number, limit?: boolean }>(), { limit: false })
 const emit = defineEmits<{ generate: [], clear: [] }>()
 const m = messages.prayers

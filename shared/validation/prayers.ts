@@ -1,9 +1,9 @@
 // Validadores de la página Peticiones (feature 007, data-model.md § Validación): la query del listado, el cuerpo de la
 // generación, el historial de imágenes y sus colecciones. El servidor es la autoridad; el cliente arma la misma query con
 // `usePrayerFilters` y valida el nombre de una colección con `prayerCollectionSchema` (app/utils/form-schemas.ts).
-import { PRAYER_HISTORY_MAX_LIMIT, PRAYER_HISTORY_PAGE, PRAYER_PER_IMAGE, PRAYER_TEXT_MAX_LENGTH } from '../constants/prayers'
+import { PRAYER_HISTORY_MAX_LIMIT, PRAYER_HISTORY_PAGE, PRAYER_PER_IMAGE } from '../constants/prayers'
 import type { Field } from './core'
-import { array, int, object, oneOf, optional, REQUIRED_MESSAGE, str, uuid } from './core'
+import { array, int, object, oneOf, optional, str, uuid } from './core'
 import { songCollectionName } from './songs'
 
 const DATE_MESSAGE = 'Fecha no válida'
@@ -40,32 +40,12 @@ export const prayersQuery = object({
 
 export type PrayersQuery = { q?: string, from?: string, to?: string, dir?: PrayersDir, cursor?: string }
 
-/** Una petición dentro de la imagen: el archivo y el texto que el equipo escribió para él. */
-export interface PrayerImageRequestInput {
-  fileId: string
-  text: string
-}
-
-function requestEntry(): Field<PrayerImageRequestInput> {
-  const fileId = uuid()
-  const text = str({ min: 1, max: PRAYER_TEXT_MAX_LENGTH })
-  return (input) => {
-    if (!input || typeof input !== 'object') return { ok: false, error: REQUIRED_MESSAGE }
-    const raw = input as Record<string, unknown>
-    const id = fileId(raw.fileId)
-    if (!id.ok) return id
-    const body = text(raw.text)
-    if (!body.ok) return body
-    return { ok: true, value: { fileId: id.value, text: body.value } }
-  }
-}
-
-/** 1–4 peticiones distintas con su texto: una imagen. */
-function requestList(): Field<PrayerImageRequestInput[]> {
-  const list = array(requestEntry(), { min: 1, max: PRAYER_PER_IMAGE, label: 'peticiones' })
+/** 1–4 ids distintos de peticiones aprobadas: una imagen. */
+function fileIdList(): Field<string[]> {
+  const list = array(uuid(), { min: 1, max: PRAYER_PER_IMAGE, label: 'peticiones' })
   return (input) => {
     const res = list(input)
-    if (res.ok && new Set(res.value.map(r => r.fileId)).size !== res.value.length) {
+    if (res.ok && new Set(res.value).size !== res.value.length) {
       return { ok: false, error: 'No repitas peticiones en la misma imagen' }
     }
     return res
@@ -73,10 +53,10 @@ function requestList(): Field<PrayerImageRequestInput[]> {
 }
 
 /**
- * Cuerpo de `POST /api/peticiones/imagenes`: cada petición viaja con el texto que el equipo escribió en el diálogo de
- * generación. El servidor comprueba que cada id siga siendo una imagen aprobada y visible, pero el texto es el enviado.
+ * Cuerpo de `POST /api/peticiones/imagenes`: solo los ids. El modelo lee el texto en las fotos de los invitados; el servidor
+ * comprueba que cada id siga siendo una imagen aprobada y visible y fija el orden.
  */
-export const prayerImageInput = object({ requests: requestList() })
+export const prayerImageInput = object({ fileIds: fileIdList() })
 
 /** Query de `GET /api/peticiones/imagenes`: `limit` 1–48 (12 por defecto) y `cursor` keyset opcional. */
 export const prayerHistoryQuery = object({

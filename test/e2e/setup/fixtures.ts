@@ -286,7 +286,10 @@ export type { PrayerCall, StubCalls, StubMode } from './openrouter-stub'
 const stubCalls = () => stubRequest<StubCalls>('/__stub/calls')
 /** Generaciones de imágenes de peticiones (feature 007) que recibió el stub, en orden. */
 export const prayerCalls = async () => (await stubCalls()).prayer
-/** Reemplaza el modo entero (lo omitido vuelve a su valor por defecto). */
+/**
+ * Reemplaza el modo entero (lo omitido vuelve a su valor por defecto). Los escenarios de la generación (`sin-credito`,
+ * `lento`, …) se eligen aquí; con `match` solo afectan a las llamadas con una foto cuya URL lo contiene (el id del archivo).
+ */
 export const setStubMode = (mode: Partial<StubMode>) => stubRequest('/__stub/mode', mode)
 export const resetStub = () => stubRequest('/__stub/reset', {})
 
@@ -402,6 +405,8 @@ export interface PrayerSeed {
   note?: string | null
   fixtureName?: string
   deleted?: boolean
+  /** Copia JPEG de una HEIC antigua (`files.preview_key`); solo se guarda la clave, no se sube nada. */
+  previewKey?: string | null
 }
 
 /** Carpeta de la corrida para las fotos de peticiones, una por dueño y proceso. */
@@ -421,6 +426,7 @@ export async function seedPrayerRequest(owner: string, {
   note = null,
   fixtureName = 'foto.jpg',
   deleted = false,
+  previewKey = null,
 }: PrayerSeed = {}): Promise<{ fileId: string, submissionId: string }> {
   const sql = testSql()
   const reviewed = status === 'pending' ? null : reviewedAt.toISOString()
@@ -436,7 +442,8 @@ export async function seedPrayerRequest(owner: string, {
   const folderId = await prayerFolders.get(owner)!
   await sql`
     UPDATE files SET folder_id = ${folderId}, origin = 'guest', uploaded_by = NULL, guest_name = ${senderName}, submission_id = ${submission!.id},
-      deleted_at = ${deleted ? new Date().toISOString() : null}, deleted_by = ${deleted ? owner : null}, trash_root_id = ${deleted ? fileId : null}
+      deleted_at = ${deleted ? new Date().toISOString() : null}, deleted_by = ${deleted ? owner : null}, trash_root_id = ${deleted ? fileId : null},
+      preview_key = ${previewKey}
     WHERE id = ${fileId}
   `
   return { fileId, submissionId: submission!.id }

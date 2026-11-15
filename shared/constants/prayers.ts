@@ -8,10 +8,6 @@ export const PRAYER_PER_IMAGE = 4
 export const PRAYER_MAX_SELECTION = 40
 /** Tarjetas por página del listado: cada una trae una foto sin miniatura (research D9). */
 export const PRAYER_PAGE_SIZE = 12
-/** Más caracteres que esto solo avisa «puede no caber»; no bloquea la selección. */
-export const PRAYER_LONG_TEXT_CHARS = 600
-/** Tope del texto que se escribe para una petición en el diálogo de generación. */
-export const PRAYER_TEXT_MAX_LENGTH = 10_000
 /** Imágenes que el navegador genera a la vez (research D8). */
 export const PRAYER_IMAGE_CONCURRENCY = 2
 /** Plazo de una generación desde el navegador, por encima del tope del servidor (105 s) y por debajo del de Vercel (120 s). */
@@ -27,6 +23,7 @@ export const PRAYER_HISTORY_MAX_LIMIT = 48
 /** Códigos de error de `POST /api/peticiones/imagenes` (`data.code`). */
 export type PrayerErrorCode =
   | 'request_unavailable'
+  | 'unreadable_image'
   | 'not_configured'
   | 'quota_exceeded'
   | 'rate_limited'
@@ -37,11 +34,12 @@ export type PrayerErrorCode =
   | 'save_failed'
 
 export const PRAYER_ERROR_CODES: readonly PrayerErrorCode[] = [
-  'request_unavailable', 'not_configured', 'quota_exceeded', 'rate_limited', 'provider', 'invalid_output', 'too_large', 'timeout', 'save_failed',
+  'request_unavailable', 'unreadable_image', 'not_configured', 'quota_exceeded', 'rate_limited', 'provider', 'invalid_output', 'too_large', 'timeout', 'save_failed',
 ]
 
 export const PRAYER_ERROR_MESSAGES: Record<PrayerErrorCode, string> = {
   request_unavailable: 'Alguna petición ya no está disponible (se envió a la papelera). La quitamos de tu selección.',
+  unreadable_image: 'Alguna foto no se puede leer. Quítala de tu selección o pídele al invitado que la envíe de nuevo en JPG o PNG.',
   not_configured: 'La generación de imágenes no está configurada. Avisa a un administrador.',
   quota_exceeded: 'Se agotó el crédito del servicio de imágenes. Avisa a un administrador.',
   rate_limited: 'Generaste muchas imágenes seguidas. Espera un momento e inténtalo de nuevo.',

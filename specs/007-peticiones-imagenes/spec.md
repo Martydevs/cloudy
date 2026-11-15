@@ -8,6 +8,29 @@
 
 **Input**: User description: "New Nuxt page as feature named Peticiones. On the peticiones i require to display the uploaded requests from @app/pages/upload.vue and link shared upload as multiselect radio buttons cards arranged in a grid of cols and rows, no table, then the selected cards transcription goes to api where consume the openrouter client in order to generate an image or images where each image maximum margin of upload content description can include 4 parragaphs, then the 5th will be placed in a second image displaying the pray requests of the day. the llm is a custom image type llm with system prompt and, part of the input goes a image as template where simply the llm will fill the empty indicated body space with the selected card content. Add filters by date, sorter asc and desc, infinite scrolling, responsive grid and search input. Include in the card the submitted image and make the ai transcript content editable so, if includes a [unlegible] like text, the user can update it before generate the image."
 
+> **Enmienda (2026-11-15) — el modelo lee las fotos; el equipo ya no escribe el texto.** Reemplaza el paso «Escribir» de
+> la enmienda del 2026-11-13:
+>
+> - **Generar**: la barra de la selección dice **«Generar imágenes»** y encola las imágenes al instante (una por cada grupo
+>   de 4), sin diálogo. Se muestra el aviso «N imágenes en cola», la página baja al historial y **la selección se vacía**
+>   (ya no hay texto que corregir, y un segundo clic no gasta crédito dos veces). `PrayerComposeDialog` desaparece.
+> - **Contrato**: `POST /api/peticiones/imagenes` vuelve a recibir `{ fileIds: string[] }` (1–4 UUID distintos). Desaparecen
+>   `PrayerImageRequestInput`, `PRAYER_TEXT_MAX_LENGTH`, `PRAYER_LONG_TEXT_CHARS` e `isLongText` (y el aviso «puede no caber»).
+>   Guard, límite de 60/h por persona, subida al bucket, fila de `prayer_images` y respuesta `201` no cambian; **sin migración**.
+> - **Fotos al modelo**: el servidor comprueba cada id (`409 request_unavailable`), fija el orden `(reviewed_at, created_at, id)`
+>   y firma una URL de lectura de ~10 min por foto: la copia JPEG (`preview_key`) de una HEIC antigua si existe; si no, el
+>   original cuando es JPEG, PNG, WebP o GIF. OpenRouter descarga cada foto directo del bucket: ningún binario pasa por la
+>   función. Una HEIC sin copia JPEG (más de 5 MB o la conversión del navegador falló) responde **`422 unreadable_image`**
+>   (`data.ids`, no reintentable): «Alguna foto no se puede leer. Quítala de tu selección o pídele al invitado que la envíe de
+>   nuevo en JPG o PNG.» No se decodifica HEIC en el servidor.
+> - **Prompt**: la primera imagen es la plantilla y las siguientes son las fotos, en orden, cada una precedida del rótulo
+>   «Foto de la petición N»; el modelo lee el texto de cada foto y lo escribe literal, un bloque por foto, sin números,
+>   etiquetas, nombres ni notas. **FR-022**: al proveedor solo viajan la plantilla y las fotos; nunca nombres, notas, IP ni ids.
+> - **Paso manual fuera del repositorio**: el system prompt del preset `@preset/pray-requests-image-generation` se edita en
+>   OpenRouter y debe decir que las fotos adjuntas tras la plantilla traen el texto de cada petición, para leerlo y escribirlo
+>   literal y en orden (ya no hay etiquetas `<peticion>`).
+> - Remitente y nota siguen visibles en las tarjetas para el equipo; el historial sigue sin «Generar de nuevo».
+
 > **Enmienda (2026-11-13) — el texto se escribe a mano; se retiró la transcripción automática.** La feature 002 (lectura
 > del texto de las imágenes con el modelo de visión de OpenRouter) se **retiró por completo**, así que Peticiones se quedó
 > sin su fuente de texto y cambia así:

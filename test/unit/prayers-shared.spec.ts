@@ -9,21 +9,17 @@ import {
   PRAYER_IMAGE_MAX_BYTES,
   PRAYER_IMAGE_RETENTION_DAYS,
   PRAYER_IMAGE_TIMEOUT_MS,
-  PRAYER_LONG_TEXT_CHARS,
   PRAYER_MAX_SELECTION,
   PRAYER_PAGE_SIZE,
   PRAYER_PER_IMAGE,
-  PRAYER_TEXT_MAX_LENGTH,
 } from '../../shared/constants/prayers'
-import { chunkRequests, isLongText, orderForImages } from '../../shared/prayers'
+import { chunkRequests, orderForImages } from '../../shared/prayers'
 
 describe('constantes', () => {
   it('límites de la feature', () => {
     expect(PRAYER_PER_IMAGE).toBe(4)
     expect(PRAYER_MAX_SELECTION).toBe(40)
     expect(PRAYER_PAGE_SIZE).toBe(12)
-    expect(PRAYER_LONG_TEXT_CHARS).toBe(600)
-    expect(PRAYER_TEXT_MAX_LENGTH).toBe(10_000)
     expect(PRAYER_IMAGE_CONCURRENCY).toBe(2)
     expect(PRAYER_IMAGE_TIMEOUT_MS).toBe(110_000)
     expect(PRAYER_IMAGE_MAX_BYTES).toBe(4_000_000)
@@ -34,21 +30,13 @@ describe('constantes', () => {
 
   it('cada código de error tiene un texto en español', () => {
     expect([...PRAYER_ERROR_CODES].sort()).toEqual(
-      ['invalid_output', 'not_configured', 'provider', 'quota_exceeded', 'rate_limited', 'request_unavailable', 'save_failed', 'timeout', 'too_large'],
+      ['invalid_output', 'not_configured', 'provider', 'quota_exceeded', 'rate_limited', 'request_unavailable', 'save_failed', 'timeout', 'too_large', 'unreadable_image'],
     )
     for (const code of PRAYER_ERROR_CODES) {
       expect(PRAYER_ERROR_MESSAGES[code].trim(), code).not.toBe('')
       expect(PRAYER_ERROR_MESSAGES[code], code).not.toMatch(/\b(error|failed|server|timeout|provider)\b/i)
     }
     expect(Object.keys(PRAYER_ERROR_MESSAGES).sort()).toEqual([...PRAYER_ERROR_CODES].sort())
-  })
-})
-
-describe('isLongText', () => {
-  it('largo con más de 600 caracteres', () => {
-    expect(isLongText('a'.repeat(600))).toBe(false)
-    expect(isLongText('a'.repeat(601))).toBe(true)
-    expect(isLongText(null)).toBe(false)
   })
 })
 

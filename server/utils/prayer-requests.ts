@@ -122,20 +122,31 @@ export async function listPrayerRequests({ q, from, to, dir = 'desc', cursor }: 
   return { items: page.map(row => toPrayerRequest(row)), nextCursor }
 }
 
+/** La foto de una petición tal como la necesita la generación: nunca sale al navegador (no es parte de `PrayerRequest`). */
+export interface PrayerPhoto {
+  id: string
+  storageKey: string
+  /** Copia JPEG de las HEIC antiguas (`textsrc/<id>.jpg`); `null` en el resto. */
+  previewKey: string | null
+  mimeType: string
+}
+
 /**
- * Peticiones que pueden ir a una imagen ahora (FR-027): las mismas condiciones del listado. El texto lo escribe el equipo
- * y viaja en la petición. `found` va en el orden de las imágenes `(reviewed_at, sent_at, id)` ascendente; `missing` son los
- * ids que ya no están disponibles.
+ * Peticiones que pueden ir a una imagen ahora (FR-027): las mismas condiciones del listado, con lo justo para firmar su
+ * foto. `found` va en el orden de las imágenes `(reviewed_at, sent_at, id)` ascendente; `missing` son los ids que ya no
+ * están disponibles.
  */
-export async function loadEligibleRequests(fileIds: string[]): Promise<{ found: PrayerRequest[], missing: string[] }> {
+export async function loadEligibleRequests(fileIds: string[]): Promise<{ found: PrayerPhoto[], missing: string[] }> {
   if (fileIds.length === 0) return { found: [], missing: [] }
-  const rows = await baseQuery()
+  const found = await useDb()
+    .select({ id: files.id, storageKey: files.storageKey, previewKey: files.previewKey, mimeType: files.mimeType })
+    .from(files)
+    .innerJoin(guestSubmissions, eq(guestSubmissions.id, files.submissionId))
     .where(and(
       visible(),
       inArray(files.id, fileIds),
     ))
     .orderBy(asc(guestSubmissions.reviewedAt), asc(guestSubmissions.createdAt), asc(files.id))
-  const found = rows.map(row => toPrayerRequest(row))
   const ids = new Set(found.map(r => r.id))
   return { found, missing: fileIds.filter(id => !ids.has(id)) }
 }

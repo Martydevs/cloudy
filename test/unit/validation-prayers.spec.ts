@@ -1,6 +1,5 @@
 // T006 — Validadores de la página Peticiones (feature 007, data-model § Validación).
 import { describe, expect, it } from 'vitest'
-import { PRAYER_TEXT_MAX_LENGTH } from '../../shared/constants/prayers'
 import {
   prayerCollectionInput,
   prayerCollectionItemInput,
@@ -60,42 +59,37 @@ describe('prayersQuery', () => {
 })
 
 describe('prayerImageInput', () => {
-  const entry = (fileId: string | undefined, text = 'Oremos por Ana') => ({ fileId, text })
-
-  it.each([1, 2, 3, 4])('acepta %i peticiones distintas con su texto', (n) => {
-    const requests = UUIDS.slice(0, n).map(id => entry(id))
-    expect(prayerImageInput({ requests })).toEqual({ ok: true, data: { requests } })
+  it.each([1, 2, 3, 4])('acepta %i ids distintos', (n) => {
+    const fileIds = UUIDS.slice(0, n)
+    expect(prayerImageInput({ fileIds })).toEqual({ ok: true, data: { fileIds } })
   })
 
-  it('recorta el texto', () => {
-    const res = prayerImageInput({ requests: [entry(UUIDS[0], '  Oremos por Ana  ')] })
-    expect(res).toEqual({ ok: true, data: { requests: [entry(UUIDS[0])] } })
-  })
-
-  it('acepta el texto más largo permitido', () => {
-    expect(prayerImageInput({ requests: [entry(UUIDS[0], 'a'.repeat(PRAYER_TEXT_MAX_LENGTH))] }).ok).toBe(true)
+  it('normaliza los ids a minúsculas', () => {
+    expect(prayerImageInput({ fileIds: [UUIDS[0]!.toUpperCase()] })).toEqual({ ok: true, data: { fileIds: [UUIDS[0]] } })
   })
 
   it.each([
     ['vacío', []],
-    ['5 peticiones', UUIDS.map(id => ({ fileId: id, text: 'x' }))],
-    ['repetidos', [{ fileId: UUIDS[0], text: 'x' }, { fileId: UUIDS[1], text: 'x' }, { fileId: UUIDS[0], text: 'x' }]],
-    ['no-UUID', [{ fileId: 'no-es-uuid', text: 'x' }]],
+    ['5 ids', UUIDS],
+    ['repetidos', [UUIDS[0], UUIDS[1], UUIDS[0]]],
+    ['no-UUID', ['no-es-uuid']],
     ['sin lista', undefined],
     ['texto suelto', 'abc'],
-    ['sin texto', [{ fileId: UUIDS[0] }]],
-    ['texto vacío', [{ fileId: UUIDS[0], text: '   ' }]],
-    ['texto demasiado largo', [{ fileId: UUIDS[0], text: 'a'.repeat(PRAYER_TEXT_MAX_LENGTH + 1) }]],
-    ['entrada que no es objeto', ['abc']],
-  ])('%s → error', (_, requests) => {
-    const res = prayerImageInput({ requests })
+    ['la forma vieja con texto', [{ fileId: UUIDS[0], text: 'Oremos por Ana' }]],
+  ])('%s → error', (_, fileIds) => {
+    const res = prayerImageInput({ fileIds })
     expect(res.ok).toBe(false)
-    if (!res.ok) expect(res.errors.requests).toBeTruthy()
+    if (!res.ok) expect(res.errors.fileIds).toBeTruthy()
+  })
+
+  it('el mensaje de repetidos es claro', () => {
+    const res = prayerImageInput({ fileIds: [UUIDS[0], UUIDS[0]] })
+    expect(res.ok).toBe(false)
+    if (!res.ok) expect(res.errors.fileIds).toBe('No repitas peticiones en la misma imagen')
   })
 
   it('ids en mayúsculas se normalizan y cuentan como repetidos', () => {
-    const requests = [entry(UUIDS[0]), entry(UUIDS[0]!.toUpperCase())]
-    expect(prayerImageInput({ requests }).ok).toBe(false)
+    expect(prayerImageInput({ fileIds: [UUIDS[0], UUIDS[0]!.toUpperCase()] }).ok).toBe(false)
   })
 })
 

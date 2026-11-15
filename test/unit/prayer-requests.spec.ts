@@ -151,8 +151,9 @@ describe('listPrayerRequests', () => {
 })
 
 describe('loadEligibleRequests', () => {
-  it('aplica las condiciones del listado (ya no el texto) y ordena para las imágenes', async () => {
-    const fake = installNitro([[row(1, { id: UUID })]])
+  it('aplica las condiciones del listado, trae solo lo que firma la foto y ordena para las imágenes', async () => {
+    const photo = { id: UUID, storageKey: 'guest/s1/x', previewKey: null, mimeType: 'image/jpeg' }
+    const fake = installNitro([[photo]])
     const result = await loadEligibleRequests([UUID2, UUID])
     const where = whereOf(fake)
     expect(where).toContain('"guest_submissions"."status" = $1')
@@ -162,8 +163,11 @@ describe('loadEligibleRequests', () => {
     expect(where).not.toContain('text_content')
     expect(orderOf(fake)).toBe('"guest_submissions"."reviewed_at" asc [] "guest_submissions"."created_at" asc [] "files"."id" asc []')
     expect(fake.calls.filter(c => c.method === 'select')).toHaveLength(1)
-    expect(result.found.map(r => r.id)).toEqual([UUID])
+    expect(result.found).toEqual([photo])
     expect(result.missing).toEqual([UUID2])
+    // Ni nombre ni nota: esta consulta solo alimenta la generación (FR-022).
+    const select = fake.calls.find(c => c.method === 'select')!.args[0] as Record<string, unknown>
+    expect(Object.keys(select).sort()).toEqual(['id', 'mimeType', 'previewKey', 'storageKey'])
   })
 
   it('sin ids no consulta', async () => {
