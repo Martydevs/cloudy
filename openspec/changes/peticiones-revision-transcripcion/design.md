@@ -104,6 +104,12 @@ generation page are untouched.
 - Layout (mobile first): below `md`, a full-screen modal with a horizontally scrollable strip of cards, then the active
   photo, the textarea, **Save** and **Generar imágenes**; from `md`, the sketch's two columns (editor left, card list right).
   The photo is shown next to the text so the editor can compare; the card thumbnail is lazy like `PrayerCard`.
+  *Follow-up (UI only, no delta specs):* the textarea gets most of the space, so the photo is **optional**: hidden when the
+  dialog opens and toggled with **Ver imagen** / **Ocultar imagen** (in the editor, waiting and failed action rows,
+  `aria-expanded`/`aria-controls`). One choice for the whole dialog, not per card, not persisted. CSS-only transition (rows
+  0fr → 1fr on phones, width 0 → 2/5 on the left from `lg`; none with reduced motion); hidden, the panel is `inert`. From
+  `md` the modal has a fixed height so toggling does not resize it; the editor is one bordered box (label, borderless
+  textarea, hint/counter footer) whose border shows focus and errors.
   The verified indicator is a real checkbox (`checkbox checkbox-primary`, labelled with the request's name) that the editor can
   tick, and that **Save** also sets. Dirty text prompts through `ConfirmDialog` before switching card or closing.
 - Text limits: `PRAYER_TEXT_MAX_LENGTH = 1000` (server-enforced) and the existing "may not fit" hint above

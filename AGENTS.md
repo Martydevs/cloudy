@@ -10,8 +10,9 @@ configuration must point here instead of copying these rules.
 
 **Product areas today**: the shared drive (folders, files, comments, trash, activity), guest uploads and the team's approval queue,
 users and roles (admin / editor), YouTube downloads and playlists, Canciones (Letras.com lyrics turned into `.pptx` slides) and
-Peticiones (approved guest prayer-request photos turned into images by an OpenRouter preset). How each area behaves in detail, and the
-decisions that shaped it, are recorded in "Known gotchas" below. Image-text extraction was removed (migration `0011`).
+Peticiones (approved guest prayer-request photos whose text a model reads, an editor corrects and verifies, and an OpenRouter preset
+then draws onto a template). How each area behaves in detail, and the decisions that shaped it, are recorded in "Known gotchas" below.
+The old background image-text extraction (`files.text_*`) was removed (migration `0011`); Peticiones reads photos on demand into its own table.
 
 ## Stack
 
@@ -25,7 +26,7 @@ decisions that shaped it, are recorded in "Known gotchas" below. Image-text extr
 | Utilities | `@vueuse/nuxt` (auto-imported) |
 | Forms | Regle (`@regle/schemas`) over zod schemas (`zod/mini`) in `app/utils/form-schemas.ts`, always through `useFormSchema` (`app/utils/form-schema.ts`) · `@regle/nuxt` (auto-imports and its plugin, loaded normally) |
 | Tests | Vitest projects `unit` / `nuxt` / `e2e` · `@nuxt/test-utils` · `playwright-core` (Chromium) |
-| AI | AI SDK v7 (`generateText`) · OpenRouter as the only provider via `@openrouter/ai-sdk-provider`, single use case: the preset `@preset/pray-requests-image-generation` (the preset picks model and routing and carries the system prompt, edited in OpenRouter: the code sends only the user prompt in `server/ai/prayer-image/prompt.ts`, the template and the guest photos as signed URLs) · isolated in `server/ai/` |
+| AI | AI SDK v7 (`generateText`) · OpenRouter as the only provider via `@openrouter/ai-sdk-provider`, two use cases, both in Peticiones, each with its own preset that picks model and routing and carries the system prompt (edited in OpenRouter): `@preset/pray-requests-transcription` reads one guest photo (signed URL, structured output `{ hasText, text }`, `server/ai/prayer-transcript/`) and `@preset/pray-requests-image-generation` draws the verified texts on the template (no guest photos, `server/ai/prayer-image/`); the code sends only the short user prompt · isolated in `server/ai/` |
 | Deploy | Vercel (Nitro `vercel` preset, SSR, Vercel Cron) |
 
 Do not add dependencies or external services without a justification in the change's design document
@@ -103,7 +104,7 @@ hover. Check every screen at 360 px and ≥ 1280 px.
 logic in composables. No `any` without a justifying comment. Shared rules live once in `shared/`.
 Every endpoint validates input and calls the session/role guard server-side — hiding UI is not
 authorization. Neon Auth, storage, AI, the `cloudy-api` service (YouTube downloads and lyrics presentations), Apify (lyrics crawling) and background work are
-accessed **only** through `server/utils/auth.ts`, `server/utils/storage.ts`, `server/ai/` (via `server/utils/prayer-images.ts`), `server/utils/cloudy-api.ts`,
+accessed **only** through `server/utils/auth.ts`, `server/utils/storage.ts`, `server/ai/` (via `server/utils/prayer-images.ts` and `server/utils/prayer-transcripts.ts`), `server/utils/cloudy-api.ts`,
 `server/utils/lyrics-crawler.ts` (the only importer of `apify-client`) and `server/utils/background.ts`. No demo code, dead code or secrets. Typecheck and build must pass.
 Forms validate with a zod schema from `app/utils/form-schemas.ts` through `useFormSchema` — never `useRegle`/`useRegleSchema`
 directly (`test/unit/architecture.spec.ts` enforces it). Schemas mirror `shared/validation` (messages and limits come from there);
@@ -182,8 +183,8 @@ Never print or commit their values.
   Back-to-back e2e runs share that lockout: leave ~5 min between runs that log in a lot.
 - The Neon auth client *throws* its own normalized codes (`bad_jwt`, `invalid_credentials`, …), not Better
   Auth's; `useAuthClient` maps what pages need (e.g. a used reset link → `INVALID_TOKEN`).
-- AI: OpenRouter is the only provider and the Peticiones prayer-image generation is the only use case left; there is
-  no fallback. With no key nothing is called. E2E run against a local chat-completions stub
+- AI: OpenRouter is the only provider and Peticiones has the only two use cases (reading a request's photo and generating
+  the prayer image); there is no fallback. With no key nothing is called. E2E run against a local chat-completions stub
   (`test/e2e/setup/openrouter-stub.ts`) through `NUXT_OPENROUTER_BASE_URL`, so they never call OpenRouter.
 - Regle: `useRegleSchema` only exposes `$validate`/`$pending` at the root (fields keep `$touch`, `$reset`, `$errors`). The plugin
   `@regle/nuxt` registers loads normally, so Regle travels in the shared entry chunk of every route (heaviest route ≈ 158 KiB gzip).
@@ -206,14 +207,14 @@ Never print or commit their values.
   `ftyp` brand (`hasHeicBrand`) is checked first, so a HEIC that reached Windows/Android still converts. The server needs
   nothing special: a converted file is just a JPEG.
   **Legacy copies**: HEICs uploaded before this kept a JPEG companion copy (`textsrc/<id>.jpg`, column `preview_key`,
-  renamed from `text_source_key` in migration `0012`). Nothing writes it any more, but it is still read: `FileItem.hasPreview`,
+  renamed from `text_source_key` in migration `0012`). Nothing writes it any more, but it is still read: the Peticiones transcription sends it to the model instead of the HEIC (`photoSource`), `FileItem.hasPreview`,
   `GET /api/files/:id/preview` (302) and `FilePreview` show old HEICs through it, approval carries it from
   `guest_submission_files` to `files`, and trash purge / reject / the daily cron delete it with the original. The bucket
   prefix `textsrc/` is kept (no `CopyObject` in Neon Object Storage). e2e (`files.spec.ts`) uploads
   `test/fixtures/files/nota.heic` from Chromium and checks it is stored as `nota.jpg` with a thumbnail and a decoded preview.
 - Nitro auto-imports everything under `server/utils/**`, subfolders included. Code that must stay behind a boundary
   (the AI layer) lives outside it in `server/ai/` and is imported explicitly as `#server/ai`, only from
-  `server/utils/prayer-images.ts`; `test/unit/architecture.spec.ts` enforces it.
+  `server/utils/prayer-images.ts` (generation) and `server/utils/prayer-transcripts.ts` (reading); `test/unit/architecture.spec.ts` enforces it.
 - `scripts/storage-setup*` accepts an optional `CORS_EXTRA_ORIGINS` (comma-separated `https://` origins, or
   `http://localhost:*`) to add a preview alias without dropping the site domain.
 - Routes: guests send files at `/upload` (public, one step); the old `/enviar` link 301-redirects there via
@@ -283,14 +284,14 @@ Never print or commit their values.
   `sin-letra`, `muy-larga`, `fallo-del-run`, `sin-credito`, `redirige`, `con-tildes`; `letrasUrl(slug)`) and the `cloudy-api` stub's
   `POST /api/lyrics/pptx` (titles containing `vacia`, `demasiado larga`, `respaldo`).
 - Peticiones: the grid lists **approved** guest images (`files ⋈ guest_submissions`, `status = 'approved'`), ordered and filtered by `guest_submissions.reviewed_at`
-  (approval date), keyset cursor, 12 per page; guest photos have **no thumbnail**, so each card sets `src` only when it enters the viewport. The card shows sender, dates and note only:
-  there is no stored transcript (see "Photos read by the model" below). `POST /api/peticiones/imagenes` takes `{ fileIds }` (1–4 distinct UUIDs); the server re-checks that each id
-  is still a visible approved image (`409 request_unavailable`), fixes the photo order `(reviewed_at, created_at, id)` and has the model read the photos. It
+  (approval date), keyset cursor, 12 per page; guest photos have **no thumbnail**, so each card sets `src` only when it enters the viewport. The card shows sender, dates and note only
+  (the transcript is shown in the review modal, see "Review before generating" below). `POST /api/peticiones/imagenes` takes `{ fileIds }` (1–4 distinct UUIDs); the server re-checks that each id
+  is still a visible approved image (`409 request_unavailable`) and has a **verified** transcript (`409 transcript_unverified`, `data.ids`), fixes the order `(reviewed_at, created_at, id)` and sends the model the template plus those texts. It
   uploads the generated image to the bucket with `putObject` (`key('peticiones/<id>.<ext>')`, capped at `PRAYER_IMAGE_MAX_BYTES` = 4 000 000), inserts its `prayer_images` row and
   answers **201** with `PrayerGeneratedImage` JSON (no binary in the response); if the insert fails the object is deleted and it answers `502 save_failed`. The call goes
   through the existing OpenRouter client with the preset `@preset/pray-requests-image-generation` + `extraBody.modalities = ['image','text']`; the image arrives in `result.files`. The template
   is `server/assets/peticiones/plantilla.jpg` (Nitro `serverAssets`, `assets:peticiones`): replace the file and redeploy to change it. Only `server/utils/prayer-images.ts` imports `#server/ai`
-  for this use case. The browser generates **2 images at a time** (`usePrayerImages`, state in `useState('prayer-images')`, `AbortController`s in a module map; no blobs or objectURLs): a saved
+  for this use case (and only `prayer-transcripts.ts` for reading). The browser generates **2 images at a time** (`usePrayerImages`, state in `useState('prayer-images')`, `AbortController`s in a module map; no blobs or objectURLs): a saved
   image leaves the queue and is prepended to the history through `useState(PRAYER_HISTORY_ADDED_KEY)`; only queued/running/failed/canceled items stay in the queue, and the leave guard only
   counts queued/running. **History and collections**: the page has three sections in this order: the approved requests as **one horizontally scrolling row** (`PrayerGrid`:
   `overflow-x-auto snap-x`, cards `w-72 sm:w-80`, the infinite-scroll sentinel at the end of the row observed with the row as root, «Cargar más» for keyboard, ‹ › buttons from `sm`;
@@ -302,26 +303,47 @@ Never print or commit their values.
   `server/utils/prayer-gallery.ts` and `server/utils/prayer-collections.ts` (endpoints never touch drizzle; `architecture.spec.ts`). Retention: the daily cron (step 7) deletes, in batches of
   500, images older than `PRAYER_IMAGE_RETENTION_DAYS` (30) that are in **no** collection (rows, then objects); collections are what the team keeps. Downloads are plain links (no blobs).
   Limit: 60 generations per hour per person (`peticiones-img:<userId>`).
-  **Photos read by the model**: «Generar imágenes» on `PrayerSelectionBar` queues one image per group of 4 straight away (no
-  dialog; `PrayerComposeDialog` is gone), toasts «N imágenes en cola», scrolls to `#historial` and **clears the selection** (a second click can't spend credit twice). `usePrayerSelection`
-  stores only the `PrayerRequest` per id; queue items carry `fileIds`. `loadEligibleRequests` returns only `id`, `storageKey`, `previewKey`, `mimeType` (never in the DTO);
-  `photoSource` in `prayer-images.ts` picks the legacy HEIC's JPEG copy (`preview_key`) first, else the original if it is JPEG/PNG/WebP/GIF, and a HEIC with no copy fails as
-  **`422 unreadable_image`** (`data.ids`, not retryable; no server-side HEIC decoding). Each photo gets a `presignGet` URL of 600 s and goes to the model as a URL after the template, labelled
-  «Foto de la petición N»; **no photo bytes pass through the function**: `resolvePrayerImageModel` wraps the model with `wrapLanguageModel` + `overrideSupportedUrls` (any `https://`),
-  because `@openrouter/ai-sdk-provider` only forwards URLs ending in an image extension and guest keys have none (without it the AI SDK would download each photo in the function).
-  A key or preset that OpenRouter rejects (401/403/404, e.g. 401 «User not found.» for a deleted key) comes back from `#server/ai` as `rejected` and
-  reaches the browser as **503 `not_configured`** (no «Reintentar»), logged as `[prayer-image] not_configured (OpenRouter rejected the key or preset)`; it
-  used to show as a retryable 502 `provider`. The provider gets only the template and the photos, never names, notes, IPs or ids. The preset's **system prompt lives in OpenRouter** and must say the photos after the template
-  carry each request's text (no `<peticion>` tags any more). Gone: `PRAYER_TEXT_MAX_LENGTH`, `PRAYER_LONG_TEXT_CHARS`, `isLongText`, `PrayerImageRequestInput`. `prayer_images` keeps only
-  `file_ids` (no migration); the history has **no** «Generar de nuevo»; search covers sender name and note only.
+  **Review before generating**: «Generar imágenes» on `PrayerSelectionBar` creates nothing: it opens `LazyPrayerReviewDialog` (behind `v-if`, so the route's JS
+  budget is untouched) with the selected requests in image order. `usePrayerReview` (state in `useState('prayer-review')` by file id, one `AbortController` per
+  opening in a module variable) does **one** `GET /api/peticiones/transcripciones?ids=…` (1–40) and then reads the photos with no stored transcript **one at a time,
+  in image order** (`POST …/transcripciones/:fileId/lectura { force? }`); closing the dialog stops reading. Per card: `waiting` | `reading` | `draft` | `verified` |
+  `empty` (the model found no text) | `failed`. «Guardar y verificar» and the «Verificada» checkbox go through `PATCH …/transcripciones/:fileId { text, verified }`
+  (ticking the box on a card with unsaved edits saves what is on screen); «Escribir a mano» only changes the card (the row is created on save); «Volver a leer»
+  confirms and reads with `force`. `quota_exceeded` / `not_configured` stop the reads for every remaining photo (banner «avisa a un administrador», hand-writing still
+  works); `unreadable_image` (a HEIC with no JPEG copy) offers hand-writing or «Quitar de la selección». The dialog's own **Generar imágenes** is disabled, with the
+  reason in a live region, until every card is verified and nothing is unsaved; only then the page creates the generation (below). Dirty text asks through `useConfirm`
+  before switching card or closing. The text box takes most of the space: the active photo is hidden until «Ver imagen» (one choice for the whole dialog; `inert`
+  while hidden). Transcripts live in **`prayer_transcripts`** (migration `0014`: one row per `files.id`, `ON DELETE CASCADE`, so purging the photo
+  deletes it and no cron step is needed; `status` `draft` | `verified`, `origin` `model` | `manual`, `verified_by`/`verified_at`, text ≤ `PRAYER_TEXT_MAX_LENGTH` = 1000;
+  the modal hints above `PRAYER_LONG_TEXT_CHARS` = 600 with `isLongText`), shared by the whole team. All their SQL and the read flow live in
+  `server/utils/prayer-transcripts.ts` (`architecture.spec.ts`): a read with a stored row and no `force` returns it **without calling the model** (a double click or a
+  second editor costs nothing), and without `force` it never overwrites what someone saved meanwhile (`ON CONFLICT DO NOTHING`). `photoSource` (there) picks the legacy
+  HEIC's JPEG copy (`preview_key`) first, else the original if it is JPEG/PNG/WebP/GIF, and a HEIC with no copy fails as **`422 unreadable_image`** (no server-side HEIC
+  decoding). The photo gets a `presignGet` URL of 300 s and goes to the model as a URL; **no photo bytes pass through the function**: both model resolvers wrap the model
+  with `wrapLanguageModel` + `overrideSupportedUrls` (any `https://`), because `@openrouter/ai-sdk-provider` only forwards URLs ending in an image extension and guest
+  keys have none. `transcribePrayerPhoto` (`server/ai/prayer-transcript/`) makes one `generateText` call with `Output.object` (`{ hasText, text }`), 30 s per attempt,
+  one retry, 45 s cap, and never throws. Reads have **no Cloudy rate limit** (team decision: OpenRouter credit is the only brake); the 60-per-hour limit on image
+  generation stays. **Text-only generation**: the generation endpoints still take only ids; `createPrayerGeneration` and `createPrayerImage` load the verified texts
+  themselves at the moment they run (a text re-saved while its image was queued is the one used) and answer **`409 transcript_unverified`** (`data.ids`, not retryable in
+  the queue, zero provider calls) if any is missing, in draft or blank. The image model gets the template and one `<peticion>…</peticion>` text block per request, in
+  order, and **no guest photo**; the provider never gets names, notes, IPs or ids, and logs carry only codes (`[prayer-image] …`, `[prayer-transcript] …`). Transcript text
+  is untrusted input: it only reaches the prompt and is rendered as plain text (never `v-html`). A key or preset that OpenRouter rejects (401/403/404, e.g. 401 «User not
+  found.» for a deleted key) comes back from `#server/ai` as `rejected` and reaches the browser as **503 `not_configured`** (no «Reintentar»), logged as
+  `[prayer-image] not_configured (OpenRouter rejected the key or preset)` (same for `[prayer-transcript]`). Both presets' **system prompts live in OpenRouter**: the
+  transcription one says "copy the text verbatim, keep line breaks, say when nothing is legible"; the generation one must say the text arrives in the message between
+  `<peticion>` marks (it used to say "read the photos": edit it together with the deploy). Errors share `prayerError` (`server/utils/prayer-errors.ts`). `prayer_images`
+  still keeps only `file_ids`; the history has **no** «Generar de nuevo» (the stored text would allow it, as a separate change); search covers sender name and note only.
   Filters live in `usePrayerFilters` (search debounced 300 ms, cleared instantly; approval-date presets in
-  the browser's local day sent as ISO instants, `to` exclusive). E2E run against the OpenRouter stub (`test/e2e/setup/openrouter-stub.ts`), which now serves **only** generation: calls are
-  recognised by the preset or `modalities`, answered with `message.images` (a PNG fixture) and recorded in `prayerCalls()` (model, modalities, `template`, the `photos` URLs after it, the prompt); it never
-  downloads the photos. Any other call gets a 400. Scenarios are set per test with `setStubMode({ scenario, match })` (`match`: only calls with a photo URL containing it, e.g. a file id):
-  `sin-imagen`, `sin-credito` (402), `clave-rechazada` (401 «User not found.»), `lento`, `falla-una-vez` (fails the first **two** affected calls, because the AI SDK retries once by itself). `seedPrayerRequest` takes `previewKey`
-  to fake a legacy HEIC copy.
-  **Generation page**: «Generar imágenes» first calls `POST /api/peticiones/generaciones { groups }` (1–10 groups of 1–4 ids; `409 request_unavailable`
-  drops ids from the selection), then enqueues the groups with the returned `generationId` and navigates to `/peticiones/generaciones/<id>` (the page moved to
+  the browser's local day sent as ISO instants, `to` exclusive). E2E run against the OpenRouter stub (`test/e2e/setup/openrouter-stub.ts`), which serves both use cases and
+  never downloads a photo: a **read** is recognised by its preset, answered with the structured JSON («Texto leído N», or `transcriptText`) and recorded in
+  `transcriptCalls()` (model, `photo` URL, `images`, `structured`, prompt, `text`, status); a **generation** is recognised by its preset or `modalities`, answered with
+  `message.images` (a PNG fixture) and recorded in `prayerCalls()` (model, modalities, `template`, `texts`, `photos` (must be empty), prompt). Any other call gets a 400.
+  Scenarios are set per test with `setStubMode({ scenario, match, transcriptDelayMs, transcriptText })` (`match`: only reads whose photo URL contains it, e.g. a file id, and
+  generations with a text containing it): `sin-credito` (402) and `clave-rechazada` (401 «User not found.») for both; `sin-imagen`, `lento`, `falla-una-vez` (fails the
+  first **two** affected calls, because the AI SDK retries once by itself) for generation; `sin-texto` (`hasText: false`) and `lectura-falla` (500) for reads.
+  `seedPrayerRequest` takes `previewKey` to fake a legacy HEIC copy and `seedPrayerTranscript` stores a verified (or draft) text without reading.
+  **Generation page**: the review dialog's «Generar imágenes» first calls `POST /api/peticiones/generaciones { groups }` (1–10 groups of 1–4 ids; `409 request_unavailable`
+  drops ids from the selection and the dialog; `409 transcript_unverified` refreshes the dialog), then enqueues the groups with the returned `generationId` and navigates to `/peticiones/generaciones/<id>` (the page moved to
   `app/pages/peticiones/index.vue`). `usePrayerLeaveGuard({ keep })` lets the queue pass between /peticiones and a generation without reset or warning; the
   destination page takes over the guard. `POST /api/peticiones/imagenes` takes an optional `generationId` (`fileIds` must be one of its groups:
   `404 generation_not_found`, `409 generation_mismatch`) and stores `prayer_images.generation_id` (migration `0013`, table `prayer_generations`; cron step 8 deletes
@@ -332,7 +354,8 @@ Never print or commit their values.
   **Accepted LCP exception**: guest photos have no thumbnail, so the first card's photo is the LCP and can exceed 2.5 s on 4G. Only the first card
   renders its `src` in the SSR (`priority`, `fetchpriority="high"`) and the page adds a `preconnect` to the storage origin; `performance.spec.ts` asserts LCP for the card text
   (photos blocked), CLS and the 250 KB JS budget, and only reports the LCP with photos. Thumbnails were postponed by the team.
-  **Dev QA**: a `.env.development` with an OpenRouter key makes «Generar» a real, paid call; mock `POST /api/peticiones/imagenes` with `page.route` in browser QA.
+  **Dev QA**: a `.env.development` with an OpenRouter key makes opening the review dialog (reads) and «Generar» real, paid calls; mock
+  `POST /api/peticiones/transcripciones/*/lectura` and `POST /api/peticiones/imagenes` with `page.route` in browser QA.
 - `guest_submissions.completed_at` is stamped with the server clock, like the pulse cursor: with Postgres' `now()` a
   skew of seconds would drop the live toast.
 - The guest access-request layer was removed (migration `drizzle/0008_*`: drops `guest_access_requests`,
