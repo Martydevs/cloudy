@@ -3,7 +3,8 @@
 // aprobadas como tarjetas seleccionables en una sola fila desplazable en horizontal (con desplazamiento infinito dentro de la
 // fila), las colecciones de imágenes generadas (con el SSR) y el historial de imágenes generadas (diferido e hidratado cuando
 // el navegador está libre), con la cola en curso arriba. Delgada: la lista, la selección, la cola, el historial y las
-// colecciones viven en sus composables. «Generar imágenes» crea una generación y lleva a su página
+// colecciones viven en sus composables. «Generar imágenes» abre la revisión del texto de cada petición elegida
+// (`LazyPrayerReviewDialog`); con todas verificadas, su botón crea la generación y lleva a su página
 // (`/peticiones/generaciones/:id`), que se queda con la cola en curso.
 import type { PrayerGeneratedImage, PrayerGenerationCreated } from '#shared/types/api'
 
@@ -22,6 +23,7 @@ const requests = usePrayerRequests(filters.query)
 const { items, firstPage, error, pending, loadingMore, moreError, done } = requests
 const selection = usePrayerSelection()
 const images = usePrayerImages()
+const review = usePrayerReview()
 const api = useApi()
 const approvedHeading = useId()
 
@@ -45,13 +47,21 @@ function dropUnavailable(ids: string[]) {
   toast.info(m.removedUnavailable(ids.length))
 }
 images.onUnavailable(dropUnavailable)
+review.onUnavailable(dropUnavailable)
+
+/** La revisión del texto está abierta: nada se crea ni se encola hasta que su botón «Generar imágenes» lo pida. */
+const reviewing = ref(false)
+// Sin peticiones elegidas no hay nada que revisar (se retiraron todas por no estar disponibles).
+watch(() => selection.count.value, (count) => {
+  if (count === 0) reviewing.value = false
+})
 
 const creating = ref(false)
 
 /**
- * Crea la generación (el servidor comprueba que las peticiones sigan disponibles), encola una imagen por grupo de 4 ligada
- * a ella y lleva a su página. El modelo lee el texto en las fotos, así que no hay paso intermedio. La selección se vacía:
- * un segundo clic no gasta crédito dos veces.
+ * Lo confirma la revisión, con cada petición verificada: crea la generación (el servidor comprueba que las peticiones sigan
+ * disponibles y verificadas; el texto no viaja desde aquí), encola una imagen por grupo de 4 ligada a ella y lleva a su
+ * página. La selección se vacía: un segundo clic no gasta crédito dos veces.
  */
 async function generate() {
   const groups = selection.groups.value
@@ -64,6 +74,7 @@ async function generate() {
     })
     const queued = images.enqueue(groups, { generationId: id })
     toast.info(m.queuedImages(queued))
+    reviewing.value = false
     selection.clear()
     await navigateTo(`/peticiones/generaciones/${id}`)
   }
@@ -71,6 +82,12 @@ async function generate() {
     const data = (error as { data?: { data?: { code?: unknown, ids?: unknown } } } | null)?.data?.data
     if (data?.code === 'request_unavailable' && Array.isArray(data.ids)) {
       dropUnavailable(data.ids.filter((id): id is string => typeof id === 'string'))
+      return
+    }
+    // Otra persona cambió un texto mientras se revisaba: la revisión se pone al día y sigue abierta.
+    if (data?.code === 'transcript_unverified' && Array.isArray(data.ids)) {
+      toast.error(m.review.staleVerification(data.ids.length))
+      void review.reload()
       return
     }
     toast.error(serverMessage(error, m.generation.createFailed))
@@ -172,9 +189,17 @@ async function generate() {
       :count="selection.count.value"
       :images="selection.groups.value.length"
       :limit="selection.limitReached.value"
-      :busy="creating"
-      @generate="generate"
+      @generate="reviewing = true"
       @clear="selection.clear()"
+    />
+
+    <LazyPrayerReviewDialog
+      v-if="reviewing && selection.count.value > 0"
+      :requests="selection.ordered.value"
+      :busy="creating"
+      @close="reviewing = false"
+      @generate="generate"
+      @remove="id => selection.remove([id])"
     />
 
     <LazyPrayerCollectionDialog

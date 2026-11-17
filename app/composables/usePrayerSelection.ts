@@ -1,7 +1,7 @@
 // Selección de la página Peticiones (feature 007, research D10; feature 008): una copia de cada tarjeta elegida, para que
 // la selección sobreviva a búsquedas, filtros y páginas nuevas y se pueda listar aunque el filtro la oculte. Tope de 40;
-// cualquier petición aprobada se puede elegir: el modelo lee el texto en la foto. Vive en `useState` y la página la vacía
-// al generar y al salir.
+// cualquier petición aprobada se puede elegir: su texto se lee y se revisa después, antes de generar. Vive en `useState` y
+// la página la vacía al generar y al salir.
 import type { PrayerRequest } from '#shared/types/api'
 import { PRAYER_MAX_SELECTION, PRAYER_PER_IMAGE } from '#shared/constants/prayers'
 import { chunkRequests, orderForImages } from '#shared/prayers'

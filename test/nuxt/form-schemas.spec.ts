@@ -14,7 +14,7 @@ import { note, senderName } from '#shared/validation/submissions'
 import { parseYoutubeUrl, playlistName, YOUTUBE_URL_MESSAGES } from '#shared/validation/youtube'
 import { SONG_URL_MESSAGES } from '#shared/constants/songs'
 import { parseLetrasUrl, songCollectionName } from '#shared/validation/songs'
-import { prayerCollectionName } from '#shared/validation/prayers'
+import { prayerCollectionName, prayerTranscriptSaveInput } from '#shared/validation/prayers'
 import { useFormSchema } from '~/utils/form-schema'
 import {
   changePasswordSchema,
@@ -30,6 +30,7 @@ import {
   registerSchema,
   resetSchema,
   prayerCollectionSchema,
+  prayerTranscriptSchema,
   songCollectionSchema,
   songUrlSchema,
   youtubePlaylistSchema,
@@ -175,6 +176,13 @@ const cases: Case[] = [
     validator: object({ name: prayerCollectionName() }),
     schema: prayerCollectionSchema,
     samples: [{ name: 'Domingo' }, { name: '' }, { name: '   ' }, { name: pad(L(80)) }, { name: L(81) }],
+  },
+  {
+    // «Guardar y verificar»: el diálogo siempre guarda como verificado.
+    name: 'texto de una petición al verificarlo',
+    validator: input => prayerTranscriptSaveInput({ ...(input as State), verified: true }),
+    schema: prayerTranscriptSchema,
+    samples: [{ text: 'Por mi familia\ny mi trabajo' }, { text: '' }, { text: ' \n ' }, { text: pad(L(1000)) }, { text: L(1001) }],
   },
   {
     name: 'nota del envío (opcional)',

@@ -15,7 +15,7 @@ export interface PrayerImageItem {
   key: string
   /** 1-based: el número con el que la cola nombra la imagen («Imagen 2 lista»). */
   index: number
-  /** Ids de las peticiones de esta imagen (1–4): el modelo lee el texto en sus fotos. */
+  /** Ids de las peticiones de esta imagen (1–4): el servidor carga el texto verificado de cada una. */
   fileIds: string[]
   /** Generación a la que pertenece (`/peticiones/generaciones/:id`); sin ella, `null` o ausente. */
   generationId?: string | null
@@ -27,7 +27,7 @@ export interface PrayerImageItem {
 
 const ACTIVE: readonly PrayerImageStatus[] = ['queued', 'running']
 /** Requieren a un administrador o retirar peticiones: **Reintentar** no ayudaría. */
-const FINAL: readonly PrayerErrorCode[] = ['quota_exceeded', 'not_configured', 'request_unavailable', 'unreadable_image', 'generation_not_found', 'generation_mismatch']
+const FINAL: readonly PrayerErrorCode[] = ['quota_exceeded', 'not_configured', 'request_unavailable', 'unreadable_image', 'generation_not_found', 'generation_mismatch', 'transcript_unverified']
 
 class Canceled extends Error {}
 class TimedOut extends Error {}

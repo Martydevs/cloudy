@@ -20,6 +20,8 @@ import { YOUTUBE_PLAYLIST_NAME_MAX } from '#shared/constants/youtube'
 import { parseYoutubeUrl, YOUTUBE_URL_MESSAGES } from '#shared/validation/youtube'
 import { SONG_COLLECTION_NAME_MAX, SONG_URL_MESSAGES } from '#shared/constants/songs'
 import { parseLetrasUrl } from '#shared/validation/songs'
+import { PRAYER_TEXT_MAX_LENGTH } from '#shared/constants/prayers'
+import { PRAYER_TEXT_REQUIRED_MESSAGE } from '#shared/validation/prayers'
 
 /**
  * Obligatorio: un texto de solo espacios cuenta como vacío. Va siempre primero en cada campo, que es el error que se
@@ -137,6 +139,17 @@ export const songCollectionSchema = z.object({ name: z.string().check(filled, ma
 
 /** Nombre de una colección de imágenes de Peticiones: la misma regla, como `prayerCollectionName()` del servidor. */
 export const prayerCollectionSchema = z.object({ name: z.string().check(filled, maxChars(SONG_COLLECTION_NAME_MAX)) })
+
+/**
+ * Texto de una petición al guardarlo como verificado (`PrayerReviewDialog`): con contenido y hasta 1000 caracteres tras
+ * recortar, como `prayerTranscriptSaveInput` del servidor con `verified: true`.
+ */
+export const prayerTranscriptSchema = z.object({
+  text: z.string().check(
+    z.refine<string>(value => value.trim().length > 0, { error: PRAYER_TEXT_REQUIRED_MESSAGE }),
+    maxChars(PRAYER_TEXT_MAX_LENGTH),
+  ),
+})
 
 export type RegisterForm = z.infer<typeof registerSchema>
 export type LoginForm = z.infer<typeof loginSchema>

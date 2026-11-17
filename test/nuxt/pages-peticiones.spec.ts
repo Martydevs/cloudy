@@ -6,7 +6,7 @@ import { mockNuxtImport, mountSuspended } from '@nuxt/test-utils/runtime'
 import { nextTick } from 'vue'
 import { getQuery, readBody, setResponseStatus } from 'h3'
 import type { H3Event } from 'h3'
-import type { Me, Paginated, PrayerGeneratedImage, PrayerRequest } from '#shared/types/api'
+import type { Me, Paginated, PrayerGeneratedImage, PrayerRequest, PrayerTranscript } from '#shared/types/api'
 import PeticionesPage from '~/pages/peticiones/index.vue'
 import { buttonsWithText, calls, failWith, flush, mockApi, resetCalls } from './helpers/api'
 import { generated, imageCollection, prayer } from './prayer-fixtures'
@@ -203,16 +203,39 @@ describe('/peticiones', () => {
     expect(wrapper.text()).not.toContain('Sin texto')
   })
 
-  describe('US2 · generar', () => {
+  describe('US2 · revisar y generar', () => {
     const saved = async (event: H3Event): Promise<PrayerGeneratedImage> => {
       const { fileIds } = await readBody<{ fileIds: string[] }>(event)
       setResponseStatus(event, 201)
-      return generated(fileIds.length === 4 ? 1 : 2, { fileIds, requestCount: fileIds.length })
+      return generated(fileIds.length === 4 ? 1 : 2, { fileIds, requestCount: fileIds.length, generationId: 'gen-1' })
     }
+    /** Lo que el servidor tiene guardado de cada petición pedida: por defecto, todas verificadas. */
+    let transcriptOf: (id: string) => PrayerTranscript | null
+    const transcript = (fileId: string, status: PrayerTranscript['status'] = 'verified'): PrayerTranscript =>
+      ({ fileId, text: `Texto de ${fileId.slice(-2)}`, status, origin: 'model', verifiedAt: null, verifiedBy: null, updatedAt: '2026-11-17T10:00:00.000Z' })
+
+    /** Rutas a las que se intentó navegar (la página de la generación no se monta aquí). */
+    let visited: string[] = []
+    let stopWatchingRoutes: (() => void) | undefined
+
+    afterEach(() => stopWatchingRoutes?.())
 
     beforeEach(() => {
+      visited = []
+      stopWatchingRoutes = useRouter().beforeEach((to) => {
+        visited.push(to.path)
+      })
       usePrayerImages().reset()
+      usePrayerReview().close()
+      useState('prayer-review').value = {}
       useToast().toasts.value = []
+      transcriptOf = id => transcript(id)
+      mockApi('GET', '/api/peticiones/transcripciones', (event: H3Event) =>
+        String(getQuery(event).ids).split(',').flatMap(id => transcriptOf(id) ?? []))
+      mockApi('POST', '/api/peticiones/generaciones', (event: H3Event) => {
+        setResponseStatus(event, 201)
+        return { id: 'gen-1' }
+      })
       mockApi('POST', '/api/peticiones/imagenes', saved)
     })
 
@@ -224,63 +247,161 @@ describe('/peticiones', () => {
       return wrapper
     }
 
-    const posts = () => calls.filter(c => c.method === 'POST' && c.url === '/api/peticiones/imagenes')
+    const posts = (url: string) => calls.filter(c => c.method === 'POST' && c.url === url)
+    const imagePosts = () => posts('/api/peticiones/imagenes')
+    const generationPosts = () => posts('/api/peticiones/generaciones')
 
     type Page = Awaited<ReturnType<typeof mountSuspended<typeof PeticionesPage>>>
 
-    /** «Generar imágenes» de la barra: encola sin diálogo. */
-    async function generate(wrapper: Page) {
+    const reviewDialog = (wrapper: Page) => wrapper.findAll('dialog').find(dialog => dialog.text().includes('Revisa el texto de las peticiones'))
+
+    /** «Generar imágenes» de la barra: abre la revisión (un `import()` diferido) y espera a que cargue los textos. */
+    async function openReview(wrapper: Page) {
       await buttonsWithText(wrapper.get('[aria-label="Selección de peticiones"]'), 'Generar imágenes')[0]!.trigger('click')
+      await vi.waitFor(() => expect(reviewDialog(wrapper)?.find('textarea').exists()).toBe(true), { timeout: 5000 })
+      return reviewDialog(wrapper)!
+    }
+
+    /** El botón del diálogo, ya con todo verificado. */
+    async function confirmGenerate(wrapper: Page) {
+      await buttonsWithText(reviewDialog(wrapper)!, 'Generar imágenes')[0]!.trigger('click')
       await flush(15)
     }
 
-    it('«Generar imágenes» encola al instante, sin diálogo: solo ids, el historial los recibe y la selección se vacía', async () => {
-      const scroll = vi.fn()
-      Element.prototype.scrollIntoView = scroll
+    async function generate(wrapper: Page) {
+      await openReview(wrapper)
+      await confirmGenerate(wrapper)
+    }
+
+    it('«Generar imágenes» abre la revisión con las peticiones elegidas y no crea nada; cerrarla conserva la selección', async () => {
+      const wrapper = await choose(5)
+      expect(reviewDialog(wrapper)).toBeUndefined()
+      const dialog = await openReview(wrapper)
+      // Una tarjeta por petición elegida, en el orden de las imágenes (aprobación más antigua primero).
+      expect(dialog.findAll('ul[aria-label="Peticiones elegidas"] > li > button').map(b => b.attributes('aria-label'))).toEqual(
+        [5, 4, 3, 2, 1].map(n => `Petición de Invitado ${n}: verificada`),
+      )
+      expect(calls.filter(c => c.url === '/api/peticiones/transcripciones')).toHaveLength(1)
+      expect(generationPosts()).toEqual([])
+      expect(imagePosts()).toEqual([])
+      expect(usePrayerImages().items.value).toEqual([])
+
+      await dialog.get('button[aria-label="Cerrar"]').trigger('click')
+      await flush()
+      expect(reviewDialog(wrapper)).toBeUndefined()
+      expect(usePrayerSelection().count.value).toBe(5)
+      expect(wrapper.find('[aria-label="Selección de peticiones"]').exists()).toBe(true)
+      expect(generationPosts()).toEqual([])
+    })
+
+    it('con peticiones sin verificar, el botón del diálogo no genera', async () => {
+      transcriptOf = id => transcript(id, id === prayer(1).id ? 'draft' : 'verified')
+      const wrapper = await choose(2)
+      const dialog = await openReview(wrapper)
+      const button = buttonsWithText(dialog, 'Generar imágenes')[0]!
+      expect(button.attributes('disabled')).toBeDefined()
+      await button.trigger('click')
+      await flush()
+      expect(generationPosts()).toEqual([])
+    })
+
+    it('con todo verificado, el diálogo crea la generación con los grupos (solo ids), encola una imagen por grupo, vacía la selección y lleva a su página', async () => {
       const wrapper = await choose(5)
       await generate(wrapper)
-      expect(document.body.querySelector('dialog textarea')).toBeNull()
-      const bodies = posts().map(c => c.body as Record<string, unknown>)
-      expect(bodies.map(body => Object.keys(body))).toEqual([['fileIds'], ['fileIds']])
-      expect(bodies.map(body => (body.fileIds as string[]).length)).toEqual([4, 1])
-      // Ni nombres ni notas viajan al servidor.
-      expect(JSON.stringify(bodies)).not.toMatch(/Invitado|nota/i)
+      const ordered = [5, 4, 3, 2, 1].map(n => prayer(n).id)
+      expect(generationPosts().map(c => c.body)).toEqual([{ groups: [ordered.slice(0, 4), ordered.slice(4)] }])
+      expect(imagePosts().map(c => c.body)).toEqual([
+        { fileIds: ordered.slice(0, 4), generationId: 'gen-1' },
+        { fileIds: ordered.slice(4), generationId: 'gen-1' },
+      ])
+      // Ni textos, ni nombres, ni notas viajan al servidor al generar: los textos verificados los carga él.
+      expect(JSON.stringify([...generationPosts(), ...imagePosts()].map(c => c.body))).not.toMatch(/Texto|Invitado|nota/i)
       expect(useToast().toasts.value.map(t => t.message)).toContain('2 imágenes en cola')
-      // `LazyPrayerHistory` es un `import()`: con la suite completa su chunk puede tardar más que unos ticks.
-      await vi.waitFor(() => expect(wrapper.findAll('ul[aria-label="Imágenes generadas"] > li')).toHaveLength(2), { timeout: 5000 })
-      expect(wrapper.find('[aria-label="Imágenes en curso"]').exists()).toBe(false)
-      // Un segundo clic no puede gastar crédito dos veces: la barra desaparece con la selección.
+      // Un segundo clic no puede gastar crédito dos veces: el diálogo y la barra desaparecen con la selección.
       expect(usePrayerSelection().count.value).toBe(0)
+      expect(reviewDialog(wrapper)).toBeUndefined()
       expect(wrapper.find('[aria-label="Selección de peticiones"]').exists()).toBe(false)
-      expect(scroll).toHaveBeenCalled()
-      // El historial va después de la rejilla.
-      const html = wrapper.html()
-      expect(html.indexOf('aria-label="Imágenes generadas"')).toBeGreaterThan(html.indexOf('aria-label="Peticiones aprobadas"'))
-      wrapper.unmount()
+      expect(visited).toContain('/peticiones/generaciones/gen-1')
     })
 
     it('una sola petición sale en una imagen', async () => {
       const wrapper = await choose(1)
       await generate(wrapper)
-      expect(posts().map(c => c.body)).toEqual([{ fileIds: [prayer(1).id] }])
+      expect(generationPosts().map(c => c.body)).toEqual([{ groups: [[prayer(1).id]] }])
+      expect(imagePosts().map(c => c.body)).toEqual([{ fileIds: [prayer(1).id], generationId: 'gen-1' }])
       expect(useToast().toasts.value.map(t => t.message)).toContain('1 imagen en cola')
-      wrapper.unmount()
     })
 
-    it('una foto ilegible queda fallida con su mensaje y sin «Reintentar»', async () => {
-      mockApi('POST', '/api/peticiones/imagenes', (event: H3Event) => {
-        setResponseStatus(event, 422)
-        return { statusCode: 422, message: 'x', data: { code: 'unreadable_image', ids: [prayer(1).id] } }
+    it('una petición que ya no está disponible al crear sale de la selección y del diálogo, que sigue abierto, y avisa', async () => {
+      mockApi('POST', '/api/peticiones/generaciones', (event: H3Event) => {
+        setResponseStatus(event, 409)
+        return { statusCode: 409, message: 'x', data: { code: 'request_unavailable', ids: [prayer(2).id] } }
+      })
+      const wrapper = await choose(2)
+      await generate(wrapper)
+      expect(usePrayerSelection().isSelected(prayer(2).id)).toBe(false)
+      expect(usePrayerSelection().count.value).toBe(1)
+      expect(useToast().toasts.value.map(t => t.message)).toContain('Quitamos 1 petición que ya no está disponible')
+      expect(reviewDialog(wrapper)!.findAll('ul[aria-label="Peticiones elegidas"] > li > button').map(b => b.attributes('aria-label')))
+        .toEqual(['Petición de Invitado 1: verificada'])
+      expect(imagePosts()).toEqual([])
+      expect(visited.filter(isPrayerGenerationPath)).toEqual([])
+    })
+
+    it('si se retiran todas las peticiones, la revisión se cierra', async () => {
+      mockApi('POST', '/api/peticiones/generaciones', (event: H3Event) => {
+        setResponseStatus(event, 409)
+        return { statusCode: 409, message: 'x', data: { code: 'request_unavailable', ids: [prayer(1).id] } }
       })
       const wrapper = await choose(1)
       await generate(wrapper)
-      await vi.waitFor(() => expect(wrapper.text()).toContain('Alguna foto no se puede leer'), { timeout: 5000 })
-      const queue = wrapper.get('[aria-label="Imágenes en curso"]')
-      expect(buttonsWithText(queue, 'Reintentar')).toHaveLength(0)
-      wrapper.unmount()
+      expect(usePrayerSelection().count.value).toBe(0)
+      expect(reviewDialog(wrapper)).toBeUndefined()
     })
 
-    it('un 409 retira de la selección las peticiones no disponibles (aunque se hayan vuelto a elegir) y avisa', async () => {
+    it('si otra persona dejó un texto sin verificar mientras tanto, el servidor lo rechaza: avisa, pone la revisión al día y no encola', async () => {
+      mockApi('POST', '/api/peticiones/generaciones', (event: H3Event) => {
+        setResponseStatus(event, 409)
+        return { statusCode: 409, message: 'x', data: { code: 'transcript_unverified', ids: [prayer(2).id] } }
+      })
+      const wrapper = await choose(2)
+      await openReview(wrapper)
+      // A partir de ahora el servidor dice que la segunda ya no está verificada.
+      transcriptOf = id => transcript(id, id === prayer(2).id ? 'draft' : 'verified')
+      await confirmGenerate(wrapper)
+      expect(useToast().toasts.value.map(t => t.message)).toContain('1 petición ya no está verificada. Revísala de nuevo.')
+      expect(imagePosts()).toEqual([])
+      expect(usePrayerSelection().count.value).toBe(2)
+      const dialog = reviewDialog(wrapper)!
+      expect(dialog.findAll('ul[aria-label="Peticiones elegidas"] > li > button').map(b => b.attributes('aria-label')))
+        .toEqual(['Petición de Invitado 2: sin verificar', 'Petición de Invitado 1: verificada'])
+      expect(buttonsWithText(dialog, 'Generar imágenes')[0]!.attributes('disabled')).toBeDefined()
+    })
+
+    it('otro fallo al crear la generación avisa y deja la revisión abierta', async () => {
+      mockApi('POST', '/api/peticiones/generaciones', failWith(500))
+      const wrapper = await choose(1)
+      await generate(wrapper)
+      expect(useToast().toasts.value.map(t => t.message)).toContain('No pudimos preparar la generación. Inténtalo de nuevo.')
+      expect(reviewDialog(wrapper)).toBeDefined()
+      expect(usePrayerSelection().count.value).toBe(1)
+    })
+
+    it('una imagen cuyo texto dejó de estar verificado queda fallida en la cola con su mensaje y sin «Reintentar»', async () => {
+      mockApi('POST', '/api/peticiones/imagenes', (event: H3Event) => {
+        setResponseStatus(event, 409)
+        return { statusCode: 409, message: 'x', data: { code: 'transcript_unverified', ids: [prayer(1).id] } }
+      })
+      const wrapper = await choose(1)
+      await generate(wrapper)
+      await vi.waitFor(() => expect(wrapper.text()).toContain('Alguna petición no tiene su texto verificado'), { timeout: 5000 })
+      const queue = wrapper.get('[aria-label="Imágenes en curso"]')
+      expect(buttonsWithText(queue, 'Reintentar')).toHaveLength(0)
+      expect(usePrayerImages().items.value[0]).toMatchObject({ status: 'failed', errorCode: 'transcript_unverified', retryable: false })
+      usePrayerImages().reset()
+    })
+
+    it('un 409 al generar una imagen retira de la selección las peticiones no disponibles (aunque se hayan vuelto a elegir) y avisa', async () => {
       let answer: (() => void) | undefined
       mockApi('POST', '/api/peticiones/imagenes', async (event: H3Event) => {
         await new Promise<void>(resolve => (answer = resolve))
@@ -298,7 +419,7 @@ describe('/peticiones', () => {
       expect(usePrayerSelection().isSelected(prayer(2).id)).toBe(false)
       expect(usePrayerSelection().count.value).toBe(1)
       expect(useToast().toasts.value.map(t => t.message)).toContain('Quitamos 1 petición que ya no está disponible')
-      wrapper.unmount()
+      usePrayerImages().reset()
     })
 
     it('con imágenes generándose, salir pide confirmación; aceptarla cancela la cola', async () => {
@@ -330,16 +451,18 @@ describe('/peticiones', () => {
       wrapper.unmount()
     })
 
-    it('registra beforeunload, que solo avisa con trabajo pendiente', async () => {
+    it('registra beforeunload, que solo avisa con trabajo pendiente: revisar no cuenta, generar sí', async () => {
       mockApi('POST', '/api/peticiones/imagenes', () => new Promise(() => {}))
       const wrapper = await choose(1)
+      await openReview(wrapper)
       const idle = new Event('beforeunload', { cancelable: true })
       window.dispatchEvent(idle)
       expect(idle.defaultPrevented).toBe(false)
-      await generate(wrapper)
+      await confirmGenerate(wrapper)
       const busy = new Event('beforeunload', { cancelable: true })
       window.dispatchEvent(busy)
       expect(busy.defaultPrevented).toBe(true)
+      usePrayerImages().reset()
       wrapper.unmount()
     })
   })
