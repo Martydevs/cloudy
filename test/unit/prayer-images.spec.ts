@@ -1,6 +1,6 @@
-// T044 — Capa de aplicación de las imágenes de peticiones (feature 007, contracts/api.md § 2; feature 008: el modelo lee las
-// fotos): elegibilidad, qué foto ve el modelo, URLs firmadas, plantilla, orden, privacidad y traducción de cada fallo a
-// HTTP. La IA, la base y el almacenamiento están simulados.
+// T044 — Capa de aplicación de las imágenes de peticiones (feature 007, contracts/api.md § 2; revisión antes de generar):
+// elegibilidad, texto verificado que carga el servidor, plantilla, orden, privacidad y traducción de cada fallo a HTTP. La
+// IA, la base y el almacenamiento están simulados.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { PrayerPhoto } from '../../server/utils/prayer-requests'
 import { expectStatus, installNitro, RUNTIME_CONFIG, UUID, UUID2 } from './helpers/nitro'
@@ -10,7 +10,7 @@ vi.mock('#server/ai', async importOriginal => ({ ...await importOriginal<typeof 
 const s3 = vi.hoisted(() => ({ presignGet: vi.fn(async (key: string) => `https://bucket.test/${key}?X-Amz-Signature=f00`) }))
 vi.mock('../../server/utils/storage', () => ({ key: (path: string) => path, ...s3 }))
 
-const { createPrayerImage, photoSource } = await import('../../server/utils/prayer-images')
+const { createPrayerImage } = await import('../../server/utils/prayer-images')
 
 const TEMPLATE = new Uint8Array([0xFF, 0xD8, 0xFF, 0xE0])
 const PNG = new Uint8Array([0x89, 0x50, 0x4E, 0x47])
@@ -20,15 +20,21 @@ const row = (id: string, changes: Partial<PrayerPhoto> = {}): PrayerPhoto => ({
   id, storageKey: `guest/s1/${id}`, previewKey: null, mimeType: 'image/jpeg',
   ...changes,
 })
-const signed = (key: string) => `https://bucket.test/${key}?X-Amz-Signature=f00`
+/** La fila que devuelve `loadVerifiedTexts`. */
+const transcript = (fileId: string, text: string, status: 'draft' | 'verified' = 'verified') => ({ fileId, text, status })
 
 let getItemRaw: ReturnType<typeof vi.fn>
 let warn: ReturnType<typeof vi.spyOn>
 let error: ReturnType<typeof vi.spyOn>
 
-function install(rows: PrayerPhoto[], { apikey = 'sk-or-x', template = TEMPLATE as Uint8Array | null } = {}) {
+/** Dos consultas, en este orden: las peticiones elegibles y sus transcripciones. */
+function install(
+  rows: PrayerPhoto[],
+  transcripts: ReturnType<typeof transcript>[] = rows.map(r => transcript(r.id, `Texto de ${r.id.slice(0, 4)}`)),
+  { apikey = 'sk-or-x', template = TEMPLATE as Uint8Array | null } = {},
+) {
   getItemRaw = vi.fn(async () => template)
-  return installNitro([rows], {
+  return installNitro([rows, transcripts], {
     useRuntimeConfig: () => ({ ...RUNTIME_CONFIG, openrouterApikey: apikey }),
     useStorage: vi.fn(() => ({ getItemRaw })),
   })
@@ -47,53 +53,40 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 
-describe('photoSource', () => {
-  it.each([
-    ['la copia JPEG de una HEIC antigua, antes que el original', { previewKey: 'textsrc/a.jpg', mimeType: 'image/heic' }, { key: 'textsrc/a.jpg', mediaType: 'image/jpeg' }],
-    ['la copia JPEG aunque el original sea legible', { previewKey: 'textsrc/a.jpg', mimeType: 'image/png' }, { key: 'textsrc/a.jpg', mediaType: 'image/jpeg' }],
-    ['JPEG original', { mimeType: 'image/jpeg' }, { key: 'guest/s1/a', mediaType: 'image/jpeg' }],
-    ['image/jpg se normaliza', { mimeType: 'image/jpg' }, { key: 'guest/s1/a', mediaType: 'image/jpeg' }],
-    ['PNG original', { mimeType: 'image/png' }, { key: 'guest/s1/a', mediaType: 'image/png' }],
-    ['WebP original', { mimeType: 'image/webp' }, { key: 'guest/s1/a', mediaType: 'image/webp' }],
-    ['GIF original en mayúsculas', { mimeType: 'IMAGE/GIF' }, { key: 'guest/s1/a', mediaType: 'image/gif' }],
-    ['HEIC sin copia', { mimeType: 'image/heic' }, null],
-    ['HEIF sin copia', { mimeType: 'image/heif' }, null],
-    ['SVG', { mimeType: 'image/svg+xml' }, null],
-  ])('%s', (_, changes, expected) => {
-    expect(photoSource({ storageKey: 'guest/s1/a', previewKey: null, mimeType: 'image/jpeg', ...changes })).toEqual(expected)
-  })
-})
-
 describe('createPrayerImage', () => {
-  it('éxito: firma una URL corta por foto, en el orden de la consulta (no el del navegador), con la plantilla', async () => {
-    install([row(UUID2, { previewKey: 'textsrc/b.jpg', mimeType: 'image/heic' }), row(UUID, { mimeType: 'image/png' })])
+  it('éxito: manda los textos verificados en el orden de la consulta (no el del navegador), con la plantilla y sin fotos', async () => {
+    // La consulta de elegibles fija el orden; las transcripciones llegan en cualquiera.
+    install([row(UUID2), row(UUID)], [transcript(UUID, 'Por mi trabajo'), transcript(UUID2, 'Por mi mamá\ny mi abuela')])
     const signal = new AbortController().signal
-    // El navegador los manda al revés: el orden de las fotos lo fija la consulta.
     const result = await createPrayerImage([UUID, UUID2], { abortSignal: signal })
     expect(result).toEqual({ mediaType: 'image/png', data: PNG, count: 2 })
     expect(ai.generatePrayerImage).toHaveBeenCalledWith({
-      photos: [
-        { url: signed('textsrc/b.jpg'), mediaType: 'image/jpeg' },
-        { url: signed(`guest/s1/${UUID}`), mediaType: 'image/png' },
-      ],
+      texts: ['Por mi mamá\ny mi abuela', 'Por mi trabajo'],
       template: TEMPLATE,
       abortSignal: signal,
     })
-    expect(s3.presignGet).toHaveBeenCalledWith('textsrc/b.jpg', {}, 600)
-    expect(s3.presignGet).toHaveBeenCalledWith(`guest/s1/${UUID}`, {}, 600)
+    // Ninguna foto se firma: al modelo de imágenes no le llega ninguna.
+    expect(s3.presignGet).not.toHaveBeenCalled()
     expect(getItemRaw).toHaveBeenCalledWith('plantilla.jpg')
   })
 
-  it('al modelo solo llegan las fotos y la plantilla: ni ids, ni nombres, ni notas (FR-022)', async () => {
-    install([row(UUID)])
+  it('al modelo solo llegan los textos y la plantilla: ni fotos, ni ids, ni claves del bucket', async () => {
+    install([row(UUID)], [transcript(UUID, 'Por mi familia')])
     await createPrayerImage([UUID])
     const input = ai.generatePrayerImage.mock.calls[0]![0] as Record<string, unknown>
-    expect(Object.keys(input).sort()).toEqual(['abortSignal', 'photos', 'template'])
-    expect(JSON.stringify(input.photos)).not.toMatch(/Ana|nota/)
+    expect(Object.keys(input).sort()).toEqual(['abortSignal', 'template', 'texts'])
+    expect(JSON.stringify(input.texts)).not.toMatch(/guest\/|https:|[0-9a-f]{8}-/)
+  })
+
+  it('carga las transcripciones de esos ids en una sola consulta', async () => {
+    const fake = install([row(UUID), row(UUID2)])
+    await createPrayerImage([UUID, UUID2])
+    expect(fake.calls.filter(c => c.method === 'select')).toHaveLength(2)
   })
 
   it('acepta la plantilla como ArrayBuffer', async () => {
-    install([row(UUID)], { template: TEMPLATE.buffer as unknown as Uint8Array })
+    install([row(UUID)])
+    getItemRaw.mockResolvedValue(TEMPLATE.buffer)
     await createPrayerImage([UUID])
     expect(ai.generatePrayerImage.mock.calls[0]![0].template).toEqual(TEMPLATE)
   })
@@ -106,15 +99,27 @@ describe('createPrayerImage', () => {
     expect(ai.generatePrayerImage).not.toHaveBeenCalled()
   })
 
-  it('una HEIC sin copia JPEG → 422 unreadable_image con sus ids, sin firmar, leer la plantilla ni llamar al modelo', async () => {
-    install([row(UUID), row(UUID2, { mimeType: 'image/heic' })])
-    const err = await expectStatus(createPrayerImage([UUID, UUID2]), 422)
-    expect(err.data).toEqual({ code: 'unreadable_image', ids: [UUID2] })
-    expect(err.message).toBe('Alguna foto no se puede leer. Quítala de tu selección o pídele al invitado que la envíe de nuevo en JPG o PNG.')
-    expect(warn).toHaveBeenCalledWith('[prayer-image] unreadable_image')
-    expect(s3.presignGet).not.toHaveBeenCalled()
+  // Regresión de la revisión antes de generar: sin texto verificado no se gasta crédito.
+  it.each([
+    ['sin transcripción', [transcript(UUID, 'Por mi familia')]],
+    ['en borrador', [transcript(UUID, 'Por mi familia'), transcript(UUID2, 'Por mi trabajo', 'draft')]],
+    ['verificada pero con el texto en blanco', [transcript(UUID, 'Por mi familia'), transcript(UUID2, '  \n ')]],
+  ])('una petición %s → 409 transcript_unverified con sus ids y cero llamadas al proveedor', async (_, transcripts) => {
+    install([row(UUID), row(UUID2)], transcripts)
+    const err = await expectStatus(createPrayerImage([UUID, UUID2]), 409)
+    expect(err.data).toEqual({ code: 'transcript_unverified', ids: [UUID2] })
+    expect(err.message).toBe('Alguna petición no tiene su texto verificado. Vuelve a Peticiones, revisa el texto y márcalo como verificado.')
+    expect(warn).toHaveBeenCalledWith('[prayer-image] transcript_unverified')
     expect(getItemRaw).not.toHaveBeenCalled()
     expect(ai.generatePrayerImage).not.toHaveBeenCalled()
+  })
+
+  it('usa el texto guardado en el momento de generar: uno vuelto a guardar mientras la imagen esperaba en la cola es el que viaja', async () => {
+    install([row(UUID)], [transcript(UUID, 'Por mi famlia')])
+    await createPrayerImage([UUID])
+    install([row(UUID)], [transcript(UUID, 'Por mi familia')])
+    await createPrayerImage([UUID])
+    expect(ai.generatePrayerImage.mock.calls.map(call => call[0].texts)).toEqual([['Por mi famlia'], ['Por mi familia']])
   })
 
   it.each([
@@ -123,11 +128,10 @@ describe('createPrayerImage', () => {
     ['sin plantilla', { template: null }],
     ['plantilla vacía', { template: new Uint8Array() }],
   ])('%s → 503 not_configured sin llamar al modelo', async (_, options) => {
-    install([row(UUID)], options)
+    install([row(UUID)], undefined, options)
     const err = await expectStatus(createPrayerImage([UUID]), 503)
     expect(err.data).toEqual({ code: 'not_configured' })
     expect(err.message).toBe('La generación de imágenes no está configurada. Avisa a un administrador.')
-    expect(s3.presignGet).not.toHaveBeenCalled()
     expect(ai.generatePrayerImage).not.toHaveBeenCalled()
   })
 
@@ -164,16 +168,16 @@ describe('createPrayerImage', () => {
     expect(warn).not.toHaveBeenCalled()
   })
 
-  it('los registros solo llevan [prayer-image] <código>', async () => {
-    install([row(UUID)])
+  it('los registros solo llevan [prayer-image] <código>: ni texto, ni claves, ni ids', async () => {
+    install([row(UUID)], [transcript(UUID, 'Por mi familia')])
     ai.generatePrayerImage.mockResolvedValue({ status: 'failed', error: 'provider' })
     await createPrayerImage([UUID]).catch(() => {})
-    install([row(UUID)])
+    install([row(UUID)], [transcript(UUID, 'Por mi familia')])
     ai.generatePrayerImage.mockResolvedValue({ status: 'failed', error: 'quota_exceeded' })
     await createPrayerImage([UUID]).catch(() => {})
     expect(warn).toHaveBeenCalledWith('[prayer-image] provider')
     expect(error).toHaveBeenCalledWith('[prayer-image] quota_exceeded')
     const logged = [...warn.mock.calls, ...error.mock.calls].flat().join(' ')
-    expect(logged).not.toMatch(/guest\/|https:|[0-9a-f]{8}-/)
+    expect(logged).not.toMatch(/guest\/|https:|[0-9a-f]{8}-|familia/)
   })
 })

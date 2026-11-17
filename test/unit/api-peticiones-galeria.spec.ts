@@ -70,7 +70,7 @@ describe('prayer-gallery', () => {
   })
 
   it('las columnas del historial traen el autor y nada que la tarjeta no use', () => {
-    expect(Object.keys(prayerImageColumns)).toEqual(['id', 'storageKey', 'mediaType', 'fileIds', 'createdBy', 'createdAt', 'authorName', 'authorStatus'])
+    expect(Object.keys(prayerImageColumns)).toEqual(['id', 'storageKey', 'mediaType', 'fileIds', 'createdBy', 'createdAt', 'generationId', 'authorName', 'authorStatus'])
   })
 
   it('listPrayerImages: limit + 1 para saber si hay más; el cursor es la última fila y sigue con `<`', async () => {

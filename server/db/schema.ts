@@ -376,6 +376,30 @@ export const prayerImages = pgTable('prayer_images', {
   check('prayer_images_size', sql`${t.sizeBytes} BETWEEN 1 AND 4000000`),
 ])
 
+export const prayerTranscriptStatus = pgEnum('prayer_transcript_status', ['draft', 'verified'])
+export const prayerTranscriptOrigin = pgEnum('prayer_transcript_origin', ['model', 'manual'])
+
+/**
+ * Texto de la foto de una petición (revisión antes de generar): una fila por foto, compartida por el equipo. Lo escribe el
+ * modelo (`model`, borrador) o una persona (`manual`); solo una fila `verified` puede ir a una imagen. Un borrador del
+ * modelo con texto vacío = no encontró texto. Se borra con su foto (FK en cascada): no necesita limpieza.
+ */
+export const prayerTranscripts = pgTable('prayer_transcripts', {
+  fileId: uuid('file_id').primaryKey().references(() => files.id, { onDelete: 'cascade' }),
+  /** Hasta 1000 caracteres (`PRAYER_TEXT_MAX_LENGTH`), texto plano. */
+  text: text('text').notNull(),
+  status: prayerTranscriptStatus('status').notNull().default('draft'),
+  origin: prayerTranscriptOrigin('origin').notNull(),
+  /** Ambos `null` mientras es borrador. */
+  verifiedBy: text('verified_by').references(() => profiles.userId),
+  verifiedAt: timestamp('verified_at', { withTimezone: true }),
+  updatedBy: text('updated_by').notNull().references(() => profiles.userId),
+  ...timestamps,
+}, t => [
+  check('prayer_transcripts_text_length', sql`char_length(${t.text}) <= 1000`),
+  check('prayer_transcripts_verified', sql`(${t.status} = 'verified') = (${t.verifiedAt} IS NOT NULL AND ${t.verifiedBy} IS NOT NULL) AND (${t.status} = 'draft' OR btrim(${t.text}) <> '')`),
+])
+
 /** Colección global del equipo de imágenes generadas; los nombres pueden repetirse. */
 export const prayerImageCollections = pgTable('prayer_image_collections', {
   id: uuid('id').primaryKey().defaultRandom(),

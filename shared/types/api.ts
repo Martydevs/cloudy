@@ -212,6 +212,27 @@ export interface PrayerRequest {
   previewUrl: string
 }
 
+export type PrayerTranscriptStatus = 'draft' | 'verified'
+export type PrayerTranscriptOrigin = 'model' | 'manual'
+
+/**
+ * El texto de la foto de una petición (una fila por foto, compartida por el equipo). `draft` con texto vacío y origen
+ * `model` = el modelo no encontró texto. Solo una transcripción `verified` puede ir a una imagen.
+ */
+export interface PrayerTranscript {
+  /** `files.id` de la foto. */
+  fileId: string
+  text: string
+  status: PrayerTranscriptStatus
+  /** Quién escribió el texto guardado: el modelo o una persona. */
+  origin: PrayerTranscriptOrigin
+  /** ISO; `null` mientras es borrador. */
+  verifiedAt: string | null
+  verifiedBy: PrayerPerson | null
+  /** ISO */
+  updatedAt: string
+}
+
 /** Quien generó una imagen, creó una colección o agregó una imagen: la misma forma que en Canciones. */
 export type PrayerPerson = SongPerson
 

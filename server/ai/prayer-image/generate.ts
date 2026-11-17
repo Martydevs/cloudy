@@ -1,16 +1,16 @@
-// Generación de una imagen de peticiones con el AI SDK (feature 007, research D1; feature 008: el modelo lee las fotos):
-// valida la entrada, hace una sola llamada a OpenRouter con la plantilla y las fotos de los invitados (URLs firmadas que
-// OpenRouter descarga), toma la primera imagen de `result.files` y nunca lanza. Sin BD ni storage.
+// Generación de una imagen de peticiones con el AI SDK (feature 007, research D1; revisión antes de generar: el modelo
+// escribe el texto verificado): valida la entrada, hace una sola llamada a OpenRouter con la plantilla y los textos (nunca
+// las fotos de los invitados), toma la primera imagen de `result.files` y nunca lanza. Sin BD ni storage.
 import type { LanguageModel } from 'ai'
 import { generateText } from 'ai'
 import { PRAYER_IMAGE_MAX_BYTES } from '#shared/constants/prayers'
 import { classifyProviderError } from '../errors'
 import { resolvePrayerImageModel } from '../providers/openrouter'
-import { buildPrayerPrompt, photoLabel } from './prompt'
-import type { PrayerImageErrorCode, PrayerPhotoInput } from './schemas'
+import { buildPrayerPrompt, prayerTextBlock } from './prompt'
+import type { PrayerImageErrorCode } from './schemas'
 import { prayerImageInputSchema } from './schemas'
 
-export type { PrayerImageErrorCode, PrayerPhotoInput } from './schemas'
+export type { PrayerImageErrorCode } from './schemas'
 
 /** Cada intento de la llamada. */
 const ATTEMPT_TIMEOUT_MS = 90_000
@@ -22,8 +22,8 @@ export type PrayerImageResult =
   | { status: 'failed', error: PrayerImageErrorCode }
 
 export interface GeneratePrayerImageOptions {
-  /** 1–4 fotos de peticiones (URL firmada https y formato), en el orden de la imagen. */
-  photos: PrayerPhotoInput[]
+  /** 1–4 textos verificados, en el orden de la imagen. */
+  texts: string[]
   /** JPEG de la plantilla. */
   template: Uint8Array
   /** Por defecto, el de `useRuntimeConfig()`; `null` (sin clave) no llama a nadie. */
@@ -34,7 +34,7 @@ export interface GeneratePrayerImageOptions {
 const fail = (error: PrayerImageErrorCode): PrayerImageResult => ({ status: 'failed', error })
 
 export async function generatePrayerImage(options: GeneratePrayerImageOptions): Promise<PrayerImageResult> {
-  const input = prayerImageInputSchema.safeParse({ photos: options.photos, template: options.template })
+  const input = prayerImageInputSchema.safeParse({ texts: options.texts, template: options.template })
   if (!input.success) return fail('invalid_input')
 
   const model = options.model === undefined ? resolvePrayerImageModel(useRuntimeConfig()) : options.model
@@ -49,15 +49,11 @@ export async function generatePrayerImage(options: GeneratePrayerImageOptions): 
       model,
       messages: [{
         role: 'user',
-        // Instrucción, plantilla y cada foto precedida de su rótulo. Las fotos van como URL: el modelo de OpenRouter acepta
-        // cualquier https (`resolvePrayerImageModel`), así que el AI SDK no las descarga y sus bytes no pasan por la función.
+        // Instrucción, plantilla y un bloque de texto por petición, en orden. Ninguna foto de invitado viaja al modelo.
         content: [
-          { type: 'text', text: buildPrayerPrompt(input.data.photos.length) },
+          { type: 'text', text: buildPrayerPrompt(input.data.texts.length) },
           { type: 'file', mediaType: 'image/jpeg', data: input.data.template },
-          ...input.data.photos.flatMap((photo, index) => [
-            { type: 'text' as const, text: photoLabel(index + 1) },
-            { type: 'file' as const, mediaType: photo.mediaType, data: new URL(photo.url) },
-          ]),
+          ...input.data.texts.map(text => ({ type: 'text' as const, text: prayerTextBlock(text) })),
         ],
       }],
       timeout: ATTEMPT_TIMEOUT_MS,

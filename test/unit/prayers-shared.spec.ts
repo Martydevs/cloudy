@@ -9,11 +9,14 @@ import {
   PRAYER_IMAGE_MAX_BYTES,
   PRAYER_IMAGE_RETENTION_DAYS,
   PRAYER_IMAGE_TIMEOUT_MS,
+  PRAYER_LONG_TEXT_CHARS,
   PRAYER_MAX_SELECTION,
   PRAYER_PAGE_SIZE,
   PRAYER_PER_IMAGE,
+  PRAYER_TEXT_MAX_LENGTH,
+  PRAYER_TRANSCRIPT_MAX_IDS,
 } from '../../shared/constants/prayers'
-import { chunkRequests, orderForImages } from '../../shared/prayers'
+import { chunkRequests, isLongText, orderForImages, sameRequests } from '../../shared/prayers'
 
 describe('constantes', () => {
   it('límites de la feature', () => {
@@ -26,17 +29,38 @@ describe('constantes', () => {
     expect(PRAYER_IMAGE_RETENTION_DAYS).toBe(30)
     expect(PRAYER_HISTORY_PAGE).toBe(12)
     expect(PRAYER_HISTORY_MAX_LIMIT).toBe(48)
+    expect(PRAYER_TEXT_MAX_LENGTH).toBe(1000)
+    expect(PRAYER_LONG_TEXT_CHARS).toBe(600)
+    expect(PRAYER_TRANSCRIPT_MAX_IDS).toBe(40)
   })
 
   it('cada código de error tiene un texto en español', () => {
     expect([...PRAYER_ERROR_CODES].sort()).toEqual(
-      ['invalid_output', 'not_configured', 'provider', 'quota_exceeded', 'rate_limited', 'request_unavailable', 'save_failed', 'timeout', 'too_large', 'unreadable_image'],
+      ['generation_mismatch', 'generation_not_found', 'invalid_output', 'not_configured', 'provider', 'quota_exceeded', 'rate_limited', 'request_unavailable', 'save_failed', 'timeout', 'too_large', 'transcript_unverified', 'unreadable_image'],
     )
     for (const code of PRAYER_ERROR_CODES) {
       expect(PRAYER_ERROR_MESSAGES[code].trim(), code).not.toBe('')
       expect(PRAYER_ERROR_MESSAGES[code], code).not.toMatch(/\b(error|failed|server|timeout|provider)\b/i)
     }
     expect(Object.keys(PRAYER_ERROR_MESSAGES).sort()).toEqual([...PRAYER_ERROR_CODES].sort())
+  })
+})
+
+describe('isLongText', () => {
+  it('avisa por encima de 600 caracteres, sin contar los espacios de los bordes', () => {
+    expect(isLongText('')).toBe(false)
+    expect(isLongText('a'.repeat(600))).toBe(false)
+    expect(isLongText(`  ${'a'.repeat(600)}\n`)).toBe(false)
+    expect(isLongText('a'.repeat(601))).toBe(true)
+  })
+})
+
+describe('sameRequests', () => {
+  it('mismas peticiones en cualquier orden; distinto número o distinta petición no', () => {
+    expect(sameRequests(['a', 'b', 'c'], ['c', 'a', 'b'])).toBe(true)
+    expect(sameRequests([], [])).toBe(true)
+    expect(sameRequests(['a', 'b'], ['a'])).toBe(false)
+    expect(sameRequests(['a', 'b'], ['a', 'c'])).toBe(false)
   })
 })
 

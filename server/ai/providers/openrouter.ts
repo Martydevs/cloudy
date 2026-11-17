@@ -1,11 +1,12 @@
-// Único proveedor de IA: OpenRouter con un preset por caso de uso (hoy solo la generación de las imágenes de
-// peticiones) que decide el modelo y el enrutado. Sin clave no hay modelo y no se llama a nadie.
+// Único proveedor de IA: OpenRouter con un preset por caso de uso (la lectura de la foto de una petición y la generación de
+// las imágenes de peticiones) que decide el modelo y el enrutado. Sin clave no hay modelo y no se llama a nadie.
 import { createOpenRouter } from '@openrouter/ai-sdk-provider'
 import type { LanguageModel } from 'ai'
 import { wrapLanguageModel } from 'ai'
 import type { RuntimeConfig } from 'nuxt/schema'
 
 export const OPENROUTER_PRAY_REQUESTS_MODEL = '@preset/pray-requests-image-generation'
+export const OPENROUTER_PRAY_TRANSCRIPTION_MODEL = '@preset/pray-requests-transcription'
 
 export function openrouterClient(config: RuntimeConfig) {
   return createOpenRouter({
@@ -25,12 +26,22 @@ const PRAYER_IMAGE_URLS: Record<string, RegExp[]> = {
   'image/*': [/^data:image\/[a-zA-Z]+;base64,/, /^https:\/\/.+$/i],
 }
 
-/** Generación de imágenes de peticiones (feature 007): pide salida de imagen aunque el preset no la fije. */
-export function resolvePrayerImageModel(config: RuntimeConfig): LanguageModel | null {
-  if (!config.openrouterApikey.trim()) return null
-  const model = openrouterClient(config)(OPENROUTER_PRAY_REQUESTS_MODEL, { extraBody: { modalities: ['image', 'text'] } })
+/** El modelo de un preset que recibe cualquier imagen https como URL, sin que el AI SDK la descargue. */
+function withSignedImageUrls(model: Parameters<typeof wrapLanguageModel>[0]['model']): LanguageModel {
   return wrapLanguageModel({
     model,
     middleware: { specificationVersion: 'v4', overrideSupportedUrls: () => PRAYER_IMAGE_URLS },
   })
+}
+
+/** Generación de imágenes de peticiones (feature 007): pide salida de imagen aunque el preset no la fije. */
+export function resolvePrayerImageModel(config: RuntimeConfig): LanguageModel | null {
+  if (!config.openrouterApikey.trim()) return null
+  return withSignedImageUrls(openrouterClient(config)(OPENROUTER_PRAY_REQUESTS_MODEL, { extraBody: { modalities: ['image', 'text'] } }))
+}
+
+/** Lectura de la foto de una petición (revisión antes de generar): la foto llega como URL firmada. */
+export function resolvePrayerTranscriptModel(config: RuntimeConfig): LanguageModel | null {
+  if (!config.openrouterApikey.trim()) return null
+  return withSignedImageUrls(openrouterClient(config)(OPENROUTER_PRAY_TRANSCRIPTION_MODEL))
 }

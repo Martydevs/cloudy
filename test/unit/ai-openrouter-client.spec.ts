@@ -14,7 +14,7 @@ const sdk = vi.hoisted(() => {
 })
 vi.mock('@openrouter/ai-sdk-provider', () => ({ createOpenRouter: sdk.createOpenRouter }))
 
-const { OPENROUTER_PRAY_REQUESTS_MODEL, openrouterClient, resolvePrayerImageModel } = await import('../../server/ai/providers/openrouter')
+const { OPENROUTER_PRAY_REQUESTS_MODEL, OPENROUTER_PRAY_TRANSCRIPTION_MODEL, openrouterClient, resolvePrayerImageModel, resolvePrayerTranscriptModel } = await import('../../server/ai/providers/openrouter')
 
 const config = (openrouterApikey: string, openrouterBaseUrl = '') =>
   ({ openrouterApikey, openrouterBaseUrl }) as unknown as RuntimeConfig
@@ -39,6 +39,7 @@ describe('openrouterClient', () => {
 describe('ids de preset', () => {
   it('lleva un solo prefijo @preset/', () => {
     expect(OPENROUTER_PRAY_REQUESTS_MODEL).toBe('@preset/pray-requests-image-generation')
+    expect(OPENROUTER_PRAY_TRANSCRIPTION_MODEL).toBe('@preset/pray-requests-transcription')
   })
 })
 
@@ -68,6 +69,29 @@ describe('resolvePrayerImageModel', () => {
 
   it.each([[''], ['   ']])('sin clave (%j) → null sin crear el cliente', (key) => {
     expect(resolvePrayerImageModel(config(key))).toBeNull()
+    expect(sdk.createOpenRouter).not.toHaveBeenCalled()
+  })
+})
+
+describe('resolvePrayerTranscriptModel', () => {
+  it('con clave devuelve el preset de lectura, sin modalities de imagen, y la misma URL base', () => {
+    expect(resolvePrayerTranscriptModel(config('sk-or-x', 'http://127.0.0.1:4010'))).toMatchObject({ provider: 'openrouter', modelId: OPENROUTER_PRAY_TRANSCRIPTION_MODEL })
+    expect(sdk.createOpenRouter).toHaveBeenLastCalledWith({ apiKey: 'sk-or-x', baseURL: 'http://127.0.0.1:4010' })
+    expect(sdk.provider).toHaveBeenCalledWith(OPENROUTER_PRAY_TRANSCRIPTION_MODEL)
+  })
+
+  // La foto de un invitado es una URL firmada de una clave sin extensión: llega a OpenRouter como URL, igual que con el
+  // modelo de imágenes (comparten el envoltorio).
+  it('acepta como URL cualquier imagen https (firmada y sin extensión), pero no http', async () => {
+    const model = resolvePrayerTranscriptModel(config('sk-or-x')) as unknown as { supportedUrls: Record<string, RegExp[]> | PromiseLike<Record<string, RegExp[]>> }
+    const patterns = (await model.supportedUrls)['image/*']!
+    const accepted = (url: string) => patterns.some(re => re.test(url))
+    expect(accepted('https://bucket.test/b/guest/s1/abc?X-Amz-Signature=f00')).toBe(true)
+    expect(accepted('http://bucket.test/b/guest/s1/abc')).toBe(false)
+  })
+
+  it.each([[''], ['   ']])('sin clave (%j) → null sin crear el cliente', (key) => {
+    expect(resolvePrayerTranscriptModel(config(key))).toBeNull()
     expect(sdk.createOpenRouter).not.toHaveBeenCalled()
   })
 })

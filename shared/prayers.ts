@@ -1,5 +1,6 @@
 // Reglas puras de la página Peticiones (feature 007, research D10): en qué orden van las peticiones elegidas y cómo se
 // reparten en imágenes. Sin dependencias de Nuxt.
+import { PRAYER_LONG_TEXT_CHARS } from './constants/prayers'
 import type { PrayerRequest } from './types/api'
 
 type Orderable = Pick<PrayerRequest, 'id' | 'approvedAt' | 'sentAt'>
@@ -10,6 +11,11 @@ export function orderForImages<T extends Orderable>(list: readonly T[]): T[] {
     Date.parse(a.approvedAt) - Date.parse(b.approvedAt)
     || Date.parse(a.sentAt) - Date.parse(b.sentAt)
     || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
+}
+
+/** El texto de una petición es tan largo que puede no caber en la plantilla (aviso, no error). */
+export function isLongText(text: string): boolean {
+  return text.trim().length > PRAYER_LONG_TEXT_CHARS
 }
 
 /** Grupos de `size` en orden: ⌈N / size⌉ grupos, sin partir ninguna petición. */

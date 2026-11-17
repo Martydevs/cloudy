@@ -2,7 +2,7 @@
 // antes de consultar, `Cache-Control: no-store` y la imagen generada que se guarda en el bucket y responde como JSON.
 import { createError } from 'h3'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { prayerError } from '../../server/utils/prayer-images'
+import { prayerError } from '../../server/utils/prayer-errors'
 import { expectGuarded, expectStatus, installNitro, loadHandler, makeEvent } from './helpers/nitro'
 
 const s3 = vi.hoisted(() => ({
@@ -90,6 +90,7 @@ describe('POST /api/peticiones/imagenes', () => {
       requestCount: 2,
       author: { userId: 'u1', name: 'Ana', active: true },
       createdAt: expect.any(String),
+      generationId: null,
     })
     expect(s3.putObject).toHaveBeenCalledWith(`pre/peticiones/${id}.png`, PNG, 'image/png')
     expect(fake.calls.find(c => c.method === 'values')?.args[0]).toMatchObject({
@@ -193,13 +194,21 @@ describe('POST /api/peticiones/imagenes', () => {
     expect((await expectStatus(result, 409)).data).toEqual({ code: 'request_unavailable', ids: [IDS[1]] })
   })
 
-  it('una foto que no se puede leer → 422 unreadable_image con sus ids, sin subir nada', async () => {
-    install({ createPrayerImage: vi.fn(async () => { throw prayerError('unreadable_image', { ids: [IDS[0]] }) }) })
+  // Revisión antes de generar: la verificación se pudo quitar después de crear la generación.
+  it('una petición sin texto verificado → 409 transcript_unverified con sus ids, sin subir nada', async () => {
+    install({ createPrayerImage: vi.fn(async () => { throw prayerError('transcript_unverified', { ids: [IDS[0]] }) }) })
     const { result } = await post({ fileIds: IDS })
-    const failure = await expectStatus(result, 422)
-    expect(failure.data).toEqual({ code: 'unreadable_image', ids: [IDS[0]] })
-    expect(failure.message).toBe('Alguna foto no se puede leer. Quítala de tu selección o pídele al invitado que la envíe de nuevo en JPG o PNG.')
+    const failure = await expectStatus(result, 409)
+    expect(failure.data).toEqual({ code: 'transcript_unverified', ids: [IDS[0]] })
+    expect(failure.message).toBe('Alguna petición no tiene su texto verificado. Vuelve a Peticiones, revisa el texto y márcalo como verificado.')
     expect(s3.putObject).not.toHaveBeenCalled()
+  })
+
+  it('el texto nunca viaja en el cuerpo: uno enviado por el navegador se ignora y solo llegan los ids', async () => {
+    const { createPrayerImage } = install()
+    const { result } = await post({ fileIds: IDS, texts: ['Texto colado'], text: 'Otro' })
+    await result
+    expect(createPrayerImage).toHaveBeenCalledWith(IDS, { abortSignal: expect.any(AbortSignal) })
   })
 
   it('cerrar la conexión antes de responder aborta la generación', async () => {

@@ -19,10 +19,18 @@ export const PRAYER_IMAGE_RETENTION_DAYS = 30
 /** Imágenes por página del historial: ninguna tiene miniatura. */
 export const PRAYER_HISTORY_PAGE = 12
 export const PRAYER_HISTORY_MAX_LIMIT = 48
+/** Tope del texto de una petición (transcripción revisada): lo valida el servidor y lo repite la tabla. */
+export const PRAYER_TEXT_MAX_LENGTH = 1000
+/** A partir de aquí el texto puede no caber en la plantilla: la revisión lo avisa, no lo impide. */
+export const PRAYER_LONG_TEXT_CHARS = 600
+/** Plazo de una lectura desde el navegador, por encima del tope del servidor (45 s). */
+export const PRAYER_TRANSCRIPT_TIMEOUT_MS = 60_000
+/** Transcripciones que se piden de una vez: las de toda la selección. */
+export const PRAYER_TRANSCRIPT_MAX_IDS = PRAYER_MAX_SELECTION
 /** Imágenes de una generación (un clic en «Generar imágenes»): el tope de la selección repartido de 4 en 4. */
 export const PRAYER_GENERATION_MAX_IMAGES = Math.ceil(PRAYER_MAX_SELECTION / PRAYER_PER_IMAGE)
 
-/** Códigos de error de `POST /api/peticiones/imagenes` (`data.code`). */
+/** Códigos de error de Peticiones (`data.code`): la generación de imágenes y la revisión de transcripciones. */
 export type PrayerErrorCode =
   | 'request_unavailable'
   | 'unreadable_image'
@@ -36,10 +44,11 @@ export type PrayerErrorCode =
   | 'save_failed'
   | 'generation_not_found'
   | 'generation_mismatch'
+  | 'transcript_unverified'
 
 export const PRAYER_ERROR_CODES: readonly PrayerErrorCode[] = [
   'request_unavailable', 'unreadable_image', 'not_configured', 'quota_exceeded', 'rate_limited', 'provider', 'invalid_output', 'too_large', 'timeout', 'save_failed',
-  'generation_not_found', 'generation_mismatch',
+  'generation_not_found', 'generation_mismatch', 'transcript_unverified',
 ]
 
 export const PRAYER_ERROR_MESSAGES: Record<PrayerErrorCode, string> = {
@@ -55,4 +64,5 @@ export const PRAYER_ERROR_MESSAGES: Record<PrayerErrorCode, string> = {
   save_failed: 'La imagen se generó pero no se pudo guardar. Inténtalo de nuevo.',
   generation_not_found: 'Esa generación ya no existe. Vuelve a Peticiones y genera las imágenes de nuevo.',
   generation_mismatch: 'Esas peticiones no son de esta generación. Vuelve a Peticiones y genera las imágenes de nuevo.',
+  transcript_unverified: 'Alguna petición no tiene su texto verificado. Vuelve a Peticiones, revisa el texto y márcalo como verificado.',
 }

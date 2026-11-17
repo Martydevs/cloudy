@@ -52,10 +52,10 @@ describe('arquitectura de las capas', () => {
     expect(files.map(f => f.path)).toContain('server/ai/index.ts')
   })
 
-  // Feature 007 (plan, Complexity Tracking): las imágenes de peticiones son el único caso de uso de IA que queda.
-  const AI_IMPORTERS = ['server/utils/prayer-images.ts']
+  // Los dos casos de uso de IA son de Peticiones: generar la imagen (prayer-images.ts) y leer la foto (prayer-transcripts.ts).
+  const AI_IMPORTERS = ['server/utils/prayer-images.ts', 'server/utils/prayer-transcripts.ts']
 
-  it('fuera de server/ai solo prayer-images.ts importa la IA, y solo como #server/ai', () => {
+  it('fuera de server/ai solo las capas de aplicación de Peticiones importan la IA, y solo como #server/ai', () => {
     const offenders = files
       .filter(f => !inAi(f.path))
       .flatMap(f => imports(f.code)
@@ -69,7 +69,7 @@ describe('arquitectura de las capas', () => {
   it('ni app/, ni shared/, ni los endpoints importan la capa de aplicación de peticiones (feature 007)', () => {
     const offenders = files
       .filter(f => f.path.startsWith('app/') || f.path.startsWith('shared/') || f.path.startsWith('server/api/'))
-      .flatMap(f => imports(f.code).filter(spec => /server\/utils\/prayer-images/.test(target(f.path, spec))).map(spec => `${f.path} → ${spec}`))
+      .flatMap(f => imports(f.code).filter(spec => /server\/utils\/prayer-(images|transcripts)/.test(target(f.path, spec))).map(spec => `${f.path} → ${spec}`))
     expect(offenders).toEqual([])
     // El SQL de la feature vive solo en prayer-requests.ts, prayer-gallery.ts y prayer-collections.ts: los endpoints de
     // Peticiones no tocan drizzle.
@@ -92,8 +92,27 @@ describe('arquitectura de las capas', () => {
     expect(putters).toEqual(['server/utils/prayer-gallery.ts', 'server/utils/storage.ts'])
   })
 
-  it('server/ai/prayer-image existe dentro de la frontera', () => {
-    expect(files.map(f => f.path)).toEqual(expect.arrayContaining(['server/ai/prayer-image/generate.ts', 'server/ai/prayer-image/prompt.ts']))
+  it('el SQL de las transcripciones solo vive en prayer-transcripts.ts', () => {
+    const withoutComments = (code: string) => code.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '')
+    const users = files
+      .filter(f => f.path !== 'server/db/schema.ts')
+      .filter(f => /\bprayerTranscripts\b|\bprayer_transcripts\b/.test(withoutComments(f.code)))
+      .map(f => f.path)
+    expect(users).toEqual(['server/utils/prayer-transcripts.ts'])
+  })
+
+  it('las fotos de los invitados solo se firman para leerlas: la generación de imágenes no firma ni manda ninguna', () => {
+    const code = (path: string) => files.find(f => f.path === path)!.code
+    expect(code('server/utils/prayer-images.ts')).not.toMatch(/presignGet|photoSource/)
+    expect(code('server/ai/prayer-image/generate.ts')).not.toMatch(/new URL\(|type: 'file' as const/)
+    expect(code('server/utils/prayer-transcripts.ts')).toMatch(/presignGet\(/)
+  })
+
+  it('server/ai/prayer-image y server/ai/prayer-transcript existen dentro de la frontera', () => {
+    expect(files.map(f => f.path)).toEqual(expect.arrayContaining([
+      'server/ai/prayer-image/generate.ts', 'server/ai/prayer-image/prompt.ts',
+      'server/ai/prayer-transcript/transcribe.ts', 'server/ai/prayer-transcript/prompt.ts',
+    ]))
   })
 
   it('server/ai no importa la base de datos, server/utils ni h3', () => {

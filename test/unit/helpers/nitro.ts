@@ -19,9 +19,12 @@ import * as guestSubmissions from '../../../server/utils/guest-submissions'
 import * as naming from '../../../server/utils/naming'
 import * as pagination from '../../../server/utils/pagination'
 import * as prayerCollections from '../../../server/utils/prayer-collections'
+import * as prayerErrors from '../../../server/utils/prayer-errors'
 import * as prayerGallery from '../../../server/utils/prayer-gallery'
+import * as prayerGenerations from '../../../server/utils/prayer-generations'
 import * as prayerImages from '../../../server/utils/prayer-images'
 import * as prayerRequests from '../../../server/utils/prayer-requests'
+import * as prayerTranscripts from '../../../server/utils/prayer-transcripts'
 import * as rateLimit from '../../../server/utils/rate-limit'
 import * as session from '../../../server/utils/session'
 import * as submissions from '../../../server/utils/submissions'
@@ -72,9 +75,12 @@ export function installNitro(results: unknown[] = [], overrides: Record<string, 
     ...naming,
     ...pagination,
     ...prayerCollections,
+    ...prayerErrors,
     ...prayerGallery,
+    ...prayerGenerations,
     ...prayerImages,
     ...prayerRequests,
+    ...prayerTranscripts,
     ...rateLimit,
     ...session,
     ...submissions,

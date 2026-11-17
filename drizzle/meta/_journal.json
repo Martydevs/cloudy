@@ -99,6 +99,13 @@
       "when": 1794764451771,
       "tag": "0013_prayer_generations",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1794945946163,
+      "tag": "0014_prayer_transcripts",
+      "breakpoints": true
     }
   ]
 }

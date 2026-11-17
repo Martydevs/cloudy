@@ -1,9 +1,9 @@
 // Validadores de la página Peticiones (feature 007, data-model.md § Validación): la query del listado, el cuerpo de la
 // generación, el historial de imágenes y sus colecciones. El servidor es la autoridad; el cliente arma la misma query con
 // `usePrayerFilters` y valida el nombre de una colección con `prayerCollectionSchema` (app/utils/form-schemas.ts).
-import { PRAYER_GENERATION_MAX_IMAGES, PRAYER_HISTORY_MAX_LIMIT, PRAYER_HISTORY_PAGE, PRAYER_PER_IMAGE } from '../constants/prayers'
+import { PRAYER_GENERATION_MAX_IMAGES, PRAYER_HISTORY_MAX_LIMIT, PRAYER_HISTORY_PAGE, PRAYER_PER_IMAGE, PRAYER_TEXT_MAX_LENGTH, PRAYER_TRANSCRIPT_MAX_IDS } from '../constants/prayers'
 import type { Field } from './core'
-import { array, int, object, oneOf, optional, str, uuid } from './core'
+import { array, bool, int, object, oneOf, optional, str, uuid } from './core'
 import { songCollectionName } from './songs'
 
 const DATE_MESSAGE = 'Fecha no válida'
@@ -54,8 +54,8 @@ function fileIdList(): Field<string[]> {
 
 /**
  * Cuerpo de `POST /api/peticiones/imagenes`: los ids y, si la imagen es parte de una generación, su id (los ids deben ser
- * uno de sus grupos). El modelo lee el texto en las fotos de los invitados; el servidor comprueba que cada id siga siendo
- * una imagen aprobada y visible y fija el orden.
+ * uno de sus grupos). El texto nunca viaja en el cuerpo: el servidor carga el verificado de cada petición, comprueba que
+ * cada id siga siendo una imagen aprobada y visible y fija el orden.
  */
 export const prayerImageInput = object({ fileIds: fileIdList(), generationId: optional(uuid()) })
 
@@ -94,3 +94,44 @@ export const prayerCollectionInput = object({
 export const prayerCollectionRename = object({ name: prayerCollectionName() })
 
 export const prayerCollectionItemInput = object({ imageId: uuid() })
+
+// ---------------------------------------------------------------- transcripciones (revisión antes de generar)
+
+export const PRAYER_TRANSCRIPT_IDS_MESSAGE = 'No repitas peticiones'
+/** Texto vacío o en blanco al marcar como verificada. */
+export const PRAYER_TEXT_REQUIRED_MESSAGE = 'Escribe el texto de la petición para marcarla como verificada'
+
+/** `ids=<uuid>,<uuid>…`: 1–40 ids distintos separados por comas. */
+function transcriptIds(): Field<string[]> {
+  const list = array(uuid(), { min: 1, max: PRAYER_TRANSCRIPT_MAX_IDS, label: 'peticiones' })
+  return (input) => {
+    const res = list(typeof input === 'string' && input !== '' ? input.split(',') : [])
+    if (res.ok && new Set(res.value).size !== res.value.length) return { ok: false, error: PRAYER_TRANSCRIPT_IDS_MESSAGE }
+    return res
+  }
+}
+
+/** Query de `GET /api/peticiones/transcripciones`. */
+export const prayerTranscriptIdsQuery = object({ ids: transcriptIds() })
+
+/** Cuerpo de `POST /api/peticiones/transcripciones/:fileId/lectura`: `force` vuelve a leer aunque ya haya texto guardado. */
+export const prayerTranscriptReadInput = object({
+  force: (input: unknown) => {
+    const res = optional(bool())(input)
+    return res.ok ? { ok: true as const, value: res.value ?? false } : res
+  },
+})
+
+/** El texto de una petición: se recortan los bordes y se conservan los saltos de línea; vacío es válido como borrador. */
+export const prayerTranscriptText = () => str({ min: 0, max: PRAYER_TEXT_MAX_LENGTH })
+
+/**
+ * Cuerpo de `PATCH /api/peticiones/transcripciones/:fileId`: «Guardar», la casilla «Verificada» y «Escribir a mano». Una
+ * transcripción verificada necesita texto.
+ */
+export const prayerTranscriptSaveInput = object({
+  text: prayerTranscriptText(),
+  verified: bool(),
+}, raw => raw.verified === true && typeof raw.text === 'string' && raw.text.trim() === ''
+  ? { text: PRAYER_TEXT_REQUIRED_MESSAGE }
+  : null)

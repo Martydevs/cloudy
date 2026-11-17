@@ -7,17 +7,21 @@ import { sameRequests } from '#shared/prayers'
 import type { PrayerGeneration, PrayerGenerationCreated } from '#shared/types/api'
 import { prayerGenerations, profiles } from '../db/schema'
 import { listGenerationImages } from './prayer-gallery'
-import { prayerError } from './prayer-images'
+import { prayerError } from './prayer-errors'
 import { loadEligibleRequests } from './prayer-requests'
+import { loadVerifiedTexts } from './prayer-transcripts'
 import { toSongPerson } from './songs'
 
 /**
  * Crea la generación con los grupos de la selección. Antes comprueba que cada petición siga siendo una imagen aprobada y
- * visible: si alguna ya no, `409 request_unavailable` con `data.ids` y no se crea nada.
+ * visible (`409 request_unavailable`) y que una persona haya verificado su texto (`409 transcript_unverified`), ambos con
+ * `data.ids`: si alguna falla no se crea nada.
  */
 export async function createPrayerGeneration(groups: string[][], me: { userId: string }): Promise<PrayerGenerationCreated> {
-  const { missing } = await loadEligibleRequests(groups.flat())
+  const ids = groups.flat()
+  const [{ missing }, { unverified }] = await Promise.all([loadEligibleRequests(ids), loadVerifiedTexts(ids)])
   if (missing.length > 0) throw prayerError('request_unavailable', { ids: missing })
+  if (unverified.length > 0) throw prayerError('transcript_unverified', { ids: unverified })
   const [row] = await useDb().insert(prayerGenerations).values({ groups, createdBy: me.userId }).returning({ id: prayerGenerations.id })
   return { id: row!.id }
 }

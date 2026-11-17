@@ -1,5 +1,6 @@
-// Generar una imagen de peticiones (feature 007, contracts/api.md § 2, enmienda de historial; feature 008): 1–4 ids de
-// peticiones → una imagen sobre la plantilla, con el texto que el modelo lee en cada foto. El servidor comprueba que sigan disponibles, sube la imagen al bucket
+// Generar una imagen de peticiones (feature 007, contracts/api.md § 2, enmienda de historial; revisión antes de generar):
+// 1–4 ids de peticiones → una imagen sobre la plantilla, con el texto que una persona verificó para cada una (lo carga el
+// servidor; sin él, `409 transcript_unverified`). El servidor comprueba que sigan disponibles, sube la imagen al bucket
 // (`peticiones/<id>.<ext>`), guarda su fila y responde `201` con el JSON de la imagen: el binario ya no vuelve por esta
 // función. Si no se puede guardar, `502 save_failed` sin dejar el objeto suelto. Con `generationId` (página de generación),
 // las peticiones deben ser uno de sus grupos (`404 generation_not_found`, `409 generation_mismatch`) y la imagen queda ligada a ella.

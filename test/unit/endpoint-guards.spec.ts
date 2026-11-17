@@ -119,11 +119,16 @@ describe('guards de los endpoints', () => {
       'peticiones/colecciones/[id]/items/index.post.ts',
       'peticiones/colecciones/index.get.ts',
       'peticiones/colecciones/index.post.ts',
+      'peticiones/generaciones/[id].get.ts',
+      'peticiones/generaciones/index.post.ts',
       'peticiones/imagenes/[id]/content.get.ts',
       'peticiones/imagenes/[id]/index.delete.ts',
       'peticiones/imagenes/index.get.ts',
       'peticiones/imagenes/index.post.ts',
       'peticiones/index.get.ts',
+      'peticiones/transcripciones/[fileId]/index.patch.ts',
+      'peticiones/transcripciones/[fileId]/lectura.post.ts',
+      'peticiones/transcripciones/index.get.ts',
     ])
     for (const file of prayers) expect(source(file), file).toMatch(/\brequireRole\(event, 'editor'\)/)
     expect(files.filter(f => (isPublic(f) || isCron(f)) && f.includes('peticiones'))).toEqual([])

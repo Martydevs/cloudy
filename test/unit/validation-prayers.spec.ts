@@ -6,6 +6,9 @@ import {
   prayerCollectionRename,
   prayerHistoryQuery,
   prayerImageInput,
+  prayerTranscriptIdsQuery,
+  prayerTranscriptReadInput,
+  prayerTranscriptSaveInput,
   prayersQuery,
 } from '../../shared/validation/prayers'
 
@@ -115,5 +118,42 @@ describe('historial y colecciones de imágenes (enmienda de historial)', () => {
     expect(prayerCollectionItemInput({ imageId: UUIDS[1] })).toEqual({ ok: true, data: { imageId: UUIDS[1] } })
     expect(prayerCollectionItemInput({}).ok).toBe(false)
     expect(prayerCollectionItemInput({ imageId: 'no' }).ok).toBe(false)
+  })
+})
+
+describe('transcripciones (revisión antes de generar)', () => {
+  it('prayerTranscriptIdsQuery: 1–40 ids distintos separados por comas', () => {
+    expect(prayerTranscriptIdsQuery({ ids: `${UUIDS[0]},${UUIDS[1]!.toUpperCase()}` })).toEqual({ ok: true, data: { ids: [UUIDS[0], UUIDS[1]] } })
+    expect(prayerTranscriptIdsQuery({})).toEqual({ ok: false, errors: { ids: 'Agrega al menos 1 peticiones' } })
+    expect(prayerTranscriptIdsQuery({ ids: '' })).toEqual({ ok: false, errors: { ids: 'Agrega al menos 1 peticiones' } })
+    expect(prayerTranscriptIdsQuery({ ids: `${UUIDS[0]},x` })).toEqual({ ok: false, errors: { ids: '2: Identificador no válido' } })
+    expect(prayerTranscriptIdsQuery({ ids: `${UUIDS[0]},${UUIDS[0]}` })).toEqual({ ok: false, errors: { ids: 'No repitas peticiones' } })
+    const many = Array.from({ length: 41 }, (_, i) => `00000000-0000-4000-8000-${String(i).padStart(12, '0')}`)
+    expect(prayerTranscriptIdsQuery({ ids: many.slice(0, 40).join(',') }).ok).toBe(true)
+    expect(prayerTranscriptIdsQuery({ ids: many.join(',') })).toEqual({ ok: false, errors: { ids: 'Puedes agregar como máximo 40 peticiones' } })
+    expect(prayerTranscriptIdsQuery({ ids: [UUIDS[0]] }).ok).toBe(false)
+  })
+
+  it('prayerTranscriptReadInput: force es opcional y falso por defecto', () => {
+    expect(prayerTranscriptReadInput({})).toEqual({ ok: true, data: { force: false } })
+    expect(prayerTranscriptReadInput(undefined)).toEqual({ ok: true, data: { force: false } })
+    expect(prayerTranscriptReadInput({ force: true })).toEqual({ ok: true, data: { force: true } })
+    expect(prayerTranscriptReadInput({ force: 'sí' })).toEqual({ ok: false, errors: { force: 'Debe ser verdadero o falso' } })
+  })
+
+  it('prayerTranscriptSaveInput: recorta los bordes, conserva los saltos de línea y admite un borrador vacío', () => {
+    expect(prayerTranscriptSaveInput({ text: '  Por mi familia\ny mi trabajo \n', verified: true }))
+      .toEqual({ ok: true, data: { text: 'Por mi familia\ny mi trabajo', verified: true } })
+    expect(prayerTranscriptSaveInput({ text: '', verified: false })).toEqual({ ok: true, data: { text: '', verified: false } })
+    expect(prayerTranscriptSaveInput({ text: 'a'.repeat(1000), verified: true }).ok).toBe(true)
+  })
+
+  it('prayerTranscriptSaveInput: cada error con su mensaje', () => {
+    expect(prayerTranscriptSaveInput({ text: '   ', verified: true }))
+      .toEqual({ ok: false, errors: { text: 'Escribe el texto de la petición para marcarla como verificada' } })
+    expect(prayerTranscriptSaveInput({ text: 'a'.repeat(1001), verified: false }))
+      .toEqual({ ok: false, errors: { text: 'Debe tener como máximo 1000 caracteres' } })
+    expect(prayerTranscriptSaveInput({ text: 3, verified: true })).toEqual({ ok: false, errors: { text: 'Este campo es obligatorio' } })
+    expect(prayerTranscriptSaveInput({ text: 'Hola' })).toEqual({ ok: false, errors: { verified: 'Debe ser verdadero o falso' } })
   })
 })
