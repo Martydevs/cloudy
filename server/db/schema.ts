@@ -1,4 +1,4 @@
-// Esquema de Cloudy (Drizzle ORM). Ver specs/001-shared-media-drive/data-model.md.
+// Esquema de Cloudy (Drizzle ORM).
 import { relations, sql } from 'drizzle-orm'
 import type { AnyPgColumn } from 'drizzle-orm/pg-core'
 import {

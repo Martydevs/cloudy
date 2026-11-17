@@ -1,0 +1,22 @@
+schema: spec-driven
+
+context: |
+  AGENTS.md is the source of project rules (performance budgets, mobile first, UX
+  consistency, testing gates, security). Artifacts must respect it, not restate it.
+  Artifacts are written in English; the product UI copy is Spanish.
+  Agents never execute destructive actions (see "No destructive actions by agents" in
+  AGENTS.md); any step that needs one is handed to a person as an exact command.
+  Schema changes only through Drizzle migrations; there is one Neon branch and one env
+  file per environment.
+
+rules:
+  proposal:
+    - State what is out of scope.
+    - Flag any new dependency or external service and justify it (AGENTS.md principle II).
+  design:
+    - Justify every new dependency or external service, with the alternative considered.
+    - When a route changes, say how the 250 KB per-route JS budget is kept.
+  tasks:
+    - End each group with the verification AGENTS.md "Definition of done" requires.
+    - UI tasks include browser checks at 360 px and 1280 px or wider, in both themes.
+    - Mark migrations to dev/test/prod and any destructive step as "for a person".

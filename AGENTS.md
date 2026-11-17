@@ -4,21 +4,14 @@ Cloudy is the internal media drive for a Christian church's multimedia & audio p
 members (admins and editors) upload, organize, preview, comment on and recover media files. Guests
 send material from a public page into an approval queue that the team reviews live.
 
-**Governance**: `.specify/memory/constitution.md` (v1.2.0) is the source of truth and overrides this
-file. Keep this guide aligned with it whenever the constitution is amended.
+**Rules**: this file is the single source of project rules. New work is specified with the spec framework
+installed in the repo (see "Workflow"); there is no other governance document, and the framework's own
+configuration must point here instead of copying these rules.
 
-**Active feature**: `specs/008-remove-text-extraction/` — the AI image-text extraction of feature 002 was **removed** (migration `0011`): no more OpenRouter vision reads on staff uploads or
-guest submissions, no `text_*` columns (the HEIC copy's `text_source_key` was later renamed `preview_key`, migration `0012`, and is now read-only for legacy files, see "HEIC → JPEG" in Known gotchas), no search by transcript. Peticiones was reworked: every approved guest image is selectable and, since the
-2026-11-15 amendment («Photos read by the model», top of `specs/007-peticiones-imagenes/spec.md`), «Generar imágenes» queues straight away and the preset model reads each guest photo itself: no
-typed text, no compose dialog; `POST /api/peticiones/imagenes` takes `{ fileIds }`.
-Previous: `specs/007-peticiones-imagenes/` (Peticiones page: approved guest prayer-request images shown as selectable cards
-turned into "prayer requests of the day" images, up to 4 requests per image, by the OpenRouter preset `@preset/pray-requests-image-generation` over a bundled template; no new
-dependencies. Amended 2026-11-12: generated images are stored in the bucket (`prayer_images`, migration `0010`), listed in a team-wide history and grouped in named collections, see the
-amendment at the top of its `spec.md`). Previous: `specs/006-canciones-lyrics-pptx/` (Canciones page: Letras.com lyrics crawled with the Apify actor `apify/rag-web-browser` through `apify-client`, then
-turned into `.pptx` slides by the external `cloudy-api` service; reuses the shape of `specs/005-youtube-downloads/`, whose YouTube page is the previous active feature, and builds on
-`specs/001-shared-media-drive/`, `specs/002-note-text-extraction/` (**retired**, see the note at the top of its `spec.md`) and `specs/003-guest-upload-access-code/`; feature 003's
-access-approval step was later removed, see the amendment at the top of its `spec.md`). Read `spec.md` (what), `plan.md` + `research.md`
-(how), `data-model.md` and `contracts/` (interfaces) before changing related code.
+**Product areas today**: the shared drive (folders, files, comments, trash, activity), guest uploads and the team's approval queue,
+users and roles (admin / editor), YouTube downloads and playlists, Canciones (Letras.com lyrics turned into `.pptx` slides) and
+Peticiones (approved guest prayer-request photos turned into images by an OpenRouter preset). How each area behaves in detail, and the
+decisions that shaped it, are recorded in "Known gotchas" below. Image-text extraction was removed (migration `0011`).
 
 ## Stack
 
@@ -35,8 +28,8 @@ access-approval step was later removed, see the amendment at the top of its `spe
 | AI | AI SDK v7 (`generateText`) · OpenRouter as the only provider via `@openrouter/ai-sdk-provider`, single use case: the preset `@preset/pray-requests-image-generation` (the preset picks model and routing and carries the system prompt, edited in OpenRouter: the code sends only the user prompt in `server/ai/prayer-image/prompt.ts`, the template and the guest photos as signed URLs) · isolated in `server/ai/` |
 | Deploy | Vercel (Nitro `vercel` preset, SSR, Vercel Cron) |
 
-Do not add dependencies or external services without a justification in the feature plan's
-"Complexity Tracking" (Constitution II).
+Do not add dependencies or external services without a justification in the change's design document
+(principle II).
 
 ## Commands
 
@@ -65,10 +58,10 @@ shared/     rules used by BOTH client and server: validation, permissions, file 
 server/     db/schema.ts · utils/ (db, auth, session, storage, …) · middleware/ · api/ · routes/api/auth
             ai/ (providers/, one folder per AI use case, index.ts = only public API; imported as #server/ai)
 test/       unit/ · nuxt/ · e2e/
-specs/      Spec Kit feature docs
+spec dir   artifacts of the spec framework in use (changes, proposals, designs, tasks, specs); the folder name is the framework's
 ```
 
-## Reuse before writing (Constitution II)
+## Reuse before writing (principle II)
 
 Before writing any helper, look in this order and use the first match:
 
@@ -89,9 +82,9 @@ fetching uses Nuxt `useFetch`, not VueUse.
 **I. Performance** — Mobile 4G budgets: LCP ≤ 2.5 s, INP ≤ 200 ms, CLS ≤ 0.1, initial JS ≤ 250 KB
 gzip per route. Index every filtered/sorted column; no N+1 queries; cursor pagination. **Never stream
 file binaries through server functions** (Vercel body limit ~4.5 MB): browsers upload/download
-directly with presigned URLs. The bounded exception is the lyrics `.pptx` of feature 006 (see Known gotchas); the generated prayer-request image of feature 007 no longer travels back as a
+directly with presigned URLs. The bounded exception is the lyrics `.pptx` of Canciones (see Known gotchas); the generated prayer-request image of Peticiones no longer travels back as a
 response: it is born in the server function and uploaded from there to the bucket (≤ 4 MB), then served by presigned redirects like any file. Lazy-load images and non-critical components at the component level (a thumbnail is optional: an image without one loads only near the viewport, inside a fixed-size box) (`Lazy*` behind `v-if` for UI that only appears after an action or a later state, e.g. `LazyItemDialogs`).
-Guest upload (feature 003, one step): at `/upload` the guest fills name + optional note + files in one form
+Guest upload (one step): at `/upload` the guest fills name + optional note + files in one form
 (`GuestUploadForm` → `POST /api/public/submissions`, then `POST /api/public/submissions/:id/complete`) and the
 submission lands straight in the team's queue; the only approval is staff approving/rejecting the files. No guest
 cookies, no access request. Limits: 5 submissions per hour per network (`guest:<hashSender(ip)>`); closing a send
@@ -119,7 +112,7 @@ the server stays the authority and `test/nuxt/form-schemas.spec.ts` checks both 
 **V. Testing** — Unit tests for pure logic and business rules; component tests for stateful/role-
 dependent components; e2e for every user story and every protected route (no session + wrong role).
 Every bug fix ships a regression test. Select elements with `getByRole`/`getByLabel`. Coverage ≥ 80 %
-lines in `server/utils/**` and `shared/**` (constitution); the project gate in `vitest.config.ts` is 92 % on
+lines in `server/utils/**` and `shared/**` (the minimum); the project gate in `vitest.config.ts` is 92 % on
 statements, branches, functions and lines for unit + nuxt together. E2E never touches dev/prod data: everything comes
 from `.env.test` (test branch DB, bucket, Neon Auth); identities and storage keys are unique per run (`e2e/<runId>/`).
 
@@ -189,7 +182,7 @@ Never print or commit their values.
   Back-to-back e2e runs share that lockout: leave ~5 min between runs that log in a lot.
 - The Neon auth client *throws* its own normalized codes (`bad_jwt`, `invalid_credentials`, …), not Better
   Auth's; `useAuthClient` maps what pages need (e.g. a used reset link → `INVALID_TOKEN`).
-- AI: OpenRouter is the only provider and the prayer-image generation of feature 007 is the only use case left; there is
+- AI: OpenRouter is the only provider and the Peticiones prayer-image generation is the only use case left; there is
   no fallback. With no key nothing is called. E2E run against a local chat-completions stub
   (`test/e2e/setup/openrouter-stub.ts`) through `NUXT_OPENROUTER_BASE_URL`, so they never call OpenRouter.
 - Regle: `useRegleSchema` only exposes `$validate`/`$pending` at the root (fields keep `$touch`, `$reset`, `$errors`). The plugin
@@ -201,7 +194,7 @@ Never print or commit their values.
   lives in `useState`, not in a local ref.
 - Nitro's `event.waitUntil` is not wired on Vercel Node: background work uses `waitUntil` from
   `@vercel/functions`, only through `server/utils/background.ts`.
-- HEIC → JPEG (`PLAN-heic-apple-uploads.md`): only Safari decodes HEIC, so every upload path (staff `useUploader`, guest
+- HEIC → JPEG: only Safari decodes HEIC, so every upload path (staff `useUploader`, guest
   `useGuestSubmission`) **converts a HEIC to JPEG in the browser and uploads the JPEG instead** (`IMG_0001.heic` →
   `IMG_0001.jpg`, a normal JPEG with a normal thumbnail); the HEIC is not stored. Conversion runs before the ticket is
   requested (queue row shows «Preparando…», then the new name and size); a retry reuses the converted file. Rules:
@@ -223,13 +216,13 @@ Never print or commit their values.
   `server/utils/prayer-images.ts`; `test/unit/architecture.spec.ts` enforces it.
 - `scripts/storage-setup*` accepts an optional `CORS_EXTRA_ORIGINS` (comma-separated `https://` origins, or
   `http://localhost:*`) to add a preview alias without dropping the site domain.
-- Routes (feature 003): guests send files at `/upload` (public, one step); the old `/enviar` link 301-redirects there via
+- Routes: guests send files at `/upload` (public, one step); the old `/enviar` link 301-redirects there via
   `routeRules`. The team's queue is `/solicitudes` (the old `/pendientes` 301-redirects there too). The dashboard's
   "Copiar enlace para invitados" copies `/upload`.
-- `Permissions-Policy` opens only `camera=(self)` (guest camera, feature 003); everything else stays `()`.
+- `Permissions-Policy` opens only `camera=(self)` (guest camera); everything else stays `()`.
   `getUserMedia` needs a secure context: from a phone in dev use an HTTPS tunnel. `test/e2e/camera.spec.ts` uses
   Chromium's `--use-fake-ui-for-media-stream` / `--use-fake-device-for-media-stream` and forces `(pointer: coarse)`.
-- YouTube (feature 005): download jobs live **only** in the `cloudy-api` service (in memory, files for 30 min); the browser
+- YouTube: download jobs live **only** in the `cloudy-api` service (in memory, files for 30 min); the browser
   creates them, polls every 2.5 s and chains batches of `YOUTUBE_MAX_BATCH` one at a time (`useYoutubeDownloads`). The tray
   survives navigation but not a reload. The service (`cloudy-api`, on Railway) can be asleep, restarting or redeploying: `/api/youtube/health` wakes it and the banner retries
   every 5 s. The player is YouTube's official embed (`youtube-nocookie.com/embed/<id>`, `YoutubePlayer`): a thumbnail until Play,
@@ -250,7 +243,7 @@ Never print or commit their values.
 - YouTube → drive: "Guardar en el drive" (`useYoutubeDriveImport`) moves the file **through the browser** (job in cloudy-api → `fetch` of the signed
   `downloadUrl` → the normal upload flow to the drive root), so the service's `ALLOWED_ORIGINS` must include the Cloudy origin (the e2e stub sends `access-control-allow-origin: *`).
   Files over `MAX_FILE_SIZE` (100 MB) are refused; `POST /api/uploads/:id/complete` takes an optional `source` that tags the `file.upload` activity (no new enum value).
-  The action is offered on the video page, the history card menu, the selection bar and each playlist card's ⋯ menu (FR-033). One video uploads directly;
+  The action is offered on the video page, the history card menu, the selection bar and each playlist card's ⋯ menu. One video uploads directly;
   several (selection or playlist) open `YoutubeDriveDialog` (checkboxes, all ticked) first. `startMany` queues them and they run **one at a time** (each file is
   buffered whole in the browser): the queue is driven by the `youtube-drive-imports` state itself (`pump`), not by module variables, so it can't leak between
   tests or stay stuck behind a hung import. Each import also has an `AbortController` (a module map, not state): API calls time out (`YOUTUBE_IMPORT_REQUEST_MS`), a download or upload with no progress for `YOUTUBE_IMPORT_STALL_MS` is aborted ("La conexión se quedó sin respuesta"), and the tray's **Cancelar** aborts a running import (or drops a queued one) so the queue keeps moving; the service job is always released. Progress lives in a "Guardar en el drive" section of `YoutubeDownloadTray` (the layout mounts the tray for downloads **or** imports).
@@ -275,7 +268,7 @@ Never print or commit their values.
 - `useFetch`/`useApiFetch` errors are `NuxtError`s (`statusCode`, and the server's JSON body in `data`), not ofetch `FetchError`s:
   read `error.value.statusCode` / `error.value.data.data.code`. And `serverMessage(error, fallback, byStatus)` only uses
   `byStatus` for 4xx: name a 503 explicitly (e.g. `messages.youtube.service.waking`).
-- Canciones (feature 006): a pasted Letras.com link is validated by `parseLetrasUrl` (`shared/validation/songs.ts`, the server-side SSRF guard) and
+- Canciones: a pasted Letras.com link is validated by `parseLetrasUrl` (`shared/validation/songs.ts`, the server-side SSRF guard) and
   normalized to `https://letras.com/<artist>/<song>` (`songs.source_url` is UNIQUE). Only a **new** link or **Volver a obtener la letra** runs the Apify
   actor `apify/rag-web-browser` (it costs credit, ~20 s): `lyrics-crawler.ts` calls it with `timeoutSecs: 60` (the SDK timeout is per HTTP request and
   `waitForFinish` long-polls up to 55 s) and `log: null` (no extra calls, no actor log lines in ours). Letras.com redirects a nonexistent song link to a
@@ -289,7 +282,7 @@ Never print or commit their values.
   The daily cleanup deletes songs out of the history, in no collection and unchanged for 30 days. E2E run against the Apify stub (scenario slugs
   `sin-letra`, `muy-larga`, `fallo-del-run`, `sin-credito`, `redirige`, `con-tildes`; `letrasUrl(slug)`) and the `cloudy-api` stub's
   `POST /api/lyrics/pptx` (titles containing `vacia`, `demasiado larga`, `respaldo`).
-- Peticiones (feature 007): the grid lists **approved** guest images (`files ⋈ guest_submissions`, `status = 'approved'`), ordered and filtered by `guest_submissions.reviewed_at`
+- Peticiones: the grid lists **approved** guest images (`files ⋈ guest_submissions`, `status = 'approved'`), ordered and filtered by `guest_submissions.reviewed_at`
   (approval date), keyset cursor, 12 per page; guest photos have **no thumbnail**, so each card sets `src` only when it enters the viewport. The card shows sender, dates and note only:
   there is no stored transcript (see "Photos read by the model" below). `POST /api/peticiones/imagenes` takes `{ fileIds }` (1–4 distinct UUIDs); the server re-checks that each id
   is still a visible approved image (`409 request_unavailable`), fixes the photo order `(reviewed_at, created_at, id)` and has the model read the photos. It
@@ -299,7 +292,7 @@ Never print or commit their values.
   is `server/assets/peticiones/plantilla.jpg` (Nitro `serverAssets`, `assets:peticiones`): replace the file and redeploy to change it. Only `server/utils/prayer-images.ts` imports `#server/ai`
   for this use case. The browser generates **2 images at a time** (`usePrayerImages`, state in `useState('prayer-images')`, `AbortController`s in a module map; no blobs or objectURLs): a saved
   image leaves the queue and is prepended to the history through `useState(PRAYER_HISTORY_ADDED_KEY)`; only queued/running/failed/canceled items stay in the queue, and the leave guard only
-  counts queued/running. **History and collections (amendment, 2026-11-12)**: the page has three sections in this order: the approved requests as **one horizontally scrolling row** (`PrayerGrid`:
+  counts queued/running. **History and collections**: the page has three sections in this order: the approved requests as **one horizontally scrolling row** (`PrayerGrid`:
   `overflow-x-auto snap-x`, cards `w-72 sm:w-80`, the infinite-scroll sentinel at the end of the row observed with the row as root, «Cargar más» for keyboard, ‹ › buttons from `sm`;
   `PrayerCard :scroll-root` loads each photo near the row's edge), `PrayerCollectionRow` (SSR, fixed min height), and `LazyPrayerHistory hydrate-on-idle` (`#historial`,
   `usePrayerHistory`, `server: false`, keyset of 12, 4 states, the running queue on top; not `hydrate-on-visible`: the queue must be live when «Generar» scrolls there). The row never
@@ -309,7 +302,7 @@ Never print or commit their values.
   `server/utils/prayer-gallery.ts` and `server/utils/prayer-collections.ts` (endpoints never touch drizzle; `architecture.spec.ts`). Retention: the daily cron (step 7) deletes, in batches of
   500, images older than `PRAYER_IMAGE_RETENTION_DAYS` (30) that are in **no** collection (rows, then objects); collections are what the team keeps. Downloads are plain links (no blobs).
   Limit: 60 generations per hour per person (`peticiones-img:<userId>`).
-  **Photos read by the model (2026-11-15, replaces "Text removed" of 2026-11-13)**: «Generar imágenes» on `PrayerSelectionBar` queues one image per group of 4 straight away (no
+  **Photos read by the model**: «Generar imágenes» on `PrayerSelectionBar` queues one image per group of 4 straight away (no
   dialog; `PrayerComposeDialog` is gone), toasts «N imágenes en cola», scrolls to `#historial` and **clears the selection** (a second click can't spend credit twice). `usePrayerSelection`
   stores only the `PrayerRequest` per id; queue items carry `fileIds`. `loadEligibleRequests` returns only `id`, `storageKey`, `previewKey`, `mimeType` (never in the DTO);
   `photoSource` in `prayer-images.ts` picks the legacy HEIC's JPEG copy (`preview_key`) first, else the original if it is JPEG/PNG/WebP/GIF, and a HEIC with no copy fails as
@@ -318,7 +311,7 @@ Never print or commit their values.
   because `@openrouter/ai-sdk-provider` only forwards URLs ending in an image extension and guest keys have none (without it the AI SDK would download each photo in the function).
   A key or preset that OpenRouter rejects (401/403/404, e.g. 401 «User not found.» for a deleted key) comes back from `#server/ai` as `rejected` and
   reaches the browser as **503 `not_configured`** (no «Reintentar»), logged as `[prayer-image] not_configured (OpenRouter rejected the key or preset)`; it
-  used to show as a retryable 502 `provider`. FR-022: the provider gets only the template and the photos, never names, notes, IPs or ids. The preset's **system prompt lives in OpenRouter** and must say the photos after the template
+  used to show as a retryable 502 `provider`. The provider gets only the template and the photos, never names, notes, IPs or ids. The preset's **system prompt lives in OpenRouter** and must say the photos after the template
   carry each request's text (no `<peticion>` tags any more). Gone: `PRAYER_TEXT_MAX_LENGTH`, `PRAYER_LONG_TEXT_CHARS`, `isLongText`, `PrayerImageRequestInput`. `prayer_images` keeps only
   `file_ids` (no migration); the history has **no** «Generar de nuevo»; search covers sender name and note only.
   Filters live in `usePrayerFilters` (search debounced 300 ms, cleared instantly; approval-date presets in
@@ -327,7 +320,7 @@ Never print or commit their values.
   downloads the photos. Any other call gets a 400. Scenarios are set per test with `setStubMode({ scenario, match })` (`match`: only calls with a photo URL containing it, e.g. a file id):
   `sin-imagen`, `sin-credito` (402), `clave-rechazada` (401 «User not found.»), `lento`, `falla-una-vez` (fails the first **two** affected calls, because the AI SDK retries once by itself). `seedPrayerRequest` takes `previewKey`
   to fake a legacy HEIC copy.
-  **Generation page (2026-11-15)**: «Generar imágenes» first calls `POST /api/peticiones/generaciones { groups }` (1–10 groups of 1–4 ids; `409 request_unavailable`
+  **Generation page**: «Generar imágenes» first calls `POST /api/peticiones/generaciones { groups }` (1–10 groups of 1–4 ids; `409 request_unavailable`
   drops ids from the selection), then enqueues the groups with the returned `generationId` and navigates to `/peticiones/generaciones/<id>` (the page moved to
   `app/pages/peticiones/index.vue`). `usePrayerLeaveGuard({ keep })` lets the queue pass between /peticiones and a generation without reset or warning; the
   destination page takes over the guard. `POST /api/peticiones/imagenes` takes an optional `generationId` (`fileIds` must be one of its groups:
@@ -336,7 +329,7 @@ Never print or commit their values.
   not in the queue show «Sin terminar» + «Generar las faltantes». The page uses the generic `ui/Slideshow.vue` (+ `useSlideshow`: wrap-around, ← →, swipe, `?i=`)
   and saves to the drive through the browser (`usePrayerDriveSave`: `fetch(previewUrl)` → `/api/uploads` → PUT → `complete`, one at a time). SQL that touches
   `prayer_images` stays in `prayer-gallery.ts` (`architecture.spec.ts`); `prayer-generations.ts` only touches its own table.
-  **Accepted LCP exception** (plan.md, Complexity Tracking): guest photos have no thumbnail, so the first card's photo is the LCP and can exceed 2.5 s on 4G. Only the first card
+  **Accepted LCP exception**: guest photos have no thumbnail, so the first card's photo is the LCP and can exceed 2.5 s on 4G. Only the first card
   renders its `src` in the SSR (`priority`, `fetchpriority="high"`) and the page adds a `preconnect` to the storage origin; `performance.spec.ts` asserts LCP for the card text
   (photos blocked), CLS and the 250 KB JS budget, and only reports the LCP with photos. Thumbnails were postponed by the team.
   **Dev QA**: a `.env.development` with an OpenRouter key makes «Generar» a real, paid call; mock `POST /api/peticiones/imagenes` with `page.route` in browser QA.
@@ -350,21 +343,23 @@ Never print or commit their values.
 
 ## Workflow
 
-- Spec Kit: `/speckit-specify` → `/speckit-clarify` → `/speckit-plan` → `/speckit-tasks` →
-  `/speckit-implement`. Plans must pass the Constitution Check (principles I–VI).
-- **Definition of done for every task and every phase** (phases are the `## Phase N` sections of
-  the active feature's `tasks.md`, e.g. `specs/003-guest-upload-access-code/tasks.md`). When a task or phase is implemented, run these in order and
-  do not mark it complete or start the next one until all pass:
+- Spec-driven: every piece of work is specified as a change before it is implemented, with whatever spec framework the repo
+  has installed (its folder, CLI and skills give the exact commands; do not hard-code one framework in this file). Flow:
+  explore (thinking only) → propose (proposal, design, tasks) → apply → archive. Proposals and designs must respect the
+  principles in this file. A change that alters product behavior carries delta specs; a tooling or docs change states that it
+  has none.
+- **Definition of done for every task and every group** (groups are the numbered sections of the change's task list).
+  When a task or group is implemented, run these in order and do not mark it complete or start the next one until all pass:
   1. `bun run typecheck`, then the tests that cover the change: `bun run test:unit`, `bun run test:nuxt`
      and, when the change touches a user story or protected route, `bun run test:e2e`. At the end of a
-     phase run the full set plus `bun run test:coverage`. Fix failures; never skip or weaken a test.
+     group run the full set plus `bun run test:coverage`. Fix failures; never skip or weaken a test.
   2. **Browser verification, always last**, after tests are green: start `bun run dev` and exercise the
-     phase's **Independent Test** scenarios in a real browser (use the `agent-browser` skill) at 360 px
+     scenarios of the change (its specs or its tasks) in a real browser (use the `agent-browser` skill) at 360 px
      and ≥ 1280 px, in dark and light themes, checking loading/empty/error/content states, keyboard
      focus and console errors. Use `.env.development` data only; never run destructive steps.
-  3. Report what ran and the outcome (tests and browser findings) before ticking the task in `tasks.md`.
+  3. Report what ran and the outcome (tests and browser findings) before ticking the task in the change's task list.
   Skipped steps must be stated explicitly, with the reason.
-- One branch per feature (`NNN-short-name`), merged into `main` via PR.
+- One branch per change, named after it (e.g. `fresh-start`), merged into `main` via PR.
 - Conventional Commits (`feat:`, `fix:`, `docs:`, `test:`, `refactor:`, `chore:`).
 - Merge gates: typecheck + build, `test:unit`/`test:nuxt`/`test:e2e` green with coverage, manual check
   at 360 px and ≥ 1280 px in dark and light themes, no performance budget regressions, code review.

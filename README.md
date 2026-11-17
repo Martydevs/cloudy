@@ -12,10 +12,8 @@ a `/upload`.
 
 ## Documentación
 
-- [`AGENTS.md`](AGENTS.md) — guía para contribuir: reglas por principio, estructura, flujo de trabajo.
-- [`.specify/memory/constitution.md`](.specify/memory/constitution.md) — la constitución del proyecto (fuente de verdad).
-- [`specs/001-shared-media-drive/quickstart.md`](specs/001-shared-media-drive/quickstart.md) — puesta en marcha paso a paso, validación manual y despliegue.
-- `specs/001-shared-media-drive/` — especificación, plan, investigación, modelo de datos y contratos.
+- [`AGENTS.md`](AGENTS.md) — guía para contribuir y única fuente de reglas del proyecto: principios, estructura, flujo de trabajo y gotchas conocidas.
+- [`openspec/`](openspec/) — cambios de OpenSpec (propuesta, diseño y tareas) y, una vez archivados, las especificaciones.
 
 ## Requisitos
 
@@ -92,7 +90,7 @@ app/      páginas, layouts, componentes, composables, middleware, utils
 shared/   reglas compartidas por cliente y servidor: validación, permisos, constantes, tipos
 server/   db/schema.ts · utils/ · middleware/ · api/ · routes/api/auth
 test/     unit/ · nuxt/ · e2e/
-specs/    documentos de Spec Kit
+openspec/ cambios y especificaciones de OpenSpec
 ```
 
 Las reglas de contribución (reutilizar antes de escribir, presupuestos de rendimiento, pruebas por

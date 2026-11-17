@@ -1,4 +1,4 @@
-// DTOs del contrato HTTP (specs/001-shared-media-drive/contracts/api.md).
+// DTOs del contrato HTTP.
 import type { FileCategory } from '../constants/files'
 import type { Role } from '../permissions'
 import type { YoutubeBlockReason, YoutubeFormat } from '../constants/youtube'
