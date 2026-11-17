@@ -281,14 +281,17 @@ async function stubRequest<T>(path: string, body?: unknown): Promise<T> {
   return res.json() as Promise<T>
 }
 
-export type { PrayerCall, StubCalls, StubMode } from './openrouter-stub'
+export type { PrayerCall, StubCalls, StubMode, TranscriptCall } from './openrouter-stub'
 
 const stubCalls = () => stubRequest<StubCalls>('/__stub/calls')
 /** Generaciones de imágenes de peticiones (feature 007) que recibió el stub, en orden. */
 export const prayerCalls = async () => (await stubCalls()).prayer
+/** Lecturas de fotos de peticiones (revisión antes de generar) que recibió el stub, en orden. */
+export const transcriptCalls = async () => (await stubCalls()).transcript
 /**
- * Reemplaza el modo entero (lo omitido vuelve a su valor por defecto). Los escenarios de la generación (`sin-credito`,
- * `lento`, …) se eligen aquí; con `match` solo afectan a las llamadas con una foto cuya URL lo contiene (el id del archivo).
+ * Reemplaza el modo entero (lo omitido vuelve a su valor por defecto). Los escenarios de la lectura y de la generación
+ * (`sin-texto`, `lectura-falla`, `sin-credito`, `lento`, …) se eligen aquí; con `match` solo afectan a las lecturas cuya foto
+ * lo lleva en su URL (parte de su clave) y a las generaciones que lo llevan en alguno de sus textos.
  */
 export const setStubMode = (mode: Partial<StubMode>) => stubRequest('/__stub/mode', mode)
 export const resetStub = () => stubRequest('/__stub/reset', {})
@@ -447,6 +450,18 @@ export async function seedPrayerRequest(owner: string, {
     WHERE id = ${fileId}
   `
   return { fileId, submissionId: submission!.id }
+}
+
+/**
+ * Deja guardado el texto de una petición como lo deja la revisión (`prayer_transcripts`): verificado por `owner` salvo que
+ * se pida un borrador. Para las pruebas que generan sin pasar por la lectura. Solo en la rama de pruebas.
+ */
+export async function seedPrayerTranscript(fileId: string, owner: string, { text = 'Texto verificado', status = 'verified' as 'verified' | 'draft' } = {}): Promise<void> {
+  const verified = status === 'verified'
+  await testSql()`
+    INSERT INTO prayer_transcripts (file_id, text, status, origin, verified_by, verified_at, updated_by)
+    VALUES (${fileId}, ${text}, ${status}, 'manual', ${verified ? owner : null}, ${verified ? new Date().toISOString() : null}, ${owner})
+  `
 }
 
 // ---------------------------------------------------------------- Canciones (feature 006)

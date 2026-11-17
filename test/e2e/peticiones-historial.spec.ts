@@ -5,7 +5,7 @@
 import { createPage, setup } from '@nuxt/test-utils/e2e'
 import type { Page } from 'playwright-core'
 import { beforeAll, describe, expect, it } from 'vitest'
-import { E2E_URL, email, profileUserId, resetStub, runId, seedPrayerRequest, signedInAs, testSql, viewports, waitForHydration } from './setup/fixtures'
+import { E2E_URL, email, profileUserId, resetStub, runId, seedPrayerRequest, seedPrayerTranscript, signedInAs, testSql, viewports, waitForHydration } from './setup/fixtures'
 
 await setup({ host: E2E_URL, browser: true })
 
@@ -35,16 +35,22 @@ const toast = (page: Page, text: string) => page.getByText(text, { exact: true }
 /** Genera una imagen con una petición nueva y devuelve su id (la respuesta 201 del servidor). */
 async function generateOne(page: Page, owner: string, label: string): Promise<string> {
   const senderName = `${label} ${runId()}`
-  await seedPrayerRequest(owner, { senderName })
+  const { fileId } = await seedPrayerRequest(owner, { senderName })
+  // Con el texto ya verificado la revisión no lee nada: solo hay que confirmar.
+  await seedPrayerTranscript(fileId, owner)
   await page.goto(`${E2E_URL}/peticiones`)
   await waitForHydration(page)
   await page.getByRole('checkbox', { name: `Elegir la petición de ${senderName}`, exact: true }).check()
   const response = page.waitForResponse(r => r.request().method() === 'POST' && new URL(r.url()).pathname === '/api/peticiones/imagenes')
-  // Sin diálogo: encola al instante y la selección se vacía.
+  // La barra abre la revisión; su botón (habilitado en cuanto cargan los textos verificados) crea la generación y encola.
   await page.getByRole('region', { name: 'Selección de peticiones' }).getByRole('button', { name: 'Generar imágenes', exact: true }).click()
+  await page.getByRole('dialog', { name: 'Revisa el texto de las peticiones' }).getByRole('button', { name: 'Generar imágenes', exact: true }).click()
   const res = await response
   expect(res.status()).toBe(201)
   const { id } = await res.json() as { id: string }
+  // Generar lleva a la página de la generación: de vuelta en Peticiones, la imagen ya está en el historial.
+  await page.goto(`${E2E_URL}/peticiones`)
+  await waitForHydration(page)
   // Fuera de un `it` (también se usa en `beforeAll`): espera de Playwright en vez de `expect.poll`.
   await saved(page, id).waitFor({ state: 'visible', timeout: 15_000 })
   return id

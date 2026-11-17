@@ -196,6 +196,12 @@ describe('US6 · protección de rutas', () => {
       ['DELETE', `/api/peticiones/colecciones/${id}`],
       ['POST', `/api/peticiones/colecciones/${id}/items`],
       ['DELETE', `/api/peticiones/colecciones/${id}/items/${id}`],
+      // Generaciones y revisión de transcripciones de Peticiones: sin sesión de equipo no se crea, lee ni guarda nada.
+      ['POST', '/api/peticiones/generaciones'],
+      ['GET', `/api/peticiones/generaciones/${id}`],
+      ['GET', `/api/peticiones/transcripciones?ids=${id}`],
+      ['POST', `/api/peticiones/transcripciones/${id}/lectura`],
+      ['PATCH', `/api/peticiones/transcripciones/${id}`],
     ] as const
     for (const [method, path] of commentRoutes) {
       const init: { method: string, headers: Record<string, string>, body?: string } = method === 'GET' || method === 'DELETE'
