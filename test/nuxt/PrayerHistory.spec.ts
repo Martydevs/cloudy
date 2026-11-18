@@ -66,6 +66,16 @@ describe('PrayerHistoryCard', () => {
     expect(wrapper.emitted('preview')).toHaveLength(1)
   })
 
+  it('una imagen salida de una generación ofrece «Ver generación» hacia su página; las anteriores no', async () => {
+    const GEN = '30000000-0000-4000-8000-000000000001'
+    const from = await mountSuspended(PrayerHistoryCard, { props: { image: generated(1, { generationId: GEN }) } })
+    const link = from.findAll('a').find(a => a.text().includes('Ver generación'))
+    expect(link?.attributes('href')).toBe(`/peticiones/generaciones/${GEN}`)
+    expect(link!.classes().some(c => /^btn-(sm|xs)$/.test(c))).toBe(false)
+    const legacy = await mountSuspended(PrayerHistoryCard, { props: { image: generated(1) } })
+    expect(legacy.text()).not.toContain('Ver generación')
+  })
+
   it('si la imagen no carga, avisa sin vista previa', async () => {
     visible.value = true
     const wrapper = await mountSuspended(PrayerHistoryCard, { props: { image: generated(1, { author: { userId: 'u2', name: 'Luis', active: false } }) } })

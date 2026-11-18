@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import {
   PRAYER_ERROR_CODES,
   PRAYER_ERROR_MESSAGES,
+  PRAYER_GENERATION_MAX_IMAGES,
   PRAYER_HISTORY_MAX_LIMIT,
   PRAYER_HISTORY_PAGE,
   PRAYER_IMAGE_CONCURRENCY,
@@ -13,7 +14,7 @@ import {
   PRAYER_PAGE_SIZE,
   PRAYER_PER_IMAGE,
 } from '../../shared/constants/prayers'
-import { chunkRequests, orderForImages } from '../../shared/prayers'
+import { chunkRequests, orderForImages, sameRequests } from '../../shared/prayers'
 
 describe('constantes', () => {
   it('límites de la feature', () => {
@@ -26,12 +27,15 @@ describe('constantes', () => {
     expect(PRAYER_IMAGE_RETENTION_DAYS).toBe(30)
     expect(PRAYER_HISTORY_PAGE).toBe(12)
     expect(PRAYER_HISTORY_MAX_LIMIT).toBe(48)
+    // Una generación: el tope de la selección repartido de 4 en 4.
+    expect(PRAYER_GENERATION_MAX_IMAGES).toBe(10)
   })
 
   it('cada código de error tiene un texto en español', () => {
-    expect([...PRAYER_ERROR_CODES].sort()).toEqual(
-      ['invalid_output', 'not_configured', 'provider', 'quota_exceeded', 'rate_limited', 'request_unavailable', 'save_failed', 'timeout', 'too_large', 'unreadable_image'],
-    )
+    expect([...PRAYER_ERROR_CODES].sort()).toEqual([
+      'generation_mismatch', 'generation_not_found', 'invalid_output', 'not_configured', 'provider', 'quota_exceeded', 'rate_limited',
+      'request_unavailable', 'save_failed', 'timeout', 'too_large', 'unreadable_image',
+    ])
     for (const code of PRAYER_ERROR_CODES) {
       expect(PRAYER_ERROR_MESSAGES[code].trim(), code).not.toBe('')
       expect(PRAYER_ERROR_MESSAGES[code], code).not.toMatch(/\b(error|failed|server|timeout|provider)\b/i)
@@ -70,5 +74,20 @@ describe('chunkRequests', () => {
 
   it('la quinta abre el segundo grupo', () => {
     expect(chunkRequests(list(5), 4)).toEqual([[0, 1, 2, 3], [4]])
+  })
+})
+
+describe('sameRequests (página de generación)', () => {
+  it('mismas peticiones en cualquier orden', () => {
+    expect(sameRequests(['a', 'b'], ['b', 'a'])).toBe(true)
+    expect(sameRequests(['a'], ['a'])).toBe(true)
+    expect(sameRequests([], [])).toBe(true)
+  })
+
+  it('distinto tamaño o distintos ids no coinciden', () => {
+    expect(sameRequests(['a', 'b'], ['a'])).toBe(false)
+    expect(sameRequests(['a'], ['a', 'b'])).toBe(false)
+    expect(sameRequests(['a', 'b'], ['a', 'c'])).toBe(false)
+    expect(sameRequests([], ['a'])).toBe(false)
   })
 })

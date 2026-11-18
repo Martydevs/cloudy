@@ -42,6 +42,18 @@ const card = (page: Page, sender: string) => page.getByRole('article', { name: `
 const box = (page: Page, sender: string) => page.getByRole('checkbox', { name: `Elegir la petición de ${sender}`, exact: true })
 const bar = (page: Page) => page.getByRole('region', { name: 'Selección de peticiones' })
 
+// ---- Página de una generación (`/peticiones/generaciones/:id`, enmienda 2026-11-15)
+const slideshow = (page: Page) => page.getByRole('region', { name: 'Imágenes de la generación' })
+/** La imagen de la diapositiva actual (las miniaturas no tienen nombre accesible). */
+const stageImage = (page: Page) => slideshow(page).getByRole('img', { name: /^Imagen \d+ de peticiones/ })
+/** El motivo de la diapositiva actual cuando falló. */
+const failure = (page: Page) => slideshow(page).getByRole('alert')
+/** «N de M listas». */
+const progress = (page: Page) => slideshow(page).getByRole('status').filter({ hasText: /\d+ de \d+ lista/ })
+/** Miniatura n (1-based); su nombre lleva el estado («Ver la imagen 2, lista»). */
+const thumb = (page: Page, n: number) => slideshow(page).getByRole('button', { name: new RegExp(`^Ver la imagen ${n},`) })
+const thumbState = async (page: Page, n: number) => (await thumb(page, n).getAttribute('aria-label'))!.replace(`Ver la imagen ${n}, `, '')
+
 /** Siembra en orden: el primero queda como el aprobado más reciente. */
 async function seedMany(prefix: string, count: number, extra: PrayerSeed = {}): Promise<string[]> {
   const names: string[] = []
@@ -180,15 +192,13 @@ describe('US1 · ver las peticiones y elegir cuáles proyectar', () => {
 })
 
 describe('US2 · generar las imágenes de peticiones del día', () => {
-  /** Tarjeta en curso de la cola (en cola, generándose, fallida o cancelada). */
-  const result = (page: Page, n: number) => page.getByRole('article', { name: `Imagen de peticiones ${n}`, exact: true })
   const history = (page: Page) => page.getByRole('list', { name: 'Imágenes generadas', exact: true })
   /** La tarjeta del historial de una imagen guardada (por su enlace de descarga). */
   const saved = (page: Page, id: string) => history(page).getByRole('listitem').filter({ has: page.locator(`a[href="/api/peticiones/imagenes/${id}/content?download=1"]`) })
 
   /** Ids de las imágenes que el servidor guardó (respuestas 201 de `POST /api/peticiones/imagenes`), en orden de llegada. */
-  function trackSaved(page: Page): { id: string, fileIds: string[], createdAt: string }[] {
-    const ids: { id: string, fileIds: string[], createdAt: string }[] = []
+  function trackSaved(page: Page): { id: string, fileIds: string[], createdAt: string, generationId: string | null }[] {
+    const ids: { id: string, fileIds: string[], createdAt: string, generationId: string | null }[] = []
     page.on('response', async (response) => {
       if (response.request().method() !== 'POST' || new URL(response.url()).pathname !== '/api/peticiones/imagenes' || response.status() !== 201) return
       ids.push(await response.json())
@@ -196,11 +206,16 @@ describe('US2 · generar las imágenes de peticiones del día', () => {
     return ids
   }
 
-  /** Elige las tarjetas y pulsa «Generar imágenes»: se encola sin diálogo y la selección se vacía. */
-  async function generate(page: Page, names: string[]) {
+  /**
+   * Elige las tarjetas y pulsa «Generar imágenes»: se crea la generación, se encola sin diálogo, la selección se vacía y
+   * se abre la página de la generación. Devuelve su id (el de la URL).
+   */
+  async function generate(page: Page, names: string[]): Promise<string> {
     for (const name of names) await box(page, name).check()
     await bar(page).getByRole('button', { name: 'Generar imágenes', exact: true }).click()
-    await expect.poll(() => bar(page).count()).toBe(0)
+    await page.waitForURL(/\/peticiones\/generaciones\/[0-9a-f-]{36}(\?.*)?$/, { timeout: 30_000 })
+    await waitForHydration(page)
+    return new URL(page.url()).pathname.split('/').pop()!
   }
 
   /** Las fotos de una llamada apuntan a estos archivos (su id va en la clave del bucket), en este orden. */
@@ -210,20 +225,29 @@ describe('US2 · generar las imágenes de peticiones del día', () => {
     await resetStub()
   })
 
-  it('5 → 2 imágenes sin diálogo: la plantilla y las fotos (URLs firmadas, sin nombres ni notas) viajan al stub; se guardan en el historial, sobreviven a una recarga, se descargan y se amplían', async () => {
+  it('5 → 2 imágenes sin diálogo: la plantilla y las fotos (URLs firmadas, sin nombres ni notas) viajan al stub; llegan al pase de la generación y al historial con «Ver generación», sobreviven a una recarga, se descargan y se amplían', async () => {
     const seeded = await seedRequests('Generar', 5, { note: `Nota privada ${runId()}` })
     const fileIds = seeded.map(s => s.fileId)
     const page = await editorPage()
     const ids = trackSaved(page)
     await openPage(page)
-    await generate(page, seeded.map(s => s.name))
+    const generationId = await generate(page, seeded.map(s => s.name))
     expect(await page.getByRole('dialog').count()).toBe(0)
     await expect.poll(() => page.getByText('2 imágenes en cola').isVisible()).toBe(true)
 
     await expect.poll(() => ids.length, { timeout: 30_000 }).toBe(2)
-    for (const { id } of ids) await expect.poll(() => saved(page, id).isVisible(), { timeout: 10_000 }).toBe(true)
-    // Lo guardado sale de la cola: ya no hay tarjetas en curso.
-    await expect.poll(() => page.getByRole('list', { name: 'Imágenes en curso' }).count()).toBe(0)
+    // Cada imagen queda ligada a la generación y el pase las muestra: la más antigua (con otras tres) abre la primera.
+    for (const image of ids) expect(image.generationId).toBe(generationId)
+    const four = ids.find(i => i.fileIds.length === 4)!
+    const one = ids.find(i => i.fileIds.length === 1)!
+    expect(one.fileIds).toEqual([seeded[0]!.fileId])
+    await expect.poll(() => progress(page).innerText(), { timeout: 10_000 }).toBe('2 de 2 listas')
+    await expect.poll(() => stageImage(page).getAttribute('src')).toBe(`/api/peticiones/imagenes/${four.id}/content`)
+    expect(await stageImage(page).getAttribute('alt')).toBe('Imagen 1 de peticiones, con 4 peticiones')
+    await thumb(page, 2).click()
+    await expect.poll(() => stageImage(page).getAttribute('src')).toBe(`/api/peticiones/imagenes/${one.id}/content`)
+    await expect.poll(() => new URL(page.url()).searchParams.get('i')).toBe('2')
+    expect(await thumb(page, 2).getAttribute('aria-current')).toBe('true')
 
     const calls = await prayerCalls()
     expect(calls).toHaveLength(2)
@@ -240,11 +264,15 @@ describe('US2 · generar las imágenes de peticiones del día', () => {
       expect(call.prompt).not.toContain('Nota privada')
       for (const id of fileIds) expect(call.prompt).not.toContain(id)
     }
-    // La fila guarda los ids de sus peticiones.
-    const four = ids.find(i => i.fileIds.length === 4)!
-    const one = ids.find(i => i.fileIds.length === 1)!
-    expect(one.fileIds).toEqual([seeded[0]!.fileId])
+
+    // De vuelta en Peticiones, el historial tiene las dos con su enlace a la generación; nada queda en curso.
+    await page.getByRole('link', { name: 'Volver a Peticiones' }).first().click()
+    await page.waitForURL(url => url.pathname === '/peticiones')
+    await page.getByRole('link', { name: 'Ver imágenes generadas' }).click()
+    for (const { id } of ids) await expect.poll(() => saved(page, id).isVisible(), { timeout: 10_000 }).toBe(true)
+    expect(await page.getByRole('list', { name: 'Imágenes en curso' }).count()).toBe(0)
     expect(await saved(page, four.id).innerText()).toContain('4 peticiones')
+    expect(await saved(page, one.id).getByRole('link', { name: 'Ver generación' }).getAttribute('href')).toBe(`/peticiones/generaciones/${generationId}`)
 
     // Sobreviven a una recarga.
     await page.reload()
@@ -267,6 +295,13 @@ describe('US2 · generar las imágenes de peticiones del día', () => {
     await saved(page, one.id).getByRole('button', { name: 'Opciones de la imagen' }).click()
     expect(await page.getByRole('menuitem', { name: 'Generar de nuevo' }).count()).toBe(0)
     await page.keyboard.press('Escape')
+
+    // «Ver generación» abre la página con las dos listas (persistidas en el servidor).
+    await saved(page, one.id).getByRole('link', { name: 'Ver generación' }).click()
+    await page.waitForURL(url => url.pathname === `/peticiones/generaciones/${generationId}`)
+    await waitForHydration(page)
+    await expect.poll(() => progress(page).innerText(), { timeout: 10_000 }).toBe('2 de 2 listas')
+    expect(await page.getByRole('heading', { level: 1 }).innerText()).toMatch(/^Generación del /)
     await page.close()
   })
 
@@ -280,6 +315,9 @@ describe('US2 · generar las imágenes de peticiones del día', () => {
     const [call] = await prayerCalls()
     expect(call).toMatchObject({ template: true, status: 200 })
     expect(photosOf(call!.photos, [request!.fileId])).toEqual([0])
+    await expect.poll(() => progress(page).innerText()).toBe('1 de 1 lista')
+    // Con una sola imagen no hay ‹ ›.
+    expect(await slideshow(page).getByRole('button', { name: 'Imagen siguiente' }).count()).toBe(0)
     await page.close()
   })
 
@@ -299,10 +337,10 @@ describe('US2 · generar las imágenes de peticiones del día', () => {
     const [raw] = await seedRequests('HEIC sin copia', 1, { fixtureName: 'nota.heic' })
     await openPage(page)
     await generate(page, [raw!.name])
-    // `openPage` recarga la página: la cola vuelve a numerar desde 1.
-    await expect.poll(() => result(page, 1).getByRole('alert').isVisible(), { timeout: 30_000 }).toBe(true)
-    expect(await result(page, 1).getByRole('alert').innerText()).toBe(PRAYER_ERROR_MESSAGES.unreadable_image)
-    expect(await result(page, 1).getByRole('button', { name: 'Reintentar' }).count()).toBe(0)
+    await expect.poll(() => failure(page).isVisible(), { timeout: 30_000 }).toBe(true)
+    expect(await failure(page).innerText()).toBe(PRAYER_ERROR_MESSAGES.unreadable_image)
+    expect(await slideshow(page).getByRole('button', { name: 'Reintentar' }).count()).toBe(0)
+    expect(await thumbState(page, 1)).toBe('no se pudo generar')
     expect(await prayerCalls()).toHaveLength(0)
     await page.close()
   })
@@ -316,30 +354,36 @@ describe('US2 · generar las imágenes de peticiones del día', () => {
     await openPage(page)
     await generate(page, seeded.map(s => s.name))
 
-    await expect.poll(() => result(page, 1).getByRole('alert').isVisible(), { timeout: 30_000 }).toBe(true)
-    expect(await result(page, 1).getByRole('alert').innerText()).toBe(PRAYER_ERROR_MESSAGES.provider)
+    await expect.poll(() => failure(page).isVisible(), { timeout: 30_000 }).toBe(true)
+    expect(await failure(page).innerText()).toBe(PRAYER_ERROR_MESSAGES.provider)
     await expect.poll(() => ids.length, { timeout: 30_000 }).toBe(1)
     expect(ids[0]!.fileIds).toEqual([seeded[0]!.fileId])
-    expect(await result(page, 2).count()).toBe(0)
+    await expect.poll(() => thumbState(page, 2)).toBe('lista')
+    expect(await thumbState(page, 1)).toBe('no se pudo generar')
+    expect(await progress(page).innerText()).toBe('1 de 2 listas')
 
-    await result(page, 1).getByRole('button', { name: 'Reintentar' }).click()
+    await slideshow(page).getByRole('button', { name: 'Reintentar' }).click()
     await expect.poll(() => ids.length, { timeout: 30_000 }).toBe(2)
-    await expect.poll(() => result(page, 1).count()).toBe(0)
+    await expect.poll(() => progress(page).innerText()).toBe('2 de 2 listas')
+    await expect.poll(() => stageImage(page).getAttribute('src')).toBe(`/api/peticiones/imagenes/${ids[1]!.id}/content`)
     await page.close()
   })
 
-  it('sin crédito: el motivo sin Reintentar y nada se guarda', async () => {
+  it('sin crédito: el motivo sin Reintentar y nada se guarda; Descartar deja la imagen sin terminar', async () => {
     const [request] = await seedRequests('Sin credito', 1)
     await setStubMode({ scenario: 'sin-credito' })
     const page = await editorPage()
     const ids = trackSaved(page)
     await openPage(page)
     await generate(page, [request!.name])
-    await expect.poll(() => result(page, 1).getByRole('alert').isVisible(), { timeout: 30_000 }).toBe(true)
-    expect(await result(page, 1).getByRole('alert').innerText()).toBe(PRAYER_ERROR_MESSAGES.quota_exceeded)
-    expect(await result(page, 1).getByRole('button', { name: 'Reintentar' }).count()).toBe(0)
-    expect(await result(page, 1).getByRole('button', { name: 'Descartar' }).isVisible()).toBe(true)
+    await expect.poll(() => failure(page).isVisible(), { timeout: 30_000 }).toBe(true)
+    expect(await failure(page).innerText()).toBe(PRAYER_ERROR_MESSAGES.quota_exceeded)
+    expect(await slideshow(page).getByRole('button', { name: 'Reintentar' }).count()).toBe(0)
+    expect(await slideshow(page).getByRole('button', { name: 'Descartar' }).isVisible()).toBe(true)
     expect(ids).toHaveLength(0)
+    await slideshow(page).getByRole('button', { name: 'Descartar' }).click()
+    await expect.poll(() => thumbState(page, 1)).toBe('sin terminar')
+    expect(await slideshow(page).getByRole('button', { name: 'Generar las faltantes' }).count()).toBeGreaterThan(0)
     await page.close()
   })
 
@@ -354,9 +398,9 @@ describe('US2 · generar las imágenes de peticiones del día', () => {
     })
     await openPage(page)
     await generate(page, [request!.name])
-    await expect.poll(() => result(page, 1).getByRole('alert').isVisible(), { timeout: 30_000 }).toBe(true)
-    expect(await result(page, 1).getByRole('alert').innerText()).toBe(PRAYER_ERROR_MESSAGES.not_configured)
-    expect(await result(page, 1).getByRole('button', { name: 'Reintentar' }).count()).toBe(0)
+    await expect.poll(() => failure(page).isVisible(), { timeout: 30_000 }).toBe(true)
+    expect(await failure(page).innerText()).toBe(PRAYER_ERROR_MESSAGES.not_configured)
+    expect(await slideshow(page).getByRole('button', { name: 'Reintentar' }).count()).toBe(0)
     expect(statuses).toEqual([503])
     // Un 401 no se reintenta.
     expect((await prayerCalls()).map(call => call.status)).toEqual([401])
@@ -369,13 +413,13 @@ describe('US2 · generar las imágenes de peticiones del día', () => {
     const page = await editorPage()
     await openPage(page)
     await generate(page, [request!.name])
-    await expect.poll(() => result(page, 1).getByRole('alert').isVisible(), { timeout: 30_000 }).toBe(true)
-    expect(await result(page, 1).getByRole('alert').innerText()).toBe(PRAYER_ERROR_MESSAGES.invalid_output)
-    expect(await result(page, 1).getByRole('button', { name: 'Reintentar' }).isVisible()).toBe(true)
+    await expect.poll(() => failure(page).isVisible(), { timeout: 30_000 }).toBe(true)
+    expect(await failure(page).innerText()).toBe(PRAYER_ERROR_MESSAGES.invalid_output)
+    expect(await slideshow(page).getByRole('button', { name: 'Reintentar' }).isVisible()).toBe(true)
     await page.close()
   })
 
-  it('una petición enviada a la papelera tras elegirla → 409: el motivo sin Reintentar y nada llega al modelo', async () => {
+  it('una petición enviada a la papelera tras elegirla → 409 al crear la generación: se quita de la selección con aviso, no se navega y nada llega al modelo', async () => {
     const [kept, trashed] = await seedRequests('Papelera', 2)
     const page = await editorPage()
     await openPage(page)
@@ -386,16 +430,20 @@ describe('US2 · generar las imágenes de peticiones del día', () => {
 
     await bar(page).getByRole('button', { name: 'Generar imágenes', exact: true }).click()
     await expect.poll(() => page.getByText('Quitamos 1 petición que ya no está disponible').isVisible(), { timeout: 30_000 }).toBe(true)
-    expect(await result(page, 1).getByRole('alert').innerText()).toBe(PRAYER_ERROR_MESSAGES.request_unavailable)
-    expect(await result(page, 1).getByRole('button', { name: 'Reintentar' }).count()).toBe(0)
-    expect(await box(page, kept!.name).isChecked()).toBe(false)
+    expect(new URL(page.url()).pathname).toBe('/peticiones')
+    // La que sigue disponible se queda elegida: un segundo clic la genera sola.
+    await expect.poll(() => bar(page).innerText()).toContain('1 petición → 1 imagen')
+    expect(await box(page, kept!.name).isChecked()).toBe(true)
+    expect(await box(page, trashed!.name).isChecked()).toBe(false)
+    expect(await page.getByRole('list', { name: 'Imágenes en curso' }).count()).toBe(0)
     expect(await prayerCalls()).toHaveLength(0)
     await page.close()
   })
 
-  it('salir con una imagen generándose pide confirmación; una ya guardada no', async () => {
+  it('salir con una imagen generándose pide confirmación (en la generación y en Peticiones); volver a Peticiones no pregunta ni vacía la cola; una ya guardada no pregunta', async () => {
     const [slow, quick] = await seedRequests('Salir', 2)
-    await setStubMode({ scenario: 'lento', match: slow!.fileId })
+    // 10 s: la prueba navega entre la generación y Peticiones mientras la imagen sigue generándose.
+    await setStubMode({ scenario: 'lento', match: slow!.fileId, prayerDelayMs: 10_000 })
     const page = await editorPage()
     const ids = trackSaved(page)
     await openPage(page)
@@ -414,25 +462,33 @@ describe('US2 · generar las imágenes de peticiones del día', () => {
     expect(await dialog.count()).toBe(0)
     await openPage(page)
 
-    // Generándose (el stub tarda con «lento»): pregunta; Cancelar se queda.
-    await generate(page, [slow!.name])
-    await expect.poll(() => result(page, 1).getByRole('status').isVisible()).toBe(true)
+    // Generándose (el stub tarda con «lento»): la página de la generación pregunta; Cancelar se queda.
+    const generationId = await generate(page, [slow!.name])
+    await expect.poll(() => slideshow(page).getByText('Generándose…').isVisible()).toBe(true)
     await leave()
     await expect.poll(() => dialog.isVisible()).toBe(true)
     await dialog.getByRole('button', { name: 'Cancelar' }).click()
     await expect.poll(() => dialog.isVisible()).toBe(false)
-    expect(new URL(page.url()).pathname).toBe('/peticiones')
+    expect(new URL(page.url()).pathname).toBe(`/peticiones/generaciones/${generationId}`)
 
+    // Volver a Peticiones no pregunta y la cola sigue en curso allí.
+    await page.getByRole('link', { name: 'Volver a Peticiones' }).first().click()
+    await page.waitForURL(url => url.pathname === '/peticiones')
+    expect(await dialog.count()).toBe(0)
+    await expect.poll(() => page.getByRole('list', { name: 'Imágenes en curso' }).getByRole('article').count()).toBe(1)
+
+    // Desde Peticiones, salir también pregunta; Salir cancela.
     await leave()
+    await expect.poll(() => dialog.isVisible()).toBe(true)
     await dialog.getByRole('button', { name: 'Salir' }).click()
     await page.waitForURL(url => url.pathname === '/')
-    // Si la llamada lenta llegó al stub antes de cancelarse, el stub la registra al terminar su espera (4 s): se deja pasar
+    // Si la llamada lenta llegó al stub antes de cancelarse, el stub la registra al terminar su espera (10 s): se deja pasar
     // ese plazo para que no se cuele en las cuentas de la prueba siguiente.
-    await page.waitForTimeout(5_000)
+    await page.waitForTimeout(11_000)
     await page.close()
   })
 
-  it('con la red cortada la imagen queda en error reintentable con un mensaje accionable', async () => {
+  it('con la red cortada no se crea la generación y la selección se conserva; una imagen sin respuesta queda en error reintentable con un mensaje accionable', async () => {
     const [request] = await seedRequests('Sin red', 1)
     const page = await editorPage()
     const ids = trackSaved(page)
@@ -440,13 +496,156 @@ describe('US2 · generar las imágenes de peticiones del día', () => {
     await box(page, request!.name).check()
     await page.context().setOffline(true)
     await bar(page).getByRole('button', { name: 'Generar imágenes', exact: true }).click()
-
-    await expect.poll(() => result(page, 1).getByRole('alert').isVisible(), { timeout: 30_000 }).toBe(true)
-    expect(await result(page, 1).getByRole('alert').innerText()).toContain('Se perdió la conexión al generar la imagen')
-
+    await expect.poll(() => page.getByText(/^No pudimos preparar la generación/).isVisible(), { timeout: 30_000 }).toBe(true)
+    expect(new URL(page.url()).pathname).toBe('/peticiones')
+    expect(await box(page, request!.name).isChecked()).toBe(true)
     await page.context().setOffline(false)
-    await result(page, 1).getByRole('button', { name: 'Reintentar' }).click()
+
+    // La generación se crea, pero la imagen no obtiene respuesta.
+    await page.route('**/api/peticiones/imagenes', route => route.abort('internetdisconnected'))
+    await bar(page).getByRole('button', { name: 'Generar imágenes', exact: true }).click()
+    await page.waitForURL(/\/peticiones\/generaciones\//, { timeout: 30_000 })
+    await expect.poll(() => failure(page).isVisible(), { timeout: 30_000 }).toBe(true)
+    expect(await failure(page).innerText()).toContain('Se perdió la conexión al generar la imagen')
+
+    await page.unroute('**/api/peticiones/imagenes')
+    await slideshow(page).getByRole('button', { name: 'Reintentar' }).click()
     await expect.poll(() => ids.length, { timeout: 30_000 }).toBe(1)
+    await page.close()
+  })
+})
+
+describe('Página de generación (enmienda 2026-11-15)', () => {
+  const generationUrl = (id: string, query = '') => `${E2E_URL}/peticiones/generaciones/${id}${query}`
+
+  /** Una generación guardada sin imágenes (como la deja cerrar la pestaña antes de que terminen). */
+  async function seedGeneration(groups: string[][]): Promise<string> {
+    const [row] = await testSql()`INSERT INTO prayer_generations (created_by, groups) VALUES (${owner}, ${JSON.stringify(groups)}::jsonb) RETURNING id` as { id: string }[]
+    return row!.id
+  }
+
+  beforeEach(async () => {
+    await resetStub()
+  })
+
+  it('al abrirla con ?i= los grupos sin imagen salen «Sin terminar»; «Generar las faltantes» los genera ligados a la generación; ‹ › dan la vuelta y la posición va en la URL', async () => {
+    const seeded = await seedRequests('Faltantes', 2)
+    const id = await seedGeneration([[seeded[1]!.fileId], [seeded[0]!.fileId]])
+    const page = await editorPage()
+    const ids: { generationId: string | null }[] = []
+    page.on('response', async (response) => {
+      if (response.request().method() === 'POST' && new URL(response.url()).pathname === '/api/peticiones/imagenes' && response.status() === 201) ids.push(await response.json())
+    })
+    await page.goto(generationUrl(id, '?i=2'))
+    await waitForHydration(page)
+    expect(await page.getByRole('heading', { level: 1 }).innerText()).toMatch(/^Generación del /)
+    await expect.poll(() => progress(page).innerText()).toBe('0 de 2 listas')
+    expect(await thumb(page, 2).getAttribute('aria-current')).toBe('true')
+    expect(await thumbState(page, 1)).toBe('sin terminar')
+    await expect.poll(() => slideshow(page).getByText('Sin terminar', { exact: true }).isVisible()).toBe(true)
+    expect(await page.getByText('2 imágenes sin terminar').isVisible()).toBe(true)
+
+    await page.getByRole('button', { name: 'Generar las faltantes' }).first().click()
+    await expect.poll(() => page.getByText('2 imágenes en cola').isVisible()).toBe(true)
+    await expect.poll(() => ids.length, { timeout: 30_000 }).toBe(2)
+    for (const image of ids) expect(image.generationId).toBe(id)
+    await expect.poll(() => progress(page).innerText(), { timeout: 10_000 }).toBe('2 de 2 listas')
+    expect(await page.getByText('sin terminar').count()).toBe(0)
+    await expect.poll(() => stageImage(page).getAttribute('alt')).toBe('Imagen 2 de peticiones, con 1 petición')
+
+    // ‹ › con vuelta: desde la 2 (la última), siguiente lleva a la 1.
+    await slideshow(page).getByRole('button', { name: 'Imagen siguiente' }).click()
+    await expect.poll(() => new URL(page.url()).searchParams.get('i')).toBe('1')
+    await expect.poll(() => stageImage(page).getAttribute('alt')).toBe('Imagen 1 de peticiones, con 1 petición')
+    await slideshow(page).getByRole('button', { name: 'Imagen anterior' }).click()
+    await expect.poll(() => new URL(page.url()).searchParams.get('i')).toBe('2')
+
+    // Una posición fuera de rango cae en la última (regresión: el pase quedaba vacío).
+    await page.goto(generationUrl(id, '?i=9'))
+    await waitForHydration(page)
+    await expect.poll(() => thumb(page, 2).getAttribute('aria-current')).toBe('true')
+    await expect.poll(() => new URL(page.url()).searchParams.get('i')).toBe('2')
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+    await page.close()
+  })
+
+  it('«Guardar en el drive» sube la imagen por el navegador a la raíz de Archivos con su nombre; «Descargar varias» descarga de una en una', async () => {
+    const seeded = await seedRequests('Drive', 2)
+    const id = await seedGeneration([[seeded[1]!.fileId], [seeded[0]!.fileId]])
+    const page = await editorPage()
+    const ids: { id: string, createdAt: string }[] = []
+    page.on('response', async (response) => {
+      if (response.request().method() === 'POST' && new URL(response.url()).pathname === '/api/peticiones/imagenes' && response.status() === 201) ids.push(await response.json())
+    })
+    await page.goto(generationUrl(id))
+    await waitForHydration(page)
+    await page.getByRole('button', { name: 'Generar las faltantes' }).first().click()
+    await expect.poll(() => ids.length, { timeout: 30_000 }).toBe(2)
+    await expect.poll(() => progress(page).innerText(), { timeout: 10_000 }).toBe('2 de 2 listas')
+
+    // La actual (la 1) al drive: el navegador la lee del bucket y la sube con el flujo de subidas.
+    await expect.poll(() => stageImage(page).getAttribute('src')).toMatch(/^\/api\/peticiones\/imagenes\/[0-9a-f-]+\/content$/)
+    const currentId = (await stageImage(page).getAttribute('src'))!.split('/')[4]!
+    const current = ids.find(image => image.id === currentId)!
+    const expectedName = `peticiones-${current.createdAt.slice(0, 10)}-${current.id.slice(0, 6)}.png`
+    await page.getByRole('button', { name: 'Guardar en el drive', exact: true }).click()
+    await expect.poll(() => page.getByText(`«${expectedName}» quedó en la raíz de Archivos`).isVisible(), { timeout: 30_000 }).toBe(true)
+    expect(await page.getByRole('link', { name: 'Ver en Archivos' }).getAttribute('href')).toBe('/archivos')
+    await expect.poll(() => page.getByText('Guardada', { exact: true }).isVisible()).toBe(true)
+    const [file] = await testSql()`SELECT folder_id, uploaded_by, upload_status, mime_type, size_bytes::int AS size_bytes FROM files WHERE name = ${expectedName} AND deleted_at IS NULL` as { folder_id: string | null, uploaded_by: string, upload_status: string, mime_type: string, size_bytes: number }[]
+    expect(file).toMatchObject({ folder_id: null, uploaded_by: owner, upload_status: 'ready', mime_type: 'image/png' })
+    expect(file!.size_bytes).toBeGreaterThan(0)
+
+    // Descargar varias: casillas en la fila, Todas y una descarga por imagen.
+    await page.getByRole('button', { name: 'Descargar varias' }).click()
+    await page.getByRole('button', { name: 'Todas', exact: true }).click()
+    await expect.poll(() => page.getByText('2 imágenes elegidas').isVisible()).toBe(true)
+    const downloads: string[] = []
+    page.on('download', download => downloads.push(download.suggestedFilename()))
+    await page.getByRole('button', { name: 'Descargar 2' }).click()
+    await expect.poll(() => downloads.length, { timeout: 15_000 }).toBe(2)
+    expect(downloads.every(name => /^peticiones-\d{4}-\d{2}-\d{2}-[0-9a-f]{6}\.png$/.test(name))).toBe(true)
+    await expect.poll(() => page.getByText('Descargamos 2 imágenes').isVisible()).toBe(true)
+    await page.close()
+  })
+
+  it('una generación inexistente avisa con Volver a Peticiones; la API exige sesión de equipo y rechaza grupos inválidos y fotos ajenas a la generación', async () => {
+    const seeded = await seedRequests('Guardas', 2)
+    const id = await seedGeneration([[seeded[0]!.fileId]])
+    const page = await editorPage()
+    await page.goto(generationUrl('00000000-0000-4000-8000-00000000dead'))
+    await waitForHydration(page)
+    const alert = page.getByRole('alert')
+    await expect.poll(() => alert.innerText()).toContain('Esta generación ya no existe')
+    await alert.getByRole('link', { name: 'Volver a Peticiones' }).click()
+    await page.waitForURL(url => url.pathname === '/peticiones')
+
+    // Sin sesión: 401 (la página privada va a /login con la ruta).
+    expect((await fetch(`${E2E_URL}/api/peticiones/generaciones/${id}`)).status).toBe(401)
+    expect((await fetch(`${E2E_URL}/api/peticiones/generaciones`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ groups: [[seeded[0]!.fileId]] }) })).status).toBe(401)
+    const anonymous = await createPage(undefined, { viewport: viewports.desktop })
+    await anonymous.goto(generationUrl(id))
+    await anonymous.waitForURL(url => url.pathname === '/login')
+    expect(new URL(anonymous.url()).searchParams.get('redirect')).toBe(`/peticiones/generaciones/${id}`)
+    await anonymous.close()
+
+    // Con sesión: la generación se lee con sus grupos; grupos inválidos → 422; fotos que no son un grupo → 409 sin llamar al modelo.
+    const read = await page.request.get(`${E2E_URL}/api/peticiones/generaciones/${id}`)
+    expect(read.status()).toBe(200)
+    expect(await read.json()).toMatchObject({ id, groups: [{ index: 1, fileIds: [seeded[0]!.fileId], image: null }] })
+    expect((await page.request.post(`${E2E_URL}/api/peticiones/generaciones`, { data: { groups: [] } })).status()).toBe(422)
+    expect((await page.request.post(`${E2E_URL}/api/peticiones/generaciones`, { data: { groups: [[seeded[0]!.fileId], [seeded[0]!.fileId]] } })).status()).toBe(422)
+    const mismatch = await page.request.post(`${E2E_URL}/api/peticiones/imagenes`, { data: { fileIds: [seeded[1]!.fileId], generationId: id } })
+    expect(mismatch.status()).toBe(409)
+    expect((await mismatch.json()).data).toEqual({ code: 'generation_mismatch' })
+    const missing = await page.request.post(`${E2E_URL}/api/peticiones/imagenes`, { data: { fileIds: [seeded[0]!.fileId], generationId: '00000000-0000-4000-8000-00000000dead' } })
+    expect(missing.status()).toBe(404)
+    expect((await missing.json()).data).toEqual({ code: 'generation_not_found' })
+    expect(await prayerCalls()).toHaveLength(0)
+    // Un 409 al crear la generación devuelve los ids que ya no están disponibles.
+    const trashed = await page.request.post(`${E2E_URL}/api/peticiones/generaciones`, { data: { groups: [[seeded[0]!.fileId, '00000000-0000-4000-8000-00000000dead']] } })
+    expect(trashed.status()).toBe(409)
+    expect((await trashed.json()).data).toEqual({ code: 'request_unavailable', ids: ['00000000-0000-4000-8000-00000000dead'] })
     await page.close()
   })
 })
@@ -535,16 +734,21 @@ describe('US4 · buscar, filtrar por fecha y ordenar', () => {
     await search(page, `nadie-${token}`)
     await expect.poll(() => page.getByText('No hay peticiones con esos filtros').isVisible()).toBe(true)
     expect(await bar(page).innerText()).toContain('2 peticiones → 1 imagen')
-    // Las elegidas se generan aunque el filtro las oculte.
-    await resetStub()
-    await bar(page).getByRole('button', { name: 'Generar imágenes', exact: true }).click()
-    await expect.poll(async () => (await prayerCalls()).length, { timeout: 30_000 }).toBe(1)
-    expect((await prayerCalls())[0]!.photos).toHaveLength(2)
 
     await page.getByRole('button', { name: 'Quitar filtros' }).last().click()
     await expect.poll(() => page.getByText('No hay peticiones con esos filtros').isVisible()).toBe(false)
     expect(await searchBox(page).inputValue()).toBe('')
     await expect.poll(async () => (await visibleNames(page)).length).toBe(12)
+    expect(await bar(page).innerText()).toContain('2 peticiones → 1 imagen')
+
+    // Las elegidas se generan aunque el filtro las oculte («Generar imágenes» lleva a la página de la generación).
+    await search(page, `nadie-${token}`)
+    await expect.poll(() => page.getByText('No hay peticiones con esos filtros').isVisible()).toBe(true)
+    await resetStub()
+    await bar(page).getByRole('button', { name: 'Generar imágenes', exact: true }).click()
+    await page.waitForURL(/\/peticiones\/generaciones\//, { timeout: 30_000 })
+    await expect.poll(async () => (await prayerCalls()).length, { timeout: 30_000 }).toBe(1)
+    expect((await prayerCalls())[0]!.photos).toHaveLength(2)
     await page.close()
   })
 

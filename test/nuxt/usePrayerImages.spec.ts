@@ -28,9 +28,9 @@ const saved = (fileIds: string[]): PrayerGeneratedImage => ({
   generationId: null,
 })
 const png: Reply = async (event) => {
-  const body = await readBody<{ fileIds: string[] }>(event)
+  const body = await readBody<{ fileIds: string[], generationId?: string }>(event)
   setResponseStatus(event, 201)
-  return saved(body.fileIds)
+  return { ...saved(body.fileIds), generationId: body.generationId ?? null }
 }
 const fail = (status: number, data?: Record<string, unknown>): Reply => (event) => {
   setResponseStatus(event, status)
@@ -73,6 +73,17 @@ afterEach(() => {
 })
 
 describe('usePrayerImages', () => {
+  it('con generationId (página de generación) cada elemento lo lleva y el POST manda { fileIds, generationId }', async () => {
+    const images = usePrayerImages()
+    expect(images.enqueue([group('a', 'b'), group('c')], { generationId: 'gen-1' })).toBe(2)
+    expect(images.items.value.map(i => i.generationId)).toEqual(['gen-1', 'gen-1'])
+    await flush(10)
+    expect(posts().map(c => c.body)).toEqual([{ fileIds: ['a', 'b'], generationId: 'gen-1' }, { fileIds: ['c'], generationId: 'gen-1' }])
+    // Lo guardado llega con su generación y sale de la cola.
+    expect(images.items.value).toEqual([])
+    expect(added().map(image => image.fileIds)).toEqual([['c'], ['a', 'b']])
+  })
+
   it('un elemento por grupo, con índice 1-based y los ids en orden; el POST lleva solo { fileIds }', async () => {
     const images = usePrayerImages()
     expect(images.enqueue([group('a', 'b', 'c', 'd'), group('e')])).toBe(2)
@@ -145,6 +156,9 @@ describe('usePrayerImages', () => {
     ['quota_exceeded', 503, false],
     ['not_configured', 503, false],
     ['unreadable_image', 422, false],
+    // Página de generación: volver a pedir la misma imagen no arreglaría nada.
+    ['generation_not_found', 404, false],
+    ['generation_mismatch', 409, false],
   ] as const)('el código %s del servidor fija el mensaje y si se puede reintentar', async (code, status, retryable) => {
     replies.set('a', fail(status, { code }))
     const images = usePrayerImages()

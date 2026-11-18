@@ -4,6 +4,7 @@ import {
   prayerCollectionInput,
   prayerCollectionItemInput,
   prayerCollectionRename,
+  prayerGenerationInput,
   prayerHistoryQuery,
   prayerImageInput,
   prayersQuery,
@@ -90,6 +91,56 @@ describe('prayerImageInput', () => {
 
   it('ids en mayúsculas se normalizan y cuentan como repetidos', () => {
     expect(prayerImageInput({ fileIds: [UUIDS[0], UUIDS[0]!.toUpperCase()] }).ok).toBe(false)
+  })
+})
+
+describe('prayerImageInput · generationId (página de generación)', () => {
+  it('acepta un generationId UUID (normalizado) y lo deja fuera si no viene', () => {
+    expect(prayerImageInput({ fileIds: [UUIDS[0]], generationId: UUIDS[1]!.toUpperCase() })).toEqual({ ok: true, data: { fileIds: [UUIDS[0]], generationId: UUIDS[1] } })
+    expect(prayerImageInput({ fileIds: [UUIDS[0]] })).toEqual({ ok: true, data: { fileIds: [UUIDS[0]], generationId: undefined } })
+    // `null` cuenta como ausente (la cola manda solo `{ fileIds }`, pero un cliente podría mandar `null`).
+    expect(prayerImageInput({ fileIds: [UUIDS[0]], generationId: null })).toEqual({ ok: true, data: { fileIds: [UUIDS[0]], generationId: undefined } })
+  })
+
+  it.each([['texto', 'abc'], ['número', 3]])('generationId %s → error en generationId', (_, generationId) => {
+    const res = prayerImageInput({ fileIds: [UUIDS[0]], generationId })
+    expect(res.ok).toBe(false)
+    if (!res.ok) expect(Object.keys(res.errors)).toEqual(['generationId'])
+  })
+})
+
+describe('prayerGenerationInput (página de generación)', () => {
+  /** UUIDs distintos y válidos para llenar hasta 10 grupos de 4. */
+  const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`
+  const groupsOf = (count: number, size: number) => Array.from({ length: count }, (_, g) => Array.from({ length: size }, (_, i) => id(g * size + i + 1)))
+
+  it('acepta de 1 a 10 grupos de 1 a 4 ids, en orden y en minúsculas', () => {
+    expect(prayerGenerationInput({ groups: [[UUIDS[0]!.toUpperCase()]] })).toEqual({ ok: true, data: { groups: [[UUIDS[0]]] } })
+    expect(prayerGenerationInput({ groups: [[UUIDS[0], UUIDS[1]], [UUIDS[2]]] })).toEqual({ ok: true, data: { groups: [[UUIDS[0], UUIDS[1]], [UUIDS[2]]] } })
+    expect(prayerGenerationInput({ groups: groupsOf(10, 4) })).toEqual({ ok: true, data: { groups: groupsOf(10, 4) } })
+  })
+
+  it.each([
+    ['sin grupos', []],
+    ['11 grupos', groupsOf(11, 1)],
+    ['un grupo vacío', [[]]],
+    ['un grupo de 5', [UUIDS]],
+    ['repetida dentro de un grupo', [[UUIDS[0], UUIDS[0]]]],
+    ['repetida en dos grupos', [[UUIDS[0]], [UUIDS[1], UUIDS[0]]]],
+    ['repetida con otra caja', [[UUIDS[0]], [UUIDS[0]!.toUpperCase()]]],
+    ['no-UUID', [['no-es-uuid']]],
+    ['sin lista', undefined],
+    ['lista plana de ids', UUIDS.slice(0, 2)],
+  ])('%s → error en groups', (_, groups) => {
+    const res = prayerGenerationInput({ groups })
+    expect(res.ok).toBe(false)
+    if (!res.ok) expect(res.errors.groups).toBeTruthy()
+  })
+
+  it('el mensaje de repetidas entre grupos es claro', () => {
+    const res = prayerGenerationInput({ groups: [[UUIDS[0]], [UUIDS[0]]] })
+    expect(res.ok).toBe(false)
+    if (!res.ok) expect(res.errors.groups).toBe('No repitas peticiones en la misma generación')
   })
 })
 

@@ -60,18 +60,21 @@ describe('resolveAccess', () => {
   })
 })
 
-describe('ruta de Peticiones (feature 007)', () => {
-  const meta = readFileSync(fileURLToPath(new URL('../../app/pages/peticiones.vue', import.meta.url)), 'utf8')
+describe('rutas de Peticiones (feature 007, página de generación)', () => {
+  const meta = (path: string) => readFileSync(fileURLToPath(new URL(`../../app/pages/${path}`, import.meta.url)), 'utf8')
 
-  it('peticiones.vue es privada para editor y admin', () => {
-    expect(meta).toMatch(/definePageMeta\(\{[^}]*layout: 'dashboard'[^}]*access: 'private'[^}]*roles: \['editor', 'admin'\]/)
+  it.each(['peticiones/index.vue', 'peticiones/generaciones/[id].vue'])('%s es privada para editor y admin', (path) => {
+    expect(meta(path)).toMatch(/definePageMeta\(\{[^}]*layout: 'dashboard'[^}]*access: 'private'[^}]*roles: \['editor', 'admin'\]/)
   })
 
   it('las reglas de acceso aplican como a las demás privadas', () => {
     const rule = { access: 'private' as const, roles: ['editor', 'admin'] as ('editor' | 'admin')[] }
     expect(resolveAccess(rule, none, '/peticiones')).toEqual({ redirect: '/login?redirect=%2Fpeticiones' })
+    expect(resolveAccess(rule, none, '/peticiones/generaciones/abc')).toEqual({ redirect: '/login?redirect=%2Fpeticiones%2Fgeneraciones%2Fabc' })
     expect(resolveAccess(rule, pending, '/peticiones')).toEqual({ redirect: '/pendiente' })
+    expect(resolveAccess(rule, pending, '/peticiones/generaciones/abc')).toEqual({ redirect: '/pendiente' })
     expect(resolveAccess(rule, editor, '/peticiones')).toEqual(allow)
+    expect(resolveAccess(rule, editor, '/peticiones/generaciones/abc')).toEqual(allow)
     expect(resolveAccess(rule, admin, '/peticiones')).toEqual(allow)
   })
 })

@@ -33,6 +33,18 @@ describe('PrayerSelectionBar', () => {
     expect(none.get(`#${button.attributes('aria-describedby')}`).text()).toBe('Elige al menos una petición para generar sus imágenes')
   })
 
+  it('mientras se crea la generación (`busy`) el botón queda deshabilitado y ocupado, con un indicador en vez del icono', async () => {
+    const wrapper = await mountSuspended(PrayerSelectionBar, { props: { count: 3, images: 1, busy: true } })
+    const button = buttonsWithText(wrapper, 'Generar imágenes')[0]!
+    expect(button.attributes('disabled')).toBeDefined()
+    expect(button.attributes('aria-busy')).toBe('true')
+    expect(button.find('.loading-spinner').exists()).toBe(true)
+    await button.trigger('click')
+    expect(wrapper.emitted('generate')).toBeUndefined()
+    const idle = await mountSuspended(PrayerSelectionBar, { props: { count: 3, images: 1 } })
+    expect(buttonsWithText(idle, 'Generar imágenes')[0]!.attributes('aria-busy')).toBe('false')
+  })
+
   it('botones de tamaño base (≥ 44 px) y área segura inferior', async () => {
     const wrapper = await mountSuspended(PrayerSelectionBar, { props: { count: 2, images: 1 } })
     for (const button of wrapper.findAll('button')) expect(button.classes().some(c => /^btn-(sm|xs)$/.test(c)), button.text()).toBe(false)

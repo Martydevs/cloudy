@@ -109,7 +109,7 @@ describe('guards de los endpoints', () => {
     expect(files.filter(f => (isPublic(f) || isCron(f)) && f.includes('songs'))).toEqual([])
   })
 
-  it('los endpoints de Peticiones (con el historial y las colecciones) exigen rol de equipo y ninguno es público ni exento (feature 007)', () => {
+  it('los endpoints de Peticiones (con el historial, las colecciones y las generaciones) exigen rol de equipo y ninguno es público ni exento (feature 007)', () => {
     const prayers = files.filter(f => f.startsWith('peticiones/'))
     expect(prayers).toEqual([
       'peticiones/colecciones/[id]/index.delete.ts',
@@ -119,6 +119,9 @@ describe('guards de los endpoints', () => {
       'peticiones/colecciones/[id]/items/index.post.ts',
       'peticiones/colecciones/index.get.ts',
       'peticiones/colecciones/index.post.ts',
+      // Página de generación (enmienda 2026-11-15).
+      'peticiones/generaciones/[id].get.ts',
+      'peticiones/generaciones/index.post.ts',
       'peticiones/imagenes/[id]/content.get.ts',
       'peticiones/imagenes/[id]/index.delete.ts',
       'peticiones/imagenes/index.get.ts',

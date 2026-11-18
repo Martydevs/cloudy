@@ -32,7 +32,11 @@ const row = (page: Page) => page.getByRole('list', { name: 'Colecciones de imág
 const collectionCard = (page: Page, name: string) => row(page).getByRole('button', { name: new RegExp(`^Abrir la colección ${name},`) })
 const toast = (page: Page, text: string) => page.getByText(text, { exact: true })
 
-/** Genera una imagen con una petición nueva y devuelve su id (la respuesta 201 del servidor). */
+/**
+ * Genera una imagen con una petición nueva y devuelve su id (la respuesta 201 del servidor). «Generar imágenes» lleva a la
+ * página de la generación (enmienda 2026-11-15); al terminar se vuelve a /peticiones con el historial a la vista, donde la
+ * imagen ya está guardada con su enlace «Ver generación».
+ */
 async function generateOne(page: Page, owner: string, label: string): Promise<string> {
   const senderName = `${label} ${runId()}`
   await seedPrayerRequest(owner, { senderName })
@@ -40,13 +44,19 @@ async function generateOne(page: Page, owner: string, label: string): Promise<st
   await waitForHydration(page)
   await page.getByRole('checkbox', { name: `Elegir la petición de ${senderName}`, exact: true }).check()
   const response = page.waitForResponse(r => r.request().method() === 'POST' && new URL(r.url()).pathname === '/api/peticiones/imagenes')
-  // Sin diálogo: encola al instante y la selección se vacía.
+  // Sin diálogo: crea la generación, encola al instante, vacía la selección y abre la página de la generación.
   await page.getByRole('region', { name: 'Selección de peticiones' }).getByRole('button', { name: 'Generar imágenes', exact: true }).click()
+  await page.waitForURL(/\/peticiones\/generaciones\/[0-9a-f-]{36}$/)
+  const generationId = new URL(page.url()).pathname.split('/').pop()!
   const res = await response
   expect(res.status()).toBe(201)
-  const { id } = await res.json() as { id: string }
-  // Fuera de un `it` (también se usa en `beforeAll`): espera de Playwright en vez de `expect.poll`.
+  const { id, generationId: bound } = await res.json() as { id: string, generationId: string | null }
+  expect(bound).toBe(generationId)
+  // La diapositiva muestra la imagen guardada (fuera de un `it`, también en `beforeAll`: esperas de Playwright).
+  await page.getByRole('region', { name: 'Imágenes de la generación' }).getByRole('img', { name: /^Imagen 1 de peticiones/ }).waitFor({ state: 'visible', timeout: 15_000 })
+  await openPage(page)
   await saved(page, id).waitFor({ state: 'visible', timeout: 15_000 })
+  expect(await saved(page, id).getByRole('link', { name: 'Ver generación' }).getAttribute('href')).toBe(`/peticiones/generaciones/${generationId}`)
   return id
 }
 

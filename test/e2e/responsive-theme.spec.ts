@@ -8,7 +8,7 @@ import { createPage, setup } from '@nuxt/test-utils/e2e'
 import type { BrowserContext, Locator, Page } from 'playwright-core'
 import { afterAll, describe, expect, it } from 'vitest'
 import { ALLOWED_TYPES, getExtension } from '../../shared/constants/files'
-import { E2E_URL, email, ensureAccount, login, profileUserId, routeYoutubeEmbed, routeYoutubeThumbnails, runId, seedFolder, setProfile, signedInAs, testSql, viewports, waitForHydration } from './setup/fixtures'
+import { E2E_URL, email, ensureAccount, login, profileUserId, routeYoutubeEmbed, routeYoutubeThumbnails, runId, seedFolder, seedPrayerRequest, setProfile, signedInAs, testSql, viewports, waitForHydration } from './setup/fixtures'
 
 await setup({ host: E2E_URL, browser: true })
 
@@ -217,8 +217,8 @@ const PRIVATE_ROUTES = [
   '/youtube', '/youtube/:id', '/youtube/:id/ventana',
   // Página Canciones (feature 006): `:id` es una canción sembrada en esta corrida.
   '/canciones', '/canciones/:id',
-  // Página Peticiones (feature 007).
-  '/peticiones',
+  // Página Peticiones (feature 007) y la página de una generación (enmienda 2026-11-15): `:id` es una generación sembrada.
+  '/peticiones', '/peticiones/generaciones/:id',
 ]
 const PUBLIC_ROUTES = ['/login', '/registro', '/recuperar', '/restablecer', '/upload', '/acceso-denegado']
 const PENDING_ROUTES = ['/pendiente']
@@ -395,7 +395,7 @@ describe('US9 · recorrido de rutas (T151)', () => {
 
   describe('privadas, como administradora', () => {
     const pool = pagePool(viewport => pageAs('admin', ADMIN, viewport))
-    let seed: { folderId: string, fileId: string, songId: string } | null = null
+    let seed: { folderId: string, fileId: string, songId: string, generationId: string } | null = null
 
     afterAll(() => pool.closeAll())
 
@@ -408,7 +408,10 @@ describe('US9 · recorrido de rutas (T151)', () => {
         const [song] = await sql`INSERT INTO songs (source_url, title, artist, lyrics)
           VALUES (${`https://letras.com/e2e/recorrido-${runId()}`}, ${`Recorrido ${runId()}`}, 'Cloudy', ${JSON.stringify([['Primera línea', 'Segunda línea']])}::jsonb)
           RETURNING id` as { id: string }[]
-        seed = { folderId, fileId: await seedFile(`Recorrido ${runId()}.pptx`, owner, folderId), songId: song!.id }
+        // Una generación con una petición sin imagen: la página la muestra «Sin terminar» sin pedir nada al bucket.
+        const { fileId: prayerId } = await seedPrayerRequest(owner, { senderName: `Recorrido ${runId()}` })
+        const [generation] = await sql`INSERT INTO prayer_generations (created_by, groups) VALUES (${owner}, ${JSON.stringify([[prayerId]])}::jsonb) RETURNING id` as { id: string }[]
+        seed = { folderId, fileId: await seedFile(`Recorrido ${runId()}.pptx`, owner, folderId), songId: song!.id, generationId: generation!.id }
       }
       return seed
     }
@@ -416,8 +419,9 @@ describe('US9 · recorrido de rutas (T151)', () => {
     it.each(PRIVATE_ROUTES)('%s', async (pattern) => {
       for (const viewport of VIEWPORTS) {
         const { page, errors } = await pool.get(viewport)
-        const { folderId, fileId, songId } = await seeded()
-        const path = pattern.replace(':folderId', folderId).replace(':fileId', fileId).replace(':id', pattern.startsWith('/canciones/') ? songId : 'okShortVid1')
+        const { folderId, fileId, songId, generationId } = await seeded()
+        const id = pattern.startsWith('/canciones/') ? songId : pattern.startsWith('/peticiones/') ? generationId : 'okShortVid1'
+        const path = pattern.replace(':folderId', folderId).replace(':fileId', fileId).replace(':id', id)
         for (const theme of THEMES) await audit(page, errors, path, theme, viewport)
       }
     })

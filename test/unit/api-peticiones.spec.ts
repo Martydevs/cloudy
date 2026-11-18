@@ -61,6 +61,7 @@ describe('GET /api/peticiones', () => {
 
 describe('POST /api/peticiones/imagenes', () => {
   const IDS = ['3f2504e0-4f89-11d3-9a0c-0305e82c3301', '9b2c1f0e-1d2c-4e5f-8a9b-0c1d2e3f4a5b']
+  const GENERATION = '1b4e28ba-2fa1-11d2-883f-0016d3cca427'
   const PNG = new Uint8Array([0x89, 0x50, 0x4E, 0x47])
 
   function install({ createPrayerImage = vi.fn(async () => ({ mediaType: 'image/png', data: PNG, count: 2 })), hitRateLimit = vi.fn(async () => {}), db = [] as unknown[] } = {}) {
@@ -90,15 +91,63 @@ describe('POST /api/peticiones/imagenes', () => {
       requestCount: 2,
       author: { userId: 'u1', name: 'Ana', active: true },
       createdAt: expect.any(String),
+      generationId: null,
     })
     expect(s3.putObject).toHaveBeenCalledWith(`pre/peticiones/${id}.png`, PNG, 'image/png')
     expect(fake.calls.find(c => c.method === 'values')?.args[0]).toMatchObject({
-      id, storageKey: `pre/peticiones/${id}.png`, mediaType: 'image/png', sizeBytes: 4, fileIds: IDS, createdBy: 'u1',
+      id, storageKey: `pre/peticiones/${id}.png`, mediaType: 'image/png', sizeBytes: 4, fileIds: IDS, createdBy: 'u1', generationId: null,
     })
     expect(event.node.res.statusCode).toBe(201)
     expect(event.node.res.getHeader('Cache-Control')).toBe('no-store')
     expect(event.node.res.getHeader('Content-Type')).not.toBe('image/png')
     expect(s3.deleteMany).not.toHaveBeenCalled()
+  })
+
+  // ---- Página de generación (enmienda 2026-11-15)
+
+  it('con generationId: comprueba que los ids sean un grupo de la generación antes de generar y liga la imagen a ella', async () => {
+    const assertPrayerGenerationGroup = vi.fn(async () => {})
+    const createPrayerImage = vi.fn(async () => ({ mediaType: 'image/png', data: PNG, count: 2 }))
+    const fake = installNitro([], { createPrayerImage, hitRateLimit: vi.fn(async () => {}), assertPrayerGenerationGroup })
+    const handler = await loadHandler<Record<string, unknown>>('api/peticiones/imagenes/index.post.ts')
+    const event = makeEvent({ method: 'POST', url: '/api/peticiones/imagenes', body: { fileIds: IDS, generationId: GENERATION } })
+    const image = await handler(event)
+    expect(assertPrayerGenerationGroup).toHaveBeenCalledWith(GENERATION, IDS)
+    expect(assertPrayerGenerationGroup.mock.invocationCallOrder[0]).toBeLessThan(createPrayerImage.mock.invocationCallOrder[0]!)
+    expect(image.generationId).toBe(GENERATION)
+    expect(fake.calls.find(c => c.method === 'values')?.args[0]).toMatchObject({ fileIds: IDS, generationId: GENERATION })
+    expect(event.node.res.statusCode).toBe(201)
+  })
+
+  it.each([
+    ['generation_not_found', 404],
+    ['generation_mismatch', 409],
+  ] as const)('%s de la generación → %i sin llamar al modelo ni subir nada', async (code, status) => {
+    const createPrayerImage = vi.fn()
+    installNitro([], { createPrayerImage, hitRateLimit: vi.fn(async () => {}), assertPrayerGenerationGroup: vi.fn(async () => { throw prayerError(code) }) })
+    const { result } = await post({ fileIds: IDS, generationId: GENERATION })
+    expect((await expectStatus(result, status)).data).toEqual({ code })
+    expect(createPrayerImage).not.toHaveBeenCalled()
+    expect(s3.putObject).not.toHaveBeenCalled()
+  })
+
+  it('un generationId que no es UUID → 422 sin consultar', async () => {
+    const assertPrayerGenerationGroup = vi.fn()
+    const { createPrayerImage, hitRateLimit } = install()
+    installNitro([], { createPrayerImage, hitRateLimit, assertPrayerGenerationGroup })
+    const { result } = await post({ fileIds: IDS, generationId: 'abc' })
+    await expectStatus(result, 422)
+    expect(assertPrayerGenerationGroup).not.toHaveBeenCalled()
+    expect(createPrayerImage).not.toHaveBeenCalled()
+  })
+
+  it('sin generationId no se comprueba ninguna generación', async () => {
+    const assertPrayerGenerationGroup = vi.fn()
+    const { createPrayerImage, hitRateLimit } = install()
+    installNitro([], { createPrayerImage, hitRateLimit, assertPrayerGenerationGroup })
+    const { result } = await post({ fileIds: IDS })
+    await result
+    expect(assertPrayerGenerationGroup).not.toHaveBeenCalled()
   })
 
   it('JPEG se guarda como .jpg', async () => {

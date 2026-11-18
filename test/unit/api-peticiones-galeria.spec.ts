@@ -4,7 +4,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { QueryBuilder } from 'drizzle-orm/pg-core'
 import { authAs, created, expectGuarded, expectStatus, installNitro, loadHandler, makeEvent, sqlText, UUID, UUID2 } from './helpers/nitro'
-import { canManagePrayerImage, listPrayerImages, prayerImageColumns, prayerImageFilename, purgeExpiredPrayerImages, toPrayerGeneratedImage } from '../../server/utils/prayer-gallery'
+import { canManagePrayerImage, listGenerationImages, listPrayerImages, prayerImageColumns, prayerImageFilename, purgeEmptyPrayerGenerations, purgeExpiredPrayerImages, toPrayerGeneratedImage } from '../../server/utils/prayer-gallery'
 import {
   canManagePrayerCollection,
   listPrayerCollectionsQuery,
@@ -37,7 +37,7 @@ const FILE = '00000000-0000-4000-8000-000000000001'
 
 const imageRow = (changes: Record<string, unknown> = {}) => ({
   id: UUID, storageKey: `pre/peticiones/${UUID}.png`, mediaType: 'image/png', fileIds: [FILE], createdBy: 'u1', createdAt: created,
-  authorName: 'Ana', authorStatus: 'active', ...changes,
+  generationId: null, authorName: 'Ana', authorStatus: 'active', ...changes,
 })
 const collectionRow = (changes: Record<string, unknown> = {}) => ({
   id: UUID, name: 'Domingo', createdBy: 'u1', createdAt: created, updatedAt: created, authorName: 'Ana', authorStatus: 'active', itemCount: 2, ...changes,
@@ -53,7 +53,10 @@ describe('prayer-gallery', () => {
       requestCount: 1,
       author: { userId: 'u1', name: 'Usuario', active: false },
       createdAt: created.toISOString(),
+      generationId: null,
     })
+    // Una imagen salida de una generación lleva su id (el historial ofrece «Ver generación»).
+    expect(toPrayerGeneratedImage(imageRow({ generationId: UUID2 })).generationId).toBe(UUID2)
   })
 
   it('prayerImageFilename: fecha UTC y 6 caracteres del id; un tipo raro cae en .png', () => {
@@ -69,8 +72,8 @@ describe('prayer-gallery', () => {
     expect(canManagePrayerImage({ userId: 'u3', role: null }, { createdBy: 'u1' })).toBe(false)
   })
 
-  it('las columnas del historial traen el autor y nada que la tarjeta no use', () => {
-    expect(Object.keys(prayerImageColumns)).toEqual(['id', 'storageKey', 'mediaType', 'fileIds', 'createdBy', 'createdAt', 'authorName', 'authorStatus'])
+  it('las columnas del historial traen el autor, la generación y nada que la tarjeta no use', () => {
+    expect(Object.keys(prayerImageColumns)).toEqual(['id', 'storageKey', 'mediaType', 'fileIds', 'createdBy', 'createdAt', 'generationId', 'authorName', 'authorStatus'])
   })
 
   it('listPrayerImages: limit + 1 para saber si hay más; el cursor es la última fila y sigue con `<`', async () => {
@@ -114,6 +117,40 @@ describe('prayer-gallery', () => {
     installNitro([[]])
     expect(await purgeExpiredPrayerImages()).toBe(0)
     expect(s3.deleteMany).not.toHaveBeenCalled()
+  })
+
+  // ---- Página de generación (enmienda 2026-11-15)
+
+  it('listGenerationImages: una sola sentencia por generation_id, la más reciente primero', async () => {
+    const fake = installNitro([[imageRow({ generationId: UUID2 }), imageRow({ id: FILE, generationId: UUID2 })]])
+    const images = await listGenerationImages(UUID2)
+    expect(images.map(image => [image.id, image.generationId])).toEqual([[UUID, UUID2], [FILE, UUID2]])
+    expect(fake.calls.filter(c => c.method === 'select')).toHaveLength(1)
+    const where = sqlText(fake.calls.find(c => c.method === 'where')?.args[0])
+    expect(where).toContain('"prayer_images"."generation_id" = $1')
+    expect(where).toContain(UUID2)
+    const order = fake.calls.find(c => c.method === 'orderBy')!.args.map(sqlText)
+    expect(order).toEqual([expect.stringContaining('"prayer_images"."created_at" desc'), expect.stringContaining('"prayer_images"."id" desc')])
+  })
+
+  it('purgeEmptyPrayerGenerations: lotes de 500 de más de 30 días sin ninguna imagen; nada que borrar en el bucket', async () => {
+    const batch = Array.from({ length: 500 }, (_, i) => ({ id: `g${i}` }))
+    const fake = installNitro([batch, [{ id: 'ultima' }]])
+    expect(await purgeEmptyPrayerGenerations()).toBe(501)
+    const wheres = fake.calls.filter(c => c.method === 'where').map(c => sqlText(c.args[0]))
+    expect(wheres).toHaveLength(2)
+    expect(wheres[0]).toContain('FROM prayer_generations g')
+    expect(wheres[0]).toContain('g.created_at < now() - make_interval(days => $1::int)')
+    expect(wheres[0]).toContain('NOT EXISTS (SELECT 1 FROM prayer_images p WHERE p.generation_id = g.id)')
+    expect(wheres[0]).toContain('[30,500]')
+    expect(fake.calls.filter(c => c.method === 'delete')).toHaveLength(2)
+    expect(s3.deleteMany).not.toHaveBeenCalled()
+  })
+
+  it('purgeEmptyPrayerGenerations: sin vacías devuelve 0 con una sola vuelta', async () => {
+    const fake = installNitro([[]])
+    expect(await purgeEmptyPrayerGenerations()).toBe(0)
+    expect(fake.calls.filter(c => c.method === 'delete')).toHaveLength(1)
   })
 })
 

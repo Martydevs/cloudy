@@ -204,15 +204,22 @@ describe('/peticiones', () => {
   })
 
   describe('US2 · generar', () => {
+    const GEN = '30000000-0000-4000-8000-000000000001'
     const saved = async (event: H3Event): Promise<PrayerGeneratedImage> => {
-      const { fileIds } = await readBody<{ fileIds: string[] }>(event)
+      const { fileIds, generationId } = await readBody<{ fileIds: string[], generationId?: string }>(event)
       setResponseStatus(event, 201)
-      return generated(fileIds.length === 4 ? 1 : 2, { fileIds, requestCount: fileIds.length })
+      return generated(fileIds.length === 4 ? 1 : 2, { fileIds, requestCount: fileIds.length, generationId: generationId ?? null })
+    }
+    const createdGeneration = (event: H3Event) => {
+      setResponseStatus(event, 201)
+      return { id: GEN }
     }
 
-    beforeEach(() => {
+    beforeEach(async () => {
       usePrayerImages().reset()
       useToast().toasts.value = []
+      useConfirm().options.value = null
+      mockApi('POST', '/api/peticiones/generaciones', createdGeneration)
       mockApi('POST', '/api/peticiones/imagenes', saved)
     })
 
@@ -224,63 +231,114 @@ describe('/peticiones', () => {
       return wrapper
     }
 
+    const creations = () => calls.filter(c => c.method === 'POST' && c.url === '/api/peticiones/generaciones')
+    /**
+     * Fuera de un componente, `useRoute()` no sigue al router: se lee la ruta actual del router. `mountSuspended` deja el
+     * router en `/`, así que «no se navegó» se comprueba como «no está en una generación».
+     */
+    const currentPath = () => useRouter().currentRoute.value.path
+    const generationPath = `/peticiones/generaciones/${GEN}`
     const posts = () => calls.filter(c => c.method === 'POST' && c.url === '/api/peticiones/imagenes')
 
     type Page = Awaited<ReturnType<typeof mountSuspended<typeof PeticionesPage>>>
 
-    /** «Generar imágenes» de la barra: encola sin diálogo. */
+    const generateButton = (wrapper: Page) => buttonsWithText(wrapper.get('[aria-label="Selección de peticiones"]'), 'Generar imágenes')[0]!
+
+    /** «Generar imágenes» de la barra: crea la generación, encola sin diálogo y lleva a su página. */
     async function generate(wrapper: Page) {
-      await buttonsWithText(wrapper.get('[aria-label="Selección de peticiones"]'), 'Generar imágenes')[0]!.trigger('click')
+      await generateButton(wrapper).trigger('click')
       await flush(15)
     }
 
-    it('«Generar imágenes» encola al instante, sin diálogo: solo ids, el historial los recibe y la selección se vacía', async () => {
-      const scroll = vi.fn()
-      Element.prototype.scrollIntoView = scroll
+    it('«Generar imágenes» crea la generación con los grupos, encola sus imágenes ligadas a ella, vacía la selección y lleva a su página, sin diálogo', async () => {
       const wrapper = await choose(5)
       await generate(wrapper)
       expect(document.body.querySelector('dialog textarea')).toBeNull()
-      const bodies = posts().map(c => c.body as Record<string, unknown>)
-      expect(bodies.map(body => Object.keys(body))).toEqual([['fileIds'], ['fileIds']])
-      expect(bodies.map(body => (body.fileIds as string[]).length)).toEqual([4, 1])
+      // Primero la generación: los grupos de la selección, en orden, uno por imagen.
+      const [creation] = creations()
+      const { groups } = creation!.body as { groups: string[][] }
+      expect(groups.map(group => group.length)).toEqual([4, 1])
+      // Luego una imagen por grupo, cada una con el id de la generación.
+      const bodies = posts().map(c => c.body as { fileIds: string[], generationId: string })
+      expect(bodies.map(body => Object.keys(body).sort())).toEqual([['fileIds', 'generationId'], ['fileIds', 'generationId']])
+      expect(bodies.map(body => body.fileIds)).toEqual(groups)
+      expect(bodies.every(body => body.generationId === GEN)).toBe(true)
+      expect(creation!.body).toEqual({ groups })
       // Ni nombres ni notas viajan al servidor.
-      expect(JSON.stringify(bodies)).not.toMatch(/Invitado|nota/i)
+      expect(JSON.stringify([creation!.body, ...bodies])).not.toMatch(/Invitado|nota/i)
       expect(useToast().toasts.value.map(t => t.message)).toContain('2 imágenes en cola')
-      // `LazyPrayerHistory` es un `import()`: con la suite completa su chunk puede tardar más que unos ticks.
-      await vi.waitFor(() => expect(wrapper.findAll('ul[aria-label="Imágenes generadas"] > li')).toHaveLength(2), { timeout: 5000 })
-      expect(wrapper.find('[aria-label="Imágenes en curso"]').exists()).toBe(false)
       // Un segundo clic no puede gastar crédito dos veces: la barra desaparece con la selección.
       expect(usePrayerSelection().count.value).toBe(0)
       expect(wrapper.find('[aria-label="Selección de peticiones"]').exists()).toBe(false)
-      expect(scroll).toHaveBeenCalled()
-      // El historial va después de la rejilla.
-      const html = wrapper.html()
-      expect(html.indexOf('aria-label="Imágenes generadas"')).toBeGreaterThan(html.indexOf('aria-label="Peticiones aprobadas"'))
+      // La página de la generación se queda con la cola (la primera navegación carga su chunk).
+      await vi.waitFor(() => expect(currentPath()).toBe(generationPath), { timeout: 5000 })
+      expect(useConfirm().options.value).toBeNull()
+      // Lo guardado entra en el historial (lo ve quien vuelve a Peticiones) y sale de la cola.
+      await vi.waitFor(() => expect(wrapper.findAll('ul[aria-label="Imágenes generadas"] > li')).toHaveLength(2), { timeout: 5000 })
+      expect(usePrayerImages().items.value).toEqual([])
+      expect(useState<PrayerGeneratedImage[]>(PRAYER_HISTORY_ADDED_KEY).value.map(image => image.generationId)).toEqual([GEN, GEN])
+      wrapper.unmount()
+    })
+
+    it('mientras se crea la generación el botón queda ocupado: un doble clic no crea dos', async () => {
+      let answer: (() => void) | undefined
+      mockApi('POST', '/api/peticiones/generaciones', async (event: H3Event) => {
+        await new Promise<void>(resolve => (answer = resolve))
+        return createdGeneration(event)
+      })
+      const wrapper = await choose(1)
+      await generateButton(wrapper).trigger('click')
+      await flush()
+      expect(generateButton(wrapper).attributes('aria-busy')).toBe('true')
+      expect(generateButton(wrapper).attributes('disabled')).toBeDefined()
+      await generateButton(wrapper).trigger('click')
+      answer?.()
+      await flush(15)
+      expect(creations()).toHaveLength(1)
+      expect(posts()).toHaveLength(1)
       wrapper.unmount()
     })
 
     it('una sola petición sale en una imagen', async () => {
       const wrapper = await choose(1)
       await generate(wrapper)
-      expect(posts().map(c => c.body)).toEqual([{ fileIds: [prayer(1).id] }])
+      expect(creations().map(c => c.body)).toEqual([{ groups: [[prayer(1).id]] }])
+      expect(posts().map(c => c.body)).toEqual([{ fileIds: [prayer(1).id], generationId: GEN }])
       expect(useToast().toasts.value.map(t => t.message)).toContain('1 imagen en cola')
       wrapper.unmount()
     })
 
-    it('una foto ilegible queda fallida con su mensaje y sin «Reintentar»', async () => {
+    it('una foto ilegible queda fallida con su mensaje y sin reintento, ligada a la generación', async () => {
       mockApi('POST', '/api/peticiones/imagenes', (event: H3Event) => {
         setResponseStatus(event, 422)
         return { statusCode: 422, message: 'x', data: { code: 'unreadable_image', ids: [prayer(1).id] } }
       })
       const wrapper = await choose(1)
       await generate(wrapper)
-      await vi.waitFor(() => expect(wrapper.text()).toContain('Alguna foto no se puede leer'), { timeout: 5000 })
-      const queue = wrapper.get('[aria-label="Imágenes en curso"]')
-      expect(buttonsWithText(queue, 'Reintentar')).toHaveLength(0)
+      await vi.waitFor(() => expect(usePrayerImages().items.value[0]).toMatchObject({ status: 'failed', errorCode: 'unreadable_image', retryable: false, generationId: GEN }), { timeout: 5000 })
+      expect(usePrayerImages().items.value[0]!.error).toBe('Alguna foto no se puede leer. Quítala de tu selección o pídele al invitado que la envíe de nuevo en JPG o PNG.')
       wrapper.unmount()
     })
 
-    it('un 409 retira de la selección las peticiones no disponibles (aunque se hayan vuelto a elegir) y avisa', async () => {
+    it('si una petición ya no está disponible al crear la generación (409), se quita de la selección con aviso y no se encola ni se navega', async () => {
+      mockApi('POST', '/api/peticiones/generaciones', (event: H3Event) => {
+        setResponseStatus(event, 409)
+        return { statusCode: 409, message: 'x', data: { code: 'request_unavailable', ids: [prayer(2).id] } }
+      })
+      const wrapper = await choose(2)
+      await generate(wrapper)
+      expect(usePrayerSelection().isSelected(prayer(2).id)).toBe(false)
+      expect(usePrayerSelection().isSelected(prayer(1).id)).toBe(true)
+      expect(usePrayerSelection().count.value).toBe(1)
+      expect(wrapper.get('[aria-label="Selección de peticiones"]').text()).toContain('1 petición → 1 imagen')
+      expect(useToast().toasts.value.map(t => t.message)).toContain('Quitamos 1 petición que ya no está disponible')
+      expect(posts()).toHaveLength(0)
+      expect(usePrayerImages().items.value).toEqual([])
+      expect(currentPath()).not.toBe(generationPath)
+      wrapper.unmount()
+    })
+
+    it('un 409 al generar una imagen también retira la petición de la selección si se volvió a elegir', async () => {
       let answer: (() => void) | undefined
       mockApi('POST', '/api/peticiones/imagenes', async (event: H3Event) => {
         await new Promise<void>(resolve => (answer = resolve))
@@ -298,13 +356,29 @@ describe('/peticiones', () => {
       expect(usePrayerSelection().isSelected(prayer(2).id)).toBe(false)
       expect(usePrayerSelection().count.value).toBe(1)
       expect(useToast().toasts.value.map(t => t.message)).toContain('Quitamos 1 petición que ya no está disponible')
+      expect(usePrayerImages().items.value[0]).toMatchObject({ status: 'failed', errorCode: 'request_unavailable', retryable: false })
       wrapper.unmount()
     })
 
-    it('con imágenes generándose, salir pide confirmación; aceptarla cancela la cola', async () => {
+    it('si no se pudo crear la generación (500), avisa y conserva la selección sin encolar nada', async () => {
+      mockApi('POST', '/api/peticiones/generaciones', failWith(500))
+      const wrapper = await choose(2)
+      await generate(wrapper)
+      expect(useToast().toasts.value.map(t => t.message).some(text => text.startsWith('No pudimos preparar la generación.'))).toBe(true)
+      expect(usePrayerSelection().count.value).toBe(2)
+      expect(posts()).toHaveLength(0)
+      expect(currentPath()).not.toBe(generationPath)
+      expect(generateButton(wrapper).attributes('disabled')).toBeUndefined()
+      wrapper.unmount()
+    })
+
+    it('ir a la generación no vacía la cola ni pregunta; con imágenes generándose, salir a otra página pide confirmación y aceptarla cancela la cola', async () => {
       mockApi('POST', '/api/peticiones/imagenes', () => new Promise(() => {}))
       const wrapper = await choose(1)
       await generate(wrapper)
+      await vi.waitFor(() => expect(currentPath()).toBe(generationPath), { timeout: 5000 })
+      expect(useConfirm().options.value).toBeNull()
+      expect(usePrayerImages().items.value).toHaveLength(1)
       expect(usePrayerImages().needsLeaveGuard.value).toBe(true)
       const router = useRouter()
       const leaving = router.push('/archivos')
