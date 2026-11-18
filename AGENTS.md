@@ -11,7 +11,7 @@ configuration must point here instead of copying these rules.
 **Product areas today**: the shared drive (folders, files, comments, trash, activity), guest uploads and the team's approval queue,
 users and roles (admin / editor), YouTube downloads and playlists, Canciones (Letras.com lyrics turned into `.pptx` slides) and
 Peticiones (approved guest prayer-request photos whose text a model reads, an editor corrects and verifies, and an OpenRouter preset
-then draws onto a template). How each area behaves in detail, and the decisions that shaped it, are recorded in "Known gotchas" below.
+then draws onto a template; editors can also add a request themselves from the page, approved on upload). How each area behaves in detail, and the decisions that shaped it, are recorded in "Known gotchas" below.
 The old background image-text extraction (`files.text_*`) was removed (migration `0011`); Peticiones reads photos on demand into its own table.
 
 ## Stack
@@ -322,11 +322,23 @@ Never print or commit their values.
   decoding). The photo gets a `presignGet` URL of 300 s and goes to the model as a URL; **no photo bytes pass through the function**: both model resolvers wrap the model
   with `wrapLanguageModel` + `overrideSupportedUrls` (any `https://`), because `@openrouter/ai-sdk-provider` only forwards URLs ending in an image extension and guest
   keys have none. `transcribePrayerPhoto` (`server/ai/prayer-transcript/`) makes one `generateText` call with `Output.object` (`{ hasText, text }`), 30 s per attempt,
-  one retry, 45 s cap, and never throws. Reads have **no Cloudy rate limit** (team decision: OpenRouter credit is the only brake); the 60-per-hour limit on image
+  one retry, 45 s cap, and never throws. **Bounded output**: the text is capped at `PRAYER_TEXT_MAX_LENGTH` and the call carries
+  `maxOutputTokens` (`PRAYER_TRANSCRIPT_MAX_OUTPUT_TOKENS` = 1200, in `schemas.ts`; raise it if reads come back cut, e.g. with a reasoning model). A longer
+  answer, or one cut by the token cap, is **not truncated silently**: it fails as `invalid_output` («Volver a leer» / «Escribir a mano») and nothing is stored;
+  `hasText: false` still forces an empty text. The cap is validated on our side (`jsonSchema(…, { validate })` over the zod schema) and stated in the field
+  description, but **not sent as `maxLength`**: the provider asks for `json_schema` with `strict: true` and some models reject the whole call on keywords they
+  do not support. Reads have **no Cloudy rate limit** (team decision: OpenRouter credit is the only brake); the 60-per-hour limit on image
   generation stays. **Text-only generation**: the generation endpoints still take only ids; `createPrayerGeneration` and `createPrayerImage` load the verified texts
   themselves at the moment they run (a text re-saved while its image was queued is the one used) and answer **`409 transcript_unverified`** (`data.ids`, not retryable in
   the queue, zero provider calls) if any is missing, in draft or blank. The image model gets the template and one `<peticion>…</peticion>` text block per request, in
-  order, and **no guest photo**; the provider never gets names, notes, IPs or ids, and logs carry only codes (`[prayer-image] …`, `[prayer-transcript] …`). Transcript text
+  order, and **no guest photo**; the provider never gets names, notes, IPs or ids, and logs carry only codes (`[prayer-image] …`, `[prayer-transcript] …`).
+  **Template by signed URL**: the template no longer travels as ~935 KB of base64 in every call. `server/utils/prayer-template.ts` (the only place that knows the
+  asset; it never touches the database or a guest photo, `architecture.spec.ts`) memoises it per instance, uploads it **once** to `peticiones/plantilla-<sha256:16>.jpg`
+  (`head`, then `putObject`; a new template gets a new key and the cron never deletes these), and signs a 300 s GET URL that `generatePrayerImage` receives as
+  `template: URL`. If storage fails or the URL is not https, the bytes are sent as before (`[prayer-image] template_url_failed`), so there is no new failure mode. The
+  call also carries `image_config` (`aspect_ratio` read from the template's JPEG header with `jpegSize`/`nearestAspectRatio` in `shared/jpeg.ts`, `image_size: '1K'`)
+  through `providerOptions.openrouter`; a model that does not support it ignores it. Every call logs one `console.info` line with numbers and codes only:
+  `[prayer-image] call status=ok|failed ms=… template=url|bytes:…KB texts=… out=…KB`. `maxRetries` stays 1 (the AI SDK never retries a 402 or another 4xx). Transcript text
   is untrusted input: it only reaches the prompt and is rendered as plain text (never `v-html`). A key or preset that OpenRouter rejects (401/403/404, e.g. 401 «User not
   found.» for a deleted key) comes back from `#server/ai` as `rejected` and reaches the browser as **503 `not_configured`** (no «Reintentar»), logged as
   `[prayer-image] not_configured (OpenRouter rejected the key or preset)` (same for `[prayer-transcript]`). Both presets' **system prompts live in OpenRouter**: the
@@ -337,7 +349,7 @@ Never print or commit their values.
   the browser's local day sent as ISO instants, `to` exclusive). E2E run against the OpenRouter stub (`test/e2e/setup/openrouter-stub.ts`), which serves both use cases and
   never downloads a photo: a **read** is recognised by its preset, answered with the structured JSON («Texto leído N», or `transcriptText`) and recorded in
   `transcriptCalls()` (model, `photo` URL, `images`, `structured`, prompt, `text`, status); a **generation** is recognised by its preset or `modalities`, answered with
-  `message.images` (a PNG fixture) and recorded in `prayerCalls()` (model, modalities, `template`, `texts`, `photos` (must be empty), prompt). Any other call gets a 400.
+  `message.images` (a PNG fixture) and recorded in `prayerCalls()` (model, modalities, `template`, `templateKind` (`url` = the signed copy, `bytes` = the base64 fallback), `imageConfig`, `texts`, `photos` (must be empty), prompt). Any other call gets a 400.
   Scenarios are set per test with `setStubMode({ scenario, match, transcriptDelayMs, transcriptText })` (`match`: only reads whose photo URL contains it, e.g. a file id, and
   generations with a text containing it): `sin-credito` (402) and `clave-rechazada` (401 «User not found.») for both; `sin-imagen`, `lento`, `falla-una-vez` (fails the
   first **two** affected calls, because the AI SDK retries once by itself) for generation; `sin-texto` (`hasText: false`) and `lectura-falla` (500) for reads.
@@ -356,6 +368,28 @@ Never print or commit their values.
   (photos blocked), CLS and the 250 KB JS budget, and only reports the LCP with photos. Thumbnails were postponed by the team.
   **Dev QA**: a `.env.development` with an OpenRouter key makes opening the review dialog (reads) and «Generar» real, paid calls; mock
   `POST /api/peticiones/transcripciones/*/lectura` and `POST /api/peticiones/imagenes` with `page.route` in browser QA.
+  **Agregar petición (manual request)**: the primary button on `/peticiones` (also in the empty state) opens `LazyPrayerManualDialog` (behind `v-if`: the route's JS
+  budget is untouched), which reuses `GuestUploadForm` through optional props (`fixedName` read-only, `completeUrl`, `imagesOnly`, `hideDone`, `submitLabel`; it emits
+  `busy` and the dialog does not close while uploading). On `done` the page refreshes the list and calls `PrayerGrid`'s exposed `scrollToStart()`: the new card is
+  prepended and scroll anchoring would leave it off-screen to the left. The dialog's body scrolls, not its `modal-box` (a scrollable box is focusable and, being
+  first, would take the dialog's initial focus instead of «Cerrar»). `useGuestSubmission` takes `completeUrl` and `imagesOnly`, `DropZone` takes `imagesOnly`. `/upload` passes
+  none of them. Server: `POST /api/peticiones/manual` (`{ note?, files }`, editor, 60 per hour per person `peticiones-manual:<userId>`, images only → 415 with
+  `checkPrayerPhoto` from `shared/validation/prayers.ts`) calls `createGuestSubmission` with `senderName` = the profile name (any name in the body is ignored; empty
+  → local part of the e-mail) and `sender_key = manual:<userId>`; `POST /api/peticiones/manual/:id/complete` answers 404 unless the submission carries the caller's
+  own manual key (it can never approve a guest's submission), runs `verifyGuestSubmission` (the checks of the guest `complete`, shared in
+  `server/utils/guest-submissions.ts`, without marking anything ready) and `approveSubmission(…, { manual })` (`server/utils/submissions.ts`, shared with
+  `POST /api/submissions/:id/approve`): **one batch** marks the files `ready`, approves the submission (`reviewed_by`, `reviewed_at`, `completed_at`) and inserts the
+  `files` rows in the drive root. It is never "pending with ready files", so the pending queue and the pulse (`status = 'pending'`) never see it; it does show under
+  «Aprobados» in Solicitudes, like any approved submission. Activity is `submission.approve` with `meta.manual = true` (no new enum value). No migration: the request is a
+  normal `guest_submissions` + `files` pair, and an abandoned upload is cleaned by the daily cron like a guest's.
+- Toasts and modals: every dialog is a `<dialog>` opened with `showModal()` (top layer), so nothing outside it is painted above it, clickable or announced.
+  `AppToast` (one per layout) therefore mounts the stack (`AppToastStack`, the markup and the live region) **inside the topmost open dialog** while one is open:
+  `useOpenModal()` keeps the opening order with a single `MutationObserver` on `document.body` (the `open` attribute, plus dialogs removed while open), so stacked
+  dialogs work (a `ConfirmDialog` over the Peticiones review) and no dialog component needs to know about toasts. Inside a dialog the zero-height wrapper is
+  `fixed inset-x-0 top-4`. Keep the `<Teleport v-if="modal">` + `<AppToastStack v-else>` shape: a `<Teleport :disabled>` with no target that goes through SSR
+  hydration records its own placeholder as the target anchor (Vue 3.5 `hydrateTeleport`), moves it into the dialog on the first target change and then breaks the
+  component when it has to come back; component tests (no hydration) do not catch it, the e2e does. E2E assert with `elementFromPoint` on the toast's centre
+  (`toastState` in `peticiones.spec.ts`), not with visibility: a covered toast is still "visible" to Playwright. Select toasts with `[data-toast-region] .alert`.
 - `guest_submissions.completed_at` is stamped with the server clock, like the pulse cursor: with Postgres' `now()` a
   skew of seconds would drop the live toast.
 - The guest access-request layer was removed (migration `drizzle/0008_*`: drops `guest_access_requests`,
