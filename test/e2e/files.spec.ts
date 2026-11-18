@@ -166,8 +166,8 @@ describe('US1 · archivos del equipo', () => {
 
     await uploadFiles(page, ['nota.heic'])
     const dialog = await waitForQueue(page)
-    // La cola ya muestra el nombre del JPEG.
-    expect(await dialog.getByText('nota.jpg').count()).toBe(1)
+    // La cola ya muestra el nombre del JPEG (el aviso «subido» también lo nombra y, con el modal abierto, vive dentro de él).
+    expect(await dialog.getByRole('list', { name: 'Archivos en la cola de subida' }).getByText('nota.jpg').count()).toBe(1)
     await dialog.getByRole('button', { name: 'Listo' }).click()
 
     expect(tickets).toEqual([expect.objectContaining({ name: 'nota.jpg', mimeType: 'image/jpeg', withThumbnail: true })])
