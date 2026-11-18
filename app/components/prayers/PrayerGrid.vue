@@ -44,6 +44,15 @@ function step(direction: 1 | -1) {
   const smooth = !window.matchMedia('(prefers-reduced-motion: reduce)').matches
   el.scrollBy({ left: direction * el.clientWidth * 0.9, behavior: smooth ? 'smooth' : 'auto' })
 }
+
+/**
+ * Vuelve al inicio de la fila. Una petición recién agregada entra la primera, y el navegador conserva lo que estaba a la
+ * vista (anclaje del desplazamiento): sin esto quedaría fuera de la pantalla, a la izquierda.
+ */
+function scrollToStart() {
+  scroller.value?.scrollTo({ left: 0, behavior: 'auto' })
+}
+defineExpose({ scrollToStart })
 </script>
 
 <template>

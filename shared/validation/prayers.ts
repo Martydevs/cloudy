@@ -2,9 +2,13 @@
 // generación, el historial de imágenes y sus colecciones. El servidor es la autoridad; el cliente arma la misma query con
 // `usePrayerFilters` y valida el nombre de una colección con `prayerCollectionSchema` (app/utils/form-schemas.ts).
 import { PRAYER_GENERATION_MAX_IMAGES, PRAYER_HISTORY_MAX_LIMIT, PRAYER_HISTORY_PAGE, PRAYER_PER_IMAGE, PRAYER_TEXT_MAX_LENGTH, PRAYER_TRANSCRIPT_MAX_IDS } from '../constants/prayers'
+import { ALLOWED_TYPES, MAX_GUEST_FILES, categoryOf, getExtension } from '../constants/files'
 import type { Field } from './core'
 import { array, bool, int, object, oneOf, optional, str, uuid } from './core'
+import type { UploadProblem } from './files'
+import { checkUploadFile } from './files'
 import { songCollectionName } from './songs'
+import { guestFile, note } from './submissions'
 
 const DATE_MESSAGE = 'Fecha no válida'
 const RANGE_MESSAGE = 'La fecha final debe ser posterior a la inicial'
@@ -135,3 +139,26 @@ export const prayerTranscriptSaveInput = object({
 }, raw => raw.verified === true && typeof raw.text === 'string' && raw.text.trim() === ''
   ? { text: PRAYER_TEXT_REQUIRED_MESSAGE }
   : null)
+
+// ---------------------------------------------------------------- alta manual («Agregar petición»)
+
+/** Extensiones de imagen con punto, para el `accept` del selector del alta manual. */
+export const PRAYER_PHOTO_ACCEPT = Object.entries(ALLOWED_TYPES).filter(([, type]) => type.category === 'image').map(([ext]) => `.${ext}`).join(',')
+
+export const prayerPhotoOnlyMessage = (name: string) => `«${name}»: solo se aceptan imágenes`
+
+/** Un archivo del alta manual: las reglas de cualquier subida y, además, solo imágenes (Peticiones solo lista imágenes). */
+export function checkPrayerPhoto(file: { name: string, size: number, type: string }): UploadProblem {
+  const problem = checkUploadFile(file)
+  if (problem) return problem
+  return categoryOf(getExtension(file.name)) === 'image' ? null : { code: 415, message: prayerPhotoOnlyMessage(file.name) }
+}
+
+/**
+ * Cuerpo de `POST /api/peticiones/manual`: nota opcional y las fotos. No lleva nombre: el remitente es quien tiene la
+ * sesión y lo pone el servidor (un `senderName` en el cuerpo se ignora).
+ */
+export const manualPrayerInput = object({
+  note: note(),
+  files: array(guestFile, { min: 1, max: MAX_GUEST_FILES, label: 'archivos' }),
+})

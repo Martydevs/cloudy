@@ -202,6 +202,9 @@ describe('US6 · protección de rutas', () => {
       ['GET', `/api/peticiones/transcripciones?ids=${id}`],
       ['POST', `/api/peticiones/transcripciones/${id}/lectura`],
       ['PATCH', `/api/peticiones/transcripciones/${id}`],
+      // Alta manual de una petición: sin sesión de equipo no se crea ni se aprueba nada.
+      ['POST', '/api/peticiones/manual'],
+      ['POST', `/api/peticiones/manual/${id}/complete`],
     ] as const
     for (const [method, path] of commentRoutes) {
       const init: { method: string, headers: Record<string, string>, body?: string } = method === 'GET' || method === 'DELETE'

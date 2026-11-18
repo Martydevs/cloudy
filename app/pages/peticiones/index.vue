@@ -7,6 +7,7 @@
 // (`LazyPrayerReviewDialog`); con todas verificadas, su botón crea la generación y lleva a su página
 // (`/peticiones/generaciones/:id`), que se queda con la cola en curso.
 import type { PrayerGeneratedImage, PrayerGenerationCreated } from '#shared/types/api'
+import type { SubmissionResult } from '~/composables/useGuestSubmission'
 
 definePageMeta({ layout: 'dashboard', access: 'private', roles: ['editor', 'admin'] })
 useHead({ title: 'Peticiones · Cloudy' })
@@ -58,6 +59,22 @@ watch(() => selection.count.value, (count) => {
 
 const creating = ref(false)
 
+// ---- Alta manual («Agregar petición»): el diálogo sube las fotos y la petición nace aprobada.
+const adding = ref(false)
+const grid = useTemplateRef<{ scrollToStart: () => void }>('grid')
+
+/**
+ * La petición nueva es la más reciente por fecha de aprobación: la lista se recarga, la trae primero y la fila vuelve a su
+ * inicio para que se vea.
+ */
+async function onManualDone(result: SubmissionResult) {
+  adding.value = false
+  toast.success(result.rejected > 0 ? m.manual.addedPartial(result.accepted, result.rejected) : m.manual.added(result.accepted))
+  await requests.refresh()
+  await nextTick()
+  grid.value?.scrollToStart()
+}
+
 /**
  * Lo confirma la revisión, con cada petición verificada: crea la generación (el servidor comprueba que las peticiones sigan
  * disponibles y verificadas; el texto no viaja desde aquí), encola una imagen por grupo de 4 ligada a ella y lleva a su
@@ -106,6 +123,10 @@ async function generate() {
         <p class="max-w-2xl text-base-content/70">{{ m.description }}</p>
       </div>
       <div class="flex shrink-0 flex-wrap gap-2">
+        <button type="button" class="btn btn-primary" @click="adding = true">
+          <Icon name="lucide:plus" class="size-5" aria-hidden="true" />
+          {{ m.manual.open }}
+        </button>
         <a href="#historial" class="btn">
           <Icon name="lucide:images" class="size-5" aria-hidden="true" />
           {{ m.history.jump }}
@@ -143,7 +164,11 @@ async function generate() {
         </button>
       </EmptyState>
       <EmptyState v-else-if="items.length === 0" icon="lucide:hand-heart" :title="m.emptyApproved" :description="m.emptyApprovedHint">
-        <NuxtLink to="/solicitudes" class="btn btn-primary">
+        <button type="button" class="btn btn-primary" @click="adding = true">
+          <Icon name="lucide:plus" class="size-5" aria-hidden="true" />
+          {{ m.manual.open }}
+        </button>
+        <NuxtLink to="/solicitudes" class="btn">
           <Icon name="lucide:inbox" class="size-5" aria-hidden="true" />
           {{ m.goToRequests }}
         </NuxtLink>
@@ -154,6 +179,7 @@ async function generate() {
       </EmptyState>
       <PrayerGrid
         v-else
+        ref="grid"
         :items="items"
         :loading-more="loadingMore"
         :more-error="moreError"
@@ -201,6 +227,8 @@ async function generate() {
       @generate="generate"
       @remove="id => selection.remove([id])"
     />
+
+    <LazyPrayerManualDialog v-if="adding" @close="adding = false" @done="onManualDone" />
 
     <LazyPrayerCollectionDialog
       v-if="collectionDialog"

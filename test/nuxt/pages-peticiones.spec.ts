@@ -7,6 +7,7 @@ import { nextTick } from 'vue'
 import { getQuery, readBody, setResponseStatus } from 'h3'
 import type { H3Event } from 'h3'
 import type { Me, Paginated, PrayerGeneratedImage, PrayerRequest, PrayerTranscript } from '#shared/types/api'
+import PrayerManualDialog from '~/components/prayers/PrayerManualDialog.vue'
 import PeticionesPage from '~/pages/peticiones/index.vue'
 import { buttonsWithText, calls, failWith, flush, mockApi, resetCalls } from './helpers/api'
 import { generated, imageCollection, prayer } from './prayer-fixtures'
@@ -55,6 +56,51 @@ describe('/peticiones', () => {
     expect(wrapper.text()).toContain('ya se aprobaron')
     await buttonsWithText(wrapper, 'Copiar enlace para invitados')[0]!.trigger('click')
     expect(copyGuestLink).toHaveBeenCalledOnce()
+  })
+
+  it('Agregar petición (primario) abre el alta manual; al terminar avisa, cierra y recarga la lista', async () => {
+    const wrapper = await mountSuspended(PeticionesPage, { attachTo: document.body })
+    await flush()
+    expect(wrapper.find('dialog').exists()).toBe(false)
+    const add = buttonsWithText(wrapper, 'Agregar petición')[0]!
+    expect(add.classes()).toEqual(expect.arrayContaining(['btn', 'btn-primary']))
+    await add.trigger('click')
+    // El diálogo es un componente diferido (`import()`).
+    await vi.waitFor(() => expect(document.body.querySelector('dialog h2')?.textContent).toBe('Agregar petición'), { timeout: 5000 })
+    expect((wrapper.get('dialog input[type="text"]').element as HTMLInputElement).value).toBe('Ana')
+
+    // Cerrar sin subir no recarga nada.
+    const before = list().length
+    await wrapper.get('dialog button[aria-label="Cerrar"]').trigger('click')
+    await flush()
+    expect(wrapper.find('dialog').exists()).toBe(false)
+    expect(list()).toHaveLength(before)
+
+    await add.trigger('click')
+    await vi.waitFor(() => expect(wrapper.findComponent(PrayerManualDialog).exists()).toBe(true), { timeout: 5000 })
+    wrapper.findComponent(PrayerManualDialog).vm.$emit('done', { accepted: 1, rejected: 0 })
+    await flush()
+    expect(wrapper.find('dialog').exists()).toBe(false)
+    expect(useToast().toasts.value.at(-1)).toMatchObject({ type: 'success', message: 'Petición agregada' })
+    expect(list()).toHaveLength(before + 1)
+
+    // Si alguna foto no pasó la verificación, el aviso lo dice.
+    await add.trigger('click')
+    await vi.waitFor(() => expect(wrapper.findComponent(PrayerManualDialog).exists()).toBe(true), { timeout: 5000 })
+    wrapper.findComponent(PrayerManualDialog).vm.$emit('done', { accepted: 2, rejected: 1 })
+    await flush()
+    expect(useToast().toasts.value.at(-1)?.message).toBe('2 peticiones agregadas. Una foto no pasó la verificación y no se incluyó.')
+  })
+
+  it('sin peticiones, el estado vacío también ofrece Agregar petición', async () => {
+    mockApi('GET', '/api/peticiones', { items: [], nextCursor: null })
+    const wrapper = await mountSuspended(PeticionesPage, { attachTo: document.body })
+    await flush()
+    expect(wrapper.text()).toContain('Todavía no hay peticiones aprobadas')
+    const buttons = buttonsWithText(wrapper, 'Agregar petición')
+    expect(buttons).toHaveLength(2)
+    await buttons[1]!.trigger('click')
+    await vi.waitFor(() => expect(document.body.querySelector('dialog h2')?.textContent).toBe('Agregar petición'), { timeout: 5000 })
   })
 
   it('las tres secciones van en orden: peticiones aprobadas → colecciones → historial', async () => {

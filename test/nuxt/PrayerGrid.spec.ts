@@ -66,6 +66,16 @@ describe('PrayerGrid', () => {
     for (const item of list.findAll(':scope > li')) expect(item.classes()).toEqual(expect.arrayContaining(['shrink-0', 'w-72']))
   })
 
+  // Regresión: una petición agregada a mano entra la primera y quedaba fuera de la pantalla, a la izquierda.
+  it('scrollToStart devuelve la fila a su inicio, sin animación', async () => {
+    const wrapper = await mount()
+    const scroller = wrapper.get('ul[aria-label="Peticiones aprobadas"]').element.parentElement!
+    const scrollTo = vi.fn()
+    scroller.scrollTo = scrollTo as unknown as typeof scroller.scrollTo
+    ;(wrapper.vm as unknown as { scrollToStart: () => void }).scrollToStart()
+    expect(scrollTo).toHaveBeenCalledWith({ left: 0, behavior: 'auto' })
+  })
+
   it('solo la primera tarjeta lleva la foto con prioridad (las demás esperan a acercarse)', async () => {
     const wrapper = await mount()
     const imgs = wrapper.findAll('img')

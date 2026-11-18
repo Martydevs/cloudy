@@ -1,22 +1,37 @@
 <script setup lang="ts">
 // Formulario de envío de invitados en un solo paso (`/upload`): nombre, nota, selector, cola y confirmación.
-// El envío llega directo a la cola de Solicitudes del equipo.
+// El envío llega directo a la cola de Solicitudes del equipo. El alta manual de Peticiones (`PrayerManualDialog`) lo
+// reutiliza con las props opcionales: nombre fijo, su propio cierre, solo imágenes y sin la tarjeta de confirmación.
 import { MAX_GUEST_FILES } from '#shared/constants/files'
 import { NOTE_MAX, SENDER_NAME_MAX } from '#shared/validation/submissions'
 import type { SubmissionResult } from '~/composables/useGuestSubmission'
 
-const props = defineProps<{ createUrl: string, disabled?: boolean }>()
-const emit = defineEmits<{ done: [result: SubmissionResult] }>()
+const props = defineProps<{
+  createUrl: string
+  disabled?: boolean
+  /** Nombre de quien envía, de solo lectura (el servidor usa el de la sesión). */
+  fixedName?: string
+  /** Endpoint que cierra el envío; por defecto, el de invitados. */
+  completeUrl?: (submissionId: string) => string
+  imagesOnly?: boolean
+  /** Sin la tarjeta «¡Gracias!»: quien lo monta decide qué pasa al terminar (`done`). */
+  hideDone?: boolean
+  submitLabel?: string
+}>()
+const emit = defineEmits<{ done: [result: SubmissionResult], busy: [busy: boolean] }>()
 
 const nameId = useId()
 const noteId = useId()
 const noteHintId = useId()
 
-const { r$ } = useFormSchema({ name: '', note: '' }, guestSubmissionSchema)
+const nameHintId = useId()
+
+const { r$ } = useFormSchema({ name: props.fixedName ?? '', note: '' }, guestSubmissionSchema)
 const nameError = computed(() => r$.$errors.name[0] ?? '')
 
-const submission = useGuestSubmission({ createUrl: props.createUrl })
+const submission = useGuestSubmission({ createUrl: props.createUrl, completeUrl: props.completeUrl, imagesOnly: props.imagesOnly })
 const busy = computed(() => submission.status.value === 'submitting')
+watch(busy, value => emit('busy', value))
 // El error del nombre desaparece en cuanto la persona corrige el campo.
 watch(() => r$.$value.name, () => r$.name.$reset())
 
@@ -42,7 +57,7 @@ function another() {
 </script>
 
 <template>
-  <section v-if="submission.status.value === 'done'" class="card border border-base-300 bg-base-100">
+  <section v-if="submission.status.value === 'done' && !hideDone" class="card border border-base-300 bg-base-100">
     <div class="card-body items-center gap-3 text-center">
       <Icon name="lucide:circle-check" class="size-12 text-success" aria-hidden="true" />
       <h2 class="text-xl font-semibold">¡Gracias! Recibimos tu envío</h2>
@@ -65,12 +80,14 @@ function another() {
         type="text"
         class="input w-full"
         :class="{ 'input-error': nameError }"
-        autocomplete="name"
+        :autocomplete="fixedName === undefined ? 'name' : 'off'"
         :maxlength="SENDER_NAME_MAX"
         required
+        :readonly="fixedName !== undefined"
         :aria-invalid="!!nameError || undefined"
-        :aria-describedby="nameError ? `${nameId}-error` : undefined"
+        :aria-describedby="nameError ? `${nameId}-error` : fixedName !== undefined ? nameHintId : undefined"
       >
+      <p v-if="fixedName !== undefined" :id="nameHintId" class="text-xs text-base-content/70">{{ messages.prayers.manual.nameHint }}</p>
       <p v-if="nameError" :id="`${nameId}-error`" class="text-sm text-error" role="alert">{{ nameError }}</p>
 
       <label :for="noteId" class="label mt-2">Nota para el equipo (opcional)</label>
@@ -91,6 +108,7 @@ function another() {
       <DropZone
         v-if="submission.items.value.length < MAX_GUEST_FILES && !busy && !disabled"
         camera
+        :images-only="imagesOnly"
         :camera-disabled="submission.items.value.length >= MAX_GUEST_FILES"
         :max-photos="MAX_GUEST_FILES - submission.items.value.length"
         @files="submission.add"
@@ -107,7 +125,7 @@ function another() {
     <button type="submit" class="btn btn-primary w-full sm:w-auto sm:self-end" :disabled="busy || disabled">
       <span v-if="busy" class="loading loading-spinner loading-sm" aria-hidden="true" />
       <Icon v-else name="lucide:send" class="size-4" aria-hidden="true" />
-      {{ busy ? 'Enviando…' : 'Enviar' }}
+      {{ busy ? 'Enviando…' : submitLabel ?? 'Enviar' }}
     </button>
   </form>
 </template>

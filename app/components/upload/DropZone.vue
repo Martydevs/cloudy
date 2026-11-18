@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ACCEPT_ATTRIBUTE, MAX_GUEST_FILES } from '#shared/constants/files'
+import { PRAYER_PHOTO_ACCEPT } from '#shared/validation/prayers'
 
 const props = withDefaults(defineProps<{
   /** "Abrir cámara" en teléfonos y tabletas (solo páginas de invitados, feature 003). */
@@ -7,7 +8,9 @@ const props = withDefaults(defineProps<{
   cameraDisabled?: boolean
   /** Fotos que caben todavía en el envío. */
   maxPhotos?: number
-}>(), { camera: false, cameraDisabled: false, maxPhotos: MAX_GUEST_FILES })
+  /** Solo imágenes (alta manual de Peticiones): cambia el `accept` del selector y el texto de ayuda. */
+  imagesOnly?: boolean
+}>(), { camera: false, cameraDisabled: false, maxPhotos: MAX_GUEST_FILES, imagesOnly: false })
 const emit = defineEmits<{ files: [files: File[]] }>()
 
 const zone = useTemplateRef<HTMLElement>('zone')
@@ -65,7 +68,7 @@ const cameraOpen = ref(false)
       </button>
     </div>
     <p :id="hintId" class="text-sm text-base-content/70">
-      Imágenes, audio, video, presentaciones y documentos. Máximo 100 MB por archivo.
+      {{ imagesOnly ? 'Solo imágenes. Máximo 100 MB por archivo.' : 'Imágenes, audio, video, presentaciones y documentos. Máximo 100 MB por archivo.' }}
     </p>
     <label :for="inputId" class="sr-only">Elegir archivos</label>
     <input
@@ -73,7 +76,7 @@ const cameraOpen = ref(false)
       ref="input"
       type="file"
       multiple
-      :accept="ACCEPT_ATTRIBUTE"
+      :accept="imagesOnly ? PRAYER_PHOTO_ACCEPT : ACCEPT_ATTRIBUTE"
       class="sr-only"
       tabindex="-1"
       @click.stop

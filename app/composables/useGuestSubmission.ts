@@ -2,6 +2,7 @@
 import { MAX_GUEST_FILES } from '#shared/constants/files'
 import type { GuestUploadTicket } from '#shared/types/api'
 import { checkUploadFile } from '#shared/validation/files'
+import { checkPrayerPhoto } from '#shared/validation/prayers'
 import type { UploadItem } from '~/composables/useUploader'
 
 export type SubmissionStatus = 'idle' | 'submitting' | 'done' | 'error'
@@ -15,12 +16,20 @@ const CONCURRENCY = 3
 
 export const OPEN_SUBMISSIONS_URL = '/api/public/submissions'
 
+/** Cierre del envío de un invitado. */
+export const guestCompleteUrl = (submissionId: string) => `/api/public/submissions/${submissionId}/complete`
+
 export interface GuestSubmissionOptions {
   /** Endpoint que crea el envío y firma las subidas. */
   createUrl?: string
+  /** Endpoint que cierra el envío; el alta manual de Peticiones usa el suyo. */
+  completeUrl?: (submissionId: string) => string
+  /** Solo imágenes (alta manual de Peticiones): los demás archivos quedan marcados con error y no se suben. */
+  imagesOnly?: boolean
 }
 
-export function useGuestSubmission({ createUrl = OPEN_SUBMISSIONS_URL }: GuestSubmissionOptions = {}) {
+export function useGuestSubmission({ createUrl = OPEN_SUBMISSIONS_URL, completeUrl = guestCompleteUrl, imagesOnly = false }: GuestSubmissionOptions = {}) {
+  const check = imagesOnly ? checkPrayerPhoto : checkUploadFile
   const items = ref<UploadItem[]>([])
   const sources = new Map<string, File>()
   const status = ref<SubmissionStatus>('idle')
@@ -41,7 +50,7 @@ export function useGuestSubmission({ createUrl = OPEN_SUBMISSIONS_URL }: GuestSu
         break
       }
       const id = crypto.randomUUID()
-      const problem = checkUploadFile(file)
+      const problem = check(file)
       sources.set(id, file)
       items.value.push({ id, name: file.name, size: file.size, status: problem ? 'error' : 'queued', progress: 0, error: problem?.message ?? null, retryable: false })
     }
@@ -104,7 +113,7 @@ export function useGuestSubmission({ createUrl = OPEN_SUBMISSIONS_URL }: GuestSu
       }
       await Promise.all(Array.from({ length: Math.min(CONCURRENCY, queued.length) }, worker))
 
-      const outcome = await $fetch<{ status: 'pending' } & SubmissionResult>(`/api/public/submissions/${ticket.submissionId}/complete`, { method: 'POST' })
+      const outcome = await $fetch<SubmissionResult>(completeUrl(ticket.submissionId), { method: 'POST' })
       for (const item of queued) patch(item.id, { status: 'done', progress: 100 })
       result.value = { accepted: outcome.accepted, rejected: outcome.rejected }
       status.value = 'done'

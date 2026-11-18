@@ -90,6 +90,50 @@ describe('GuestUploadForm', () => {
     expect(wrapper.get('[role="alert"]').text()).toContain('No pudimos enviar los archivos')
   })
 
+  // Alta manual de Peticiones (`PrayerManualDialog`): el mismo formulario con las props opcionales.
+  it('nombre fijo de solo lectura, su propio cierre, solo imágenes y sin la tarjeta de confirmación', async () => {
+    mockApi('POST', '/api/peticiones/manual', (event) => {
+      setResponseStatus(event, 201)
+      return { submissionId: 'sub9', uploads: [{ fileId: 'g1', uploadUrl: 'https://s3.test/g1', headers: { 'content-type': 'image/jpeg' } }] }
+    })
+    mockApi('POST', '/api/peticiones/manual/sub9/complete', { status: 'approved', accepted: 1, rejected: 0 })
+    const wrapper = await mountSuspended(GuestUploadForm, {
+      props: {
+        createUrl: '/api/peticiones/manual',
+        completeUrl: (id: string) => `/api/peticiones/manual/${id}/complete`,
+        fixedName: 'Ana',
+        imagesOnly: true,
+        hideDone: true,
+        submitLabel: 'Agregar petición',
+      },
+    })
+    const name = wrapper.get('input[type="text"]')
+    expect((name.element as HTMLInputElement).value).toBe('Ana')
+    expect(name.attributes('readonly')).toBeDefined()
+    expect(wrapper.get(`#${name.attributes('aria-describedby')}`).text()).toBe('Se guarda con tu nombre de usuario.')
+    expect(wrapper.get('button[type="submit"]').text()).toBe('Agregar petición')
+    const zone = wrapper.findComponent(DropZone)
+    expect(zone.props('imagesOnly')).toBe(true)
+    expect(zone.get('input[type="file"]').attributes('accept')).toBe('.jpg,.jpeg,.png,.webp,.gif,.heic')
+    expect(zone.text()).toContain('Solo imágenes')
+
+    // Un PDF queda marcado en la cola y no se sube; la foto sí.
+    zone.vm.$emit('files', [new File(['x'], 'hoja.pdf', { type: 'application/pdf' }), photo()])
+    await flush()
+    expect(wrapper.text()).toContain('«hoja.pdf»: solo se aceptan imágenes')
+    await wrapper.get('form').trigger('submit')
+    await flush(20)
+    expect(calls.find(c => c.url === '/api/peticiones/manual')?.body).toMatchObject({ files: [{ name: 'foto.jpg', size: 1000, mimeType: 'image/jpeg' }] })
+    expect(calls.some(c => c.url === '/api/peticiones/manual/sub9/complete')).toBe(true)
+    expect(calls.some(c => c.url.startsWith('/api/public/'))).toBe(false)
+    expect(wrapper.emitted('done')).toEqual([[{ accepted: 1, rejected: 0 }]])
+    // Avisa cuándo está subiendo (el diálogo no se cierra mientras tanto).
+    expect(wrapper.emitted('busy')).toEqual([[true], [false]])
+    // Sin «¡Gracias!»: quien lo monta decide qué pasa al terminar.
+    expect(wrapper.text()).not.toContain('¡Gracias!')
+    expect(wrapper.find('form').exists()).toBe(true)
+  })
+
   it('disabled bloquea el formulario y oculta el selector', async () => {
     const wrapper = await mountSuspended(GuestUploadForm, { props: { createUrl: '/api/public/submissions', disabled: true } })
     expect(wrapper.findComponent(DropZone).exists()).toBe(false)

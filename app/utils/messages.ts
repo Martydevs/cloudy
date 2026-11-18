@@ -370,6 +370,18 @@ export const messages = {
     emptyFiltered: 'No hay peticiones con esos filtros',
     emptyFilteredHint: 'Prueba con otra búsqueda u otras fechas.',
     goToRequests: 'Ir a Solicitudes',
+    /** Alta manual de una petición desde la página (`PrayerManualDialog`): queda aprobada al terminar la subida. */
+    manual: {
+      open: 'Agregar petición',
+      title: 'Agregar petición',
+      intro: 'Sube la foto de una petición de oración. Queda aprobada al instante y aparece aquí, sin pasar por Solicitudes.',
+      nameHint: 'Se guarda con tu nombre de usuario.',
+      submit: 'Agregar petición',
+      added: (n: number) => (n === 1 ? 'Petición agregada' : `${n} peticiones agregadas`),
+      addedPartial: (added: number, rejected: number) =>
+        `${added === 1 ? 'Petición agregada' : `${added} peticiones agregadas`}. ${rejected === 1 ? 'Una foto no pasó la verificación y no se incluyó.' : `${rejected} fotos no pasaron la verificación y no se incluyeron.`}`,
+      busy: 'Espera a que termine la subida para cerrar.',
+    },
     clearFilters: 'Quitar filtros',
     filters: 'Filtrar peticiones',
     search: 'Buscar por nombre o nota',

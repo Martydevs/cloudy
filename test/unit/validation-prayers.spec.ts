@@ -1,6 +1,9 @@
 // T006 — Validadores de la página Peticiones (feature 007, data-model § Validación).
 import { describe, expect, it } from 'vitest'
 import {
+  checkPrayerPhoto,
+  manualPrayerInput,
+  PRAYER_PHOTO_ACCEPT,
   prayerCollectionInput,
   prayerCollectionItemInput,
   prayerCollectionRename,
@@ -155,5 +158,33 @@ describe('transcripciones (revisión antes de generar)', () => {
       .toEqual({ ok: false, errors: { text: 'Debe tener como máximo 1000 caracteres' } })
     expect(prayerTranscriptSaveInput({ text: 3, verified: true })).toEqual({ ok: false, errors: { text: 'Este campo es obligatorio' } })
     expect(prayerTranscriptSaveInput({ text: 'Hola' })).toEqual({ ok: false, errors: { verified: 'Debe ser verdadero o falso' } })
+  })
+})
+
+describe('alta manual («Agregar petición»)', () => {
+  const photo = { name: 'peticion.jpg', size: 1000, mimeType: 'image/jpeg' }
+
+  it('manualPrayerInput: nota opcional y 1–20 archivos; el nombre del cuerpo no forma parte de los datos', () => {
+    expect(manualPrayerInput({ senderName: 'Otra persona', note: ' En papel ', files: [photo] }))
+      .toEqual({ ok: true, data: { note: 'En papel', files: [photo] } })
+    expect(manualPrayerInput({ files: [photo] })).toEqual({ ok: true, data: { note: undefined, files: [photo] } })
+    expect(manualPrayerInput({ files: [] })).toEqual({ ok: false, errors: { files: 'Agrega al menos 1 archivos' } })
+    expect(manualPrayerInput({ files: Array.from({ length: 21 }, () => photo) }).ok).toBe(false)
+    expect(manualPrayerInput({ note: 'x'.repeat(501), files: [photo] })).toEqual({ ok: false, errors: { note: 'Debe tener como máximo 500 caracteres' } })
+  })
+
+  it('checkPrayerPhoto: las reglas de cualquier subida y, además, solo imágenes', () => {
+    for (const name of ['a.jpg', 'a.JPEG', 'a.png', 'a.webp', 'a.gif', 'a.heic']) {
+      expect(checkPrayerPhoto({ name, size: 10, type: '' }), name).toBeNull()
+    }
+    expect(checkPrayerPhoto({ name: 'hoja.pdf', size: 10, type: 'application/pdf' })).toEqual({ code: 415, message: '«hoja.pdf»: solo se aceptan imágenes' })
+    expect(checkPrayerPhoto({ name: 'nota.mp3', size: 10, type: 'audio/mpeg' })?.code).toBe(415)
+    // Lo que ya rechaza cualquier subida conserva su mensaje.
+    expect(checkPrayerPhoto({ name: 'setup.exe', size: 10, type: '' })).toEqual({ code: 415, message: '«setup.exe»: formato no admitido' })
+    expect(checkPrayerPhoto({ name: 'a.jpg', size: 200 * 1024 * 1024, type: 'image/jpeg' })?.code).toBe(413)
+  })
+
+  it('PRAYER_PHOTO_ACCEPT lista solo extensiones de imagen', () => {
+    expect(PRAYER_PHOTO_ACCEPT).toBe('.jpg,.jpeg,.png,.webp,.gif,.heic')
   })
 })

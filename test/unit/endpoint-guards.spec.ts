@@ -57,7 +57,9 @@ describe('guards de los endpoints', () => {
     }
     // Fase 1: límite por IP. Fase 2: el id del envío (UUID) es la capacidad; solo cierra envíos pendientes.
     expect(source('public/submissions/index.post.ts')).toMatch(/\bhitRateLimit\(/)
-    expect(source('public/submissions/[id]/complete.post.ts')).toMatch(/submission\.status !== 'pending'/)
+    // (la comprobación vive en `verifyGuestSubmission`, que `completeGuestSubmission` llama).
+    expect(source('public/submissions/[id]/complete.post.ts')).toMatch(/\bcompleteGuestSubmission\(/)
+    expect(source('../utils/guest-submissions.ts')).toMatch(/submission\.status !== 'pending'/)
     expect(source('public/submissions/[id]/complete.post.ts')).toMatch(/\bhitRateLimit\(/)
   })
 
@@ -126,6 +128,8 @@ describe('guards de los endpoints', () => {
       'peticiones/imagenes/index.get.ts',
       'peticiones/imagenes/index.post.ts',
       'peticiones/index.get.ts',
+      'peticiones/manual/[id]/complete.post.ts',
+      'peticiones/manual/index.post.ts',
       'peticiones/transcripciones/[fileId]/index.patch.ts',
       'peticiones/transcripciones/[fileId]/lectura.post.ts',
       'peticiones/transcripciones/index.get.ts',
