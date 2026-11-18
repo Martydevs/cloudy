@@ -18,6 +18,8 @@ const GENERATION = '1b4e28ba-2fa1-11d2-883f-0016d3cca427'
 
 /** Lo que `loadEligibleRequests` lee de `files` por cada petición que sigue aprobada y visible. */
 const eligible = (id: string) => ({ id, storageKey: `pre/guest/${id}`, previewKey: null, mimeType: 'image/jpeg' })
+/** Lo que `loadVerifiedTexts` lee de `prayer_transcripts`: el texto que una persona ya verificó. */
+const verified = (fileId: string) => ({ fileId, text: 'Por mi familia', status: 'verified' })
 const imageRow = (changes: Record<string, unknown> = {}) => ({
   id: UUID, storageKey: `pre/peticiones/${UUID}.png`, mediaType: 'image/png', fileIds: [FILE], createdBy: 'u1', createdAt: created,
   generationId: GENERATION, authorName: 'Ana', authorStatus: 'active', ...changes,
@@ -28,7 +30,7 @@ const generationRow = (changes: Record<string, unknown> = {}) => ({
 
 describe('prayer-generations', () => {
   it('createPrayerGeneration: comprueba las peticiones, guarda los grupos en orden y devuelve el id', async () => {
-    const fake = installNitro([[eligible(FILE), eligible(FILE2)], [{ id: GENERATION }]])
+    const fake = installNitro([[eligible(FILE), eligible(FILE2)], [verified(FILE), verified(FILE2)], [{ id: GENERATION }]])
     expect(await createPrayerGeneration([[FILE], [FILE2]], { userId: 'u1' })).toEqual({ id: GENERATION })
     const check = sqlText(fake.calls.find(c => c.method === 'where')?.args[0])
     expect(check).toContain(FILE)
@@ -117,7 +119,7 @@ describe('POST /api/peticiones/generaciones', () => {
   })
 
   it('un 409 de la capa de datos llega tal cual (con los ids)', async () => {
-    const { prayerError } = await import('../../server/utils/prayer-images')
+    const { prayerError } = await import('../../server/utils/prayer-errors')
     installNitro([], { createPrayerGeneration: vi.fn(async () => { throw prayerError('request_unavailable', { ids: [FILE] }) }) })
     const { result } = await post({ groups: [[FILE]] })
     expect((await expectStatus(result, 409)).data).toEqual({ code: 'request_unavailable', ids: [FILE] })
@@ -142,7 +144,7 @@ describe('GET /api/peticiones/generaciones/:id', () => {
   })
 
   it('un id que no es UUID → 404 sin consultar; una generación borrada → 404 generation_not_found', async () => {
-    const { prayerError } = await import('../../server/utils/prayer-images')
+    const { prayerError } = await import('../../server/utils/prayer-errors')
     const getPrayerGeneration = vi.fn(async () => { throw prayerError('generation_not_found') })
     installNitro([], { getPrayerGeneration })
     const handler = await loadHandler('api/peticiones/generaciones/[id].get.ts')
