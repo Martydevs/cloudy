@@ -4,6 +4,7 @@ import type { generateText as GenerateText } from 'ai'
 import { MockLanguageModelV4 } from 'ai/test'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { buildTranscriptPrompt } from '../../server/ai/prayer-transcript/prompt'
+import { PRAYER_TRANSCRIPT_MAX_OUTPUT_TOKENS, prayerTranscriptOutputSchema } from '../../server/ai/prayer-transcript/schemas'
 import { transcribePrayerPhoto } from '../../server/ai/prayer-transcript/transcribe'
 
 const sdk = vi.hoisted(() => ({ calls: [] as Parameters<typeof GenerateText>[0][] }))
@@ -50,6 +51,16 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 
+describe('prayerTranscriptOutputSchema', () => {
+  it('acepta hasta 1000 caracteres y rechaza más, o una forma distinta', () => {
+    expect(prayerTranscriptOutputSchema.safeParse({ hasText: true, text: 'a'.repeat(1000) }).success).toBe(true)
+    expect(prayerTranscriptOutputSchema.safeParse({ hasText: false, text: '' }).success).toBe(true)
+    expect(prayerTranscriptOutputSchema.safeParse({ hasText: true, text: 'a'.repeat(1001) }).success).toBe(false)
+    expect(prayerTranscriptOutputSchema.safeParse({ hasText: true }).success).toBe(false)
+    expect(prayerTranscriptOutputSchema.safeParse({ hasText: 'no', text: '' }).success).toBe(false)
+  })
+})
+
 describe('transcribePrayerPhoto', () => {
   it('envía la instrucción y la foto como URL (sin descargarla) y devuelve el texto con sus saltos de línea', async () => {
     const model = reads({ hasText: true, text: '  Por mi familia\ny mi trabajo \n' })
@@ -78,6 +89,34 @@ describe('transcribePrayerPhoto', () => {
     ['un hasText que no es booleano', JSON.stringify({ hasText: 'sí', text: 'Hola' })],
   ])('%s → invalid_output', async (_, raw) => {
     expect(await transcribePrayerPhoto({ photo, model: says(raw) })).toEqual({ status: 'failed', error: 'invalid_output' })
+  })
+
+  it('la salida está acotada: un texto de hasta 1000 caracteres pasa y uno más largo es invalid_output (no se recorta en silencio)', async () => {
+    expect(await transcribePrayerPhoto({ photo, model: reads({ hasText: true, text: 'a'.repeat(1000) }) }))
+      .toEqual({ status: 'ready', hasText: true, text: 'a'.repeat(1000) })
+    expect(await transcribePrayerPhoto({ photo, model: reads({ hasText: true, text: 'a'.repeat(1001) }) }))
+      .toEqual({ status: 'failed', error: 'invalid_output' })
+  })
+
+  it('una respuesta cortada por el tope de tokens (JSON incompleto) es invalid_output', async () => {
+    const cut = new MockLanguageModelV4({
+      supportedUrls,
+      doGenerate: { content: [{ type: 'text', text: '{"hasText":true,"text":"Por mi fam' }], finishReason: { unified: 'length', raw: 'length' }, usage: USAGE, warnings: [] } as DoGenerate,
+    })
+    expect(await transcribePrayerPhoto({ photo, model: cut })).toEqual({ status: 'failed', error: 'invalid_output' })
+  })
+
+  it('limita los tokens de la respuesta y manda el esquema sin palabras clave que un modelo en modo estricto rechazaría', async () => {
+    const model = reads({ hasText: true, text: 'Hola' })
+    await transcribePrayerPhoto({ photo, model })
+    const call = model.doGenerateCalls[0]!
+    expect(call.maxOutputTokens).toBe(PRAYER_TRANSCRIPT_MAX_OUTPUT_TOKENS)
+    expect(PRAYER_TRANSCRIPT_MAX_OUTPUT_TOKENS).toBeGreaterThanOrEqual(700)
+    const format = call.responseFormat as { type: string, schema: { properties: Record<string, Record<string, unknown>>, required: string[], additionalProperties: boolean } }
+    expect(format.schema.required).toEqual(['hasText', 'text'])
+    expect(format.schema.additionalProperties).toBe(false)
+    expect(format.schema.properties.text).toEqual({ type: 'string', description: expect.stringContaining('1000 caracteres como máximo') })
+    expect(JSON.stringify(format.schema)).not.toContain('maxLength')
   })
 
   it('una sola llamada con intento de 30 s, 1 reintento y un tope de 45 s combinado con la señal del llamador', async () => {

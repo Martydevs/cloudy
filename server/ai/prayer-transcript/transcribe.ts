@@ -7,7 +7,7 @@ import { classifyProviderError } from '../errors'
 import { resolvePrayerTranscriptModel } from '../providers/openrouter'
 import { buildTranscriptPrompt } from './prompt'
 import type { PrayerPhotoInput, PrayerTranscriptErrorCode } from './schemas'
-import { prayerPhotoSchema, prayerTranscriptOutputSchema } from './schemas'
+import { PRAYER_TRANSCRIPT_MAX_OUTPUT_TOKENS, prayerPhotoSchema, prayerTranscriptOutput } from './schemas'
 
 export type { PrayerPhotoInput, PrayerTranscriptErrorCode } from './schemas'
 
@@ -45,7 +45,10 @@ export async function transcribePrayerPhoto(options: TranscribePrayerPhotoOption
   try {
     const result = await generateText({
       model,
-      output: Output.object({ schema: prayerTranscriptOutputSchema }),
+      // Salida acotada: el texto no pasa del tope de una petición (si lo pasa, o la respuesta sale cortada por el tope de
+      // tokens, el AI SDK lanza `NoObjectGeneratedError` → `invalid_output`: se vuelve a leer o se escribe a mano).
+      output: Output.object({ schema: prayerTranscriptOutput }),
+      maxOutputTokens: PRAYER_TRANSCRIPT_MAX_OUTPUT_TOKENS,
       messages: [{
         role: 'user',
         // La foto va como URL: el modelo de OpenRouter acepta cualquier https (`resolvePrayerTranscriptModel`), así que el

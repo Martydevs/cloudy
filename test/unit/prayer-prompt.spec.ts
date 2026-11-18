@@ -53,11 +53,10 @@ describe('prayerTextBlock', () => {
 })
 
 describe('buildTranscriptPrompt', () => {
-  it('pide transcribir literal, conservar los saltos de línea y avisar si no hay texto', () => {
+  it('es una sola línea que pide transcribir la imagen: el detalle vive en el preset de OpenRouter', () => {
     const prompt = buildTranscriptPrompt()
-    expect(prompt).toMatch(/Transcribe el texto tal cual está escrito y conserva sus saltos de línea/)
-    expect(prompt).toMatch(/no lo corrijas, resumas, traduzcas ni le añadas nada/)
-    expect(prompt).toMatch(/Si la foto no tiene texto legible, responde que no hay texto/)
+    expect(prompt).toMatch(/Transcribe la petición de oración de la imagen adjunta/)
+    expect(prompt).not.toMatch(/\n/)
   })
 
   it('no lleva nombres, notas ni identificadores: no recibe datos de la petición', () => {
