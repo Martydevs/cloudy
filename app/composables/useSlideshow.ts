@@ -31,16 +31,24 @@ export function useSlideshow({ count, index, root, stage, query = false }: Slide
   /** La persona ya cambió de diapositiva: la primera pintura terminó (prioridad alta solo al principio). */
   const moved = ref(false)
 
-  // Posición inicial desde la query (también en el SSR).
+  /** `i` dentro de `[0, total - 1]` (con 0 diapositivas solo se evita un negativo). */
+  function clamp(i: number) {
+    const n = total.value
+    return n > 0 ? Math.min(Math.max(0, i), n - 1) : Math.max(0, i)
+  }
+
+  // Posición inicial desde la query (también en el SSR), ya acotada: `index` suele ser un `defineModel`, que no devuelve lo
+  // recién escrito hasta que el padre vuelve a pintar, así que acotar después leyéndolo de vuelta no serviría (`?i=9` con 3
+  // imágenes dejaba el pase vacío).
   if (query) {
     const raw = Number(route.query[query])
-    if (Number.isInteger(raw) && raw >= 1) index.value = raw - 1
+    if (Number.isInteger(raw) && raw >= 1) index.value = clamp(raw - 1)
   }
 
   // Si la lista se acorta (o llega después que la query), el índice queda dentro.
-  watch(total, (n) => {
-    if (n > 0 && index.value > n - 1) index.value = n - 1
-    if (index.value < 0) index.value = 0
+  watch(total, () => {
+    const inside = clamp(index.value)
+    if (inside !== index.value) index.value = inside
   }, { immediate: true })
 
   function go(i: number) {
