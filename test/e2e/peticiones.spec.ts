@@ -4,11 +4,12 @@
 // son las más recientes (otros archivos e2e corren antes, uno a la vez), así que salen primero en la rejilla. «Generar
 // imágenes» abre la revisión del texto de cada petición (US5): el modelo de lectura recibe la foto (URL firmada) y el de
 // imágenes, la plantilla y los textos verificados.
+import { randomUUID } from 'node:crypto'
 import { createPage, setup } from '@nuxt/test-utils/e2e'
 import type { Cookie, Page } from 'playwright-core'
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { PRAYER_ERROR_MESSAGES } from '../../shared/constants/prayers'
-import { E2E_URL, prayerCalls, profileUserId, resetStub, runId, seedPrayerRequest, seedPrayerTranscript, setStubMode, signedInAs, testSql, transcriptCalls, viewports, waitForHydration } from './setup/fixtures'
+import { E2E_URL, fixture, prayerCalls, profileUserId, resetStub, runId, seedPrayerRequest, seedPrayerTranscript, setStubMode, signedInAs, testSql, transcriptCalls, viewports, waitForHydration } from './setup/fixtures'
 import type { Credentials, PrayerSeed } from './setup/fixtures'
 
 await setup({ host: E2E_URL, browser: true })
@@ -287,6 +288,8 @@ describe('US2 · generar las imágenes de peticiones del día', () => {
     await expect.poll(() => ids.length, { timeout: 30_000 }).toBe(1)
     const [call] = await prayerCalls()
     expect(call).toMatchObject({ template: true, photos: [], texts: ['Por mi familia\ny mi trabajo'], status: 200 })
+    // La plantilla viaja como URL firmada de su copia en el bucket (sin base64) y la salida va acotada.
+    expect(call).toMatchObject({ templateKind: 'url', imageConfig: { aspect_ratio: '16:9', image_size: '1K' } })
     await page.close()
   })
 
@@ -793,6 +796,277 @@ describe('US5 · revisar el texto de cada petición antes de generar', () => {
     expect((await image.json()).data).toEqual({ code: 'transcript_unverified', ids: [draft!.fileId] })
     // No se gastó crédito.
     expect(await prayerCalls()).toHaveLength(0)
+    await page.close()
+  })
+
+  it('una lectura más larga que el tope de una petición no se recorta en silencio: falla y se ofrece escribir a mano', async () => {
+    const [request] = await seedRequests('Lectura larga', 1)
+    await setStubMode({ transcriptText: 'Por mi familia. '.repeat(70) })
+    const page = await editorPage()
+    await openPage(page)
+    await openReview(page, [request!.name])
+    await expect.poll(() => reviewCard(page, request!.name, 'no se pudo leer').isVisible(), { timeout: 60_000 }).toBe(true)
+    expect(await review(page).getByRole('button', { name: 'Escribir a mano', exact: true }).isVisible()).toBe(true)
+    expect(await review(page).getByRole('button', { name: 'Reintentar', exact: true }).isVisible()).toBe(true)
+    expect(await generateButton(page).isDisabled()).toBe(true)
+    // El modelo respondió (una sola llamada, sin reintento) y no se guardó nada.
+    const calls = await transcriptCalls()
+    expect(calls).toHaveLength(1)
+    expect(calls[0]!.text!.length).toBeGreaterThan(1000)
+    expect(await testSql()`SELECT file_id FROM prayer_transcripts WHERE file_id = ${request!.fileId}`).toEqual([])
+
+    await review(page).getByRole('button', { name: 'Escribir a mano', exact: true }).click()
+    await text(page).fill('Por mi familia')
+    await review(page).getByRole('button', { name: 'Guardar y verificar', exact: true }).click()
+    await expect.poll(() => reviewCard(page, request!.name, 'verificada').isVisible()).toBe(true)
+    await page.close()
+  })
+})
+
+/** Un envío de invitado pendiente con un archivo listo, como lo deja `/upload` (sin objeto en el bucket). */
+async function seedPendingSubmission(senderName: string): Promise<string> {
+  const sql = testSql()
+  const now = new Date().toISOString()
+  const [row] = await sql`
+    INSERT INTO guest_submissions (sender_name, status, sender_key, created_at, completed_at)
+    VALUES (${senderName}, 'pending', ${`e2e-${runId()}`}, ${now}, ${now})
+    RETURNING id
+  ` as { id: string }[]
+  await sql`
+    INSERT INTO guest_submission_files (submission_id, original_name, extension, mime_type, category, size_bytes, storage_key, upload_status)
+    VALUES (${row!.id}, 'foto.jpg', 'jpg', 'image/jpeg', 'image', 10, ${`e2e/${runId()}/guest/pendiente-${randomUUID()}`}, 'ready')
+  `
+  return row!.id
+}
+
+describe('US6 · agregar una petición a mano', () => {
+  const manual = (page: Page) => page.getByRole('dialog', { name: 'Agregar petición' })
+
+  async function openManual(page: Page) {
+    await page.getByRole('button', { name: 'Agregar petición', exact: true }).first().click()
+    await expect.poll(() => manual(page).isVisible()).toBe(true)
+  }
+
+  it('un editor agrega una foto: queda aprobada al instante, sale primera con su nombre y no pasa por Solicitudes', async () => {
+    const note = `Entregada en papel ${runId()} ${Date.now()}`
+    const page = await editorPage()
+    await openPage(page)
+    const pendingCount = async () => (await (await page.request.get(`${E2E_URL}/api/realtime/pulse`)).json() as { pendingCount: number }).pendingCount
+    const pendingBefore = await pendingCount()
+    await openManual(page)
+
+    // El nombre es el de la sesión y no se puede cambiar.
+    const name = manual(page).getByLabel('Tu nombre')
+    expect(await name.inputValue()).toBe(editor.name!)
+    expect(await name.getAttribute('readonly')).not.toBeNull()
+    expect(await manual(page).getByLabel('Elegir archivos', { exact: true }).getAttribute('accept')).toBe('.jpg,.jpeg,.png,.webp,.gif,.heic')
+
+    await manual(page).getByLabel('Nota para el equipo (opcional)').fill(note)
+    await manual(page).getByLabel('Elegir archivos', { exact: true }).setInputFiles(fixture('foto.jpg'))
+    await manual(page).getByRole('button', { name: 'Agregar petición', exact: true }).click()
+    await expect.poll(async () => {
+      if (await page.getByText('Petición agregada', { exact: true }).isVisible()) return 'ok'
+      const alert = manual(page).getByRole('alert')
+      return (await alert.count()) > 0 ? `alert: ${await alert.first().innerText()}` : 'esperando'
+    }, { timeout: 60_000 }).toBe('ok')
+    await expect.poll(() => manual(page).count()).toBe(0)
+
+    // La lista se recarga sola: la nueva es la aprobada más reciente, con el nombre de quien la agregó.
+    const first = page.getByRole('list', { name: 'Peticiones aprobadas' }).getByRole('listitem').first()
+    await expect.poll(() => first.innerText(), { timeout: 15_000 }).toContain(note)
+    // Y queda a la vista: la fila vuelve a su inicio (el navegador, al anteponer la tarjeta, conservaba las que ya se veían).
+    await expect.poll(async () => {
+      const cardBox = await first.boundingBox()
+      return !!cardBox && cardBox.x >= 0 && cardBox.x + cardBox.width <= viewports.desktop.width
+    }).toBe(true)
+    expect(await first.getByRole('article', { name: `Petición de ${editor.name!}`, exact: true }).isVisible()).toBe(true)
+    await expect.poll(() => first.locator('img').evaluate(img => (img as HTMLImageElement).complete && (img as HTMLImageElement).naturalWidth > 0), { timeout: 15_000 }).toBe(true)
+
+    // Aprobada por su autor en el momento de cerrar la subida, con la imagen lista en la raíz del drive.
+    const sql = testSql()
+    const rows = await sql`
+      SELECT s.id, s.status, s.sender_name, s.sender_key, s.reviewed_by, s.completed_at IS NOT NULL AS closed, s.completed_at = s.reviewed_at AS same_instant,
+        f.folder_id, f.category, f.upload_status, f.origin, f.guest_name, g.upload_status AS guest_status
+      FROM guest_submissions s
+      JOIN files f ON f.submission_id = s.id
+      JOIN guest_submission_files g ON g.id = f.id
+      WHERE s.note = ${note}
+    `
+    expect(rows).toEqual([expect.objectContaining({
+      status: 'approved', sender_name: editor.name!, sender_key: `manual:${owner}`, reviewed_by: owner, closed: true, same_instant: true,
+      folder_id: null, category: 'image', upload_status: 'ready', origin: 'guest', guest_name: editor.name!, guest_status: 'ready',
+    })])
+    const activity = await sql`SELECT actor_id, meta FROM activity_log WHERE action = 'submission.approve' AND target_id = ${rows[0]!.id}`
+    expect(activity).toEqual([{ actor_id: owner, meta: { files: 1, folderId: null, manual: true } }])
+
+    // Nunca estuvo en la cola: ni en la lista de pendientes ni en su contador.
+    const pending = await (await page.request.get(`${E2E_URL}/api/submissions`)).json() as { id: string }[]
+    expect(pending.some(s => s.id === rows[0]!.id)).toBe(false)
+    expect(await pendingCount()).toBe(pendingBefore)
+    await page.close()
+  })
+
+  it('solo imágenes: un PDF queda marcado en la cola y no se envía; el servidor también lo rechaza (415)', async () => {
+    const page = await editorPage()
+    await openPage(page)
+    await openManual(page)
+    await manual(page).getByLabel('Elegir archivos', { exact: true }).setInputFiles(fixture('slides.pdf'))
+    await expect.poll(() => manual(page).getByText('«slides.pdf»: solo se aceptan imágenes').isVisible()).toBe(true)
+    await manual(page).getByRole('button', { name: 'Agregar petición', exact: true }).click()
+    await expect.poll(() => manual(page).getByRole('alert').filter({ hasText: 'Agrega al menos' }).innerText()).toBe('Agrega al menos un archivo válido')
+
+    const before = await testSql()`SELECT count(*)::int AS n FROM guest_submissions WHERE sender_key = ${`manual:${owner}`}` as { n: number }[]
+    const direct = await page.request.post(`${E2E_URL}/api/peticiones/manual`, { data: { files: [{ name: 'slides.pdf', size: 1000, mimeType: 'application/pdf' }] } })
+    expect(direct.status()).toBe(415)
+    expect((await direct.json()).message).toBe('«slides.pdf»: solo se aceptan imágenes')
+    expect(await testSql()`SELECT count(*)::int AS n FROM guest_submissions WHERE sender_key = ${`manual:${owner}`}`).toEqual(before)
+
+    // Cerrar con Escape devuelve a la página sin crear nada.
+    await page.keyboard.press('Escape')
+    await expect.poll(() => manual(page).count()).toBe(0)
+    await page.close()
+  })
+
+  it('el cierre del alta manual no sirve para aprobar el envío de un invitado (404) y el nombre del cuerpo se ignora', async () => {
+    const guestName = `Invitada cola ${runId()} ${Date.now()}`
+    const guestSubmission = await seedPendingSubmission(guestName)
+    const page = await editorPage()
+    const foreign = await page.request.post(`${E2E_URL}/api/peticiones/manual/${guestSubmission}/complete`)
+    expect(foreign.status()).toBe(404)
+    expect(await testSql()`SELECT status FROM guest_submissions WHERE id = ${guestSubmission}`).toEqual([{ status: 'pending' }])
+    // Se retira de la cola para no dejar pendientes a otras pruebas.
+    expect((await page.request.post(`${E2E_URL}/api/submissions/${guestSubmission}/reject`, { data: { reason: '' } })).status()).toBe(204)
+
+    const created = await page.request.post(`${E2E_URL}/api/peticiones/manual`, {
+      data: { senderName: 'Otra persona', files: [{ name: 'foto.jpg', size: 8386, mimeType: 'image/jpeg' }] },
+    })
+    expect(created.status()).toBe(201)
+    const { submissionId } = await created.json() as { submissionId: string }
+    expect(await testSql()`SELECT sender_name, sender_key, status FROM guest_submissions WHERE id = ${submissionId}`)
+      .toEqual([{ sender_name: editor.name!, sender_key: `manual:${owner}`, status: 'pending' }])
+    // Sin subir la foto, el cierre no encuentra nada válido: 422 y no queda ni el envío.
+    expect((await page.request.post(`${E2E_URL}/api/peticiones/manual/${submissionId}/complete`)).status()).toBe(422)
+    expect(await testSql()`SELECT id FROM guest_submissions WHERE id = ${submissionId}`).toEqual([])
+    await page.close()
+  })
+
+  it('a 360 px el diálogo cabe sin scroll horizontal y sus controles miden 44 px o más', async () => {
+    const page = await editorPage(viewports.phone)
+    await openPage(page)
+    await openManual(page)
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+    expect(await manual(page).locator('.modal-box').evaluate(box => box.scrollWidth <= box.clientWidth)).toBe(true)
+    for (const control of [manual(page).getByRole('button', { name: 'Cerrar', exact: true }), manual(page).getByRole('button', { name: 'Agregar petición', exact: true })]) {
+      expect((await control.boundingBox())!.height).toBeGreaterThanOrEqual(44)
+    }
+    await page.close()
+  })
+})
+
+describe('los avisos se ven y se pulsan con un modal abierto', () => {
+  /**
+   * El aviso con ese texto: en qué diálogo está montado (su título) y si es lo que se pinta en su propio centro
+   * (`elementFromPoint`): un `toBeVisible` no detecta que un `<dialog>` de la top layer lo tape.
+   */
+  const toastState = (page: Page, message: string) => page.evaluate((text) => {
+    const alert = [...document.querySelectorAll('[data-toast-region] .alert')].find(el => el.textContent?.includes(text))
+    if (!alert) return null
+    const rect = alert.getBoundingClientRect()
+    const hit = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2)
+    return {
+      onTop: !!hit && alert.contains(hit),
+      dialog: alert.closest('dialog[open]')?.querySelector('h2, h3')?.textContent?.trim() ?? null,
+      regions: document.querySelectorAll('[data-toast-region]').length,
+      inViewport: rect.top >= 0 && rect.left >= 0 && rect.right <= window.innerWidth && rect.bottom <= window.innerHeight,
+    }
+  }, message)
+
+  async function dismissToast(page: Page, message: string) {
+    await page.locator('[data-toast-region] .alert').filter({ hasText: message }).getByRole('button', { name: 'Cerrar aviso' }).click()
+    await expect.poll(() => toastState(page, message)).toBeNull()
+  }
+
+  for (const [label, viewport] of [['1280 px', viewports.desktop], ['360 px', viewports.phone]] as const) {
+    it(`colección y confirmación apilada (${label}): el aviso queda sobre el diálogo de arriba, baja al anterior y se cierra con un clic`, async () => {
+      const original = `Avisos ${runId()} ${Date.now()}`
+      const renamed = `${original} bis`
+      const page = await editorPage(viewport)
+      expect((await page.request.post(`${E2E_URL}/api/peticiones/colecciones`, { data: { name: original } })).status()).toBe(201)
+      await openPage(page)
+      await page.getByRole('button', { name: new RegExp(`^Abrir la colección ${original}`) }).click()
+      const dialog = page.getByRole('dialog', { name: original })
+      await expect.poll(() => dialog.isVisible()).toBe(true)
+
+      // Renombrar avisa con el diálogo todavía abierto.
+      await dialog.getByRole('button', { name: 'Renombrar', exact: true }).click()
+      await dialog.getByLabel('Nuevo nombre').fill(renamed)
+      await dialog.getByRole('button', { name: 'Guardar', exact: true }).click()
+      const message = `Ahora se llama «${renamed}»`
+      await expect.poll(() => toastState(page, message)).toEqual({ onTop: true, dialog: renamed, regions: 1, inViewport: true })
+
+      // Con la confirmación encima, el aviso sube a ella; al cancelarla vuelve al diálogo de la colección.
+      await page.getByRole('dialog', { name: renamed }).getByRole('button', { name: 'Eliminar colección', exact: true }).click()
+      const confirmTitle = `¿Eliminar la colección «${renamed}»?`
+      await expect.poll(() => page.getByRole('dialog', { name: confirmTitle }).isVisible()).toBe(true)
+      await expect.poll(() => toastState(page, message)).toEqual({ onTop: true, dialog: confirmTitle, regions: 1, inViewport: true })
+      await page.getByRole('dialog', { name: confirmTitle }).getByRole('button', { name: 'Cancelar', exact: true }).click()
+      await expect.poll(async () => (await toastState(page, message))?.dialog ?? 'sin aviso').toBe(renamed)
+      expect((await toastState(page, message))!.onTop).toBe(true)
+      await dismissToast(page, message)
+
+      // Al cerrar el último modal los avisos siguen en su lugar de siempre, fuera de cualquier diálogo.
+      await page.getByRole('dialog', { name: renamed }).getByRole('button', { name: 'Cerrar', exact: true }).click()
+      await expect.poll(() => page.getByRole('dialog').count()).toBe(0)
+      await page.context().grantPermissions(['clipboard-read', 'clipboard-write'], { origin: E2E_URL })
+      await page.getByRole('button', { name: 'Copiar enlace para invitados' }).first().click()
+      await expect.poll(() => toastState(page, 'Enlace para invitados copiado')).toEqual({ onTop: true, dialog: null, regions: 1, inViewport: true })
+      await page.close()
+    })
+  }
+
+  it('revisión de Peticiones: «Guardar y verificar» avisa sobre el diálogo', async () => {
+    await resetStub()
+    const name = `Aviso revision ${runId()} ${Date.now()}`
+    await seedPrayerRequest(owner, { senderName: name })
+    const page = await editorPage()
+    await openPage(page)
+    await box(page, name).check()
+    await bar(page).getByRole('button', { name: 'Generar imágenes', exact: true }).click()
+    const review = page.getByRole('dialog', { name: 'Revisa el texto de las peticiones' })
+    await expect.poll(() => review.getByRole('button', { name: `Petición de ${name}: sin verificar`, exact: true }).isVisible(), { timeout: 30_000 }).toBe(true)
+    await review.getByRole('button', { name: 'Guardar y verificar', exact: true }).click()
+    const message = `Texto de ${name} guardado y verificado`
+    await expect.poll(() => toastState(page, message)).toEqual({ onTop: true, dialog: 'Revisa el texto de las peticiones', regions: 1, inViewport: true })
+    await dismissToast(page, message)
+    await page.close()
+  })
+
+  it('Solicitudes: el aviso de un envío nuevo llega con el diálogo de rechazo abierto, se ve encima y su enlace se puede pulsar', async () => {
+    const first = `Aviso cola ${runId()} ${Date.now()}`
+    const firstId = await seedPendingSubmission(first)
+    const page = await editorPage()
+    await page.goto(`${E2E_URL}/solicitudes`)
+    await waitForHydration(page)
+    const card = page.getByRole('article', { name: `Envío de ${first}` })
+    await expect.poll(() => card.isVisible()).toBe(true)
+    await card.getByRole('button', { name: 'Rechazar' }).click()
+    const reject = page.getByRole('dialog', { name: `¿Rechazar el envío de ${first}?` })
+    await expect.poll(() => reject.isVisible()).toBe(true)
+
+    // Otro invitado cierra su envío: el pulso (cada 5 s) lo anuncia mientras el diálogo sigue abierto.
+    const second = `Aviso nuevo ${runId()} ${Date.now()}`
+    const secondId = await seedPendingSubmission(second)
+    const message = `Nuevo envío de ${second} (1 archivo)`
+    await expect.poll(() => toastState(page, message), { timeout: 20_000 })
+      .toEqual({ onTop: true, dialog: `¿Rechazar el envío de ${first}?`, regions: 1, inViewport: true })
+    expect(await page.locator('[data-toast-region] .alert').filter({ hasText: message }).getByRole('link', { name: 'Ver', exact: true }).isVisible()).toBe(true)
+    await dismissToast(page, message)
+
+    // El diálogo sigue usable debajo del aviso: se rechaza y la cola queda como estaba.
+    await reject.getByRole('button', { name: 'Rechazar envío' }).click()
+    await expect.poll(() => toastState(page, `Se rechazó el envío de ${first}`)).toMatchObject({ onTop: true, dialog: null })
+    expect((await page.request.post(`${E2E_URL}/api/submissions/${secondId}/reject`, { data: { reason: '' } })).status()).toBe(204)
+    expect(await testSql()`SELECT status FROM guest_submissions WHERE id IN (${firstId}, ${secondId})`).toEqual([{ status: 'rejected' }, { status: 'rejected' }])
     await page.close()
   })
 })
