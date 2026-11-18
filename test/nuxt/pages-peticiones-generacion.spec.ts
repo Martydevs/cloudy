@@ -6,7 +6,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { enableAutoUnmount } from '@vue/test-utils'
 import { mockNuxtImport, mountSuspended } from '@nuxt/test-utils/runtime'
-import { nextTick } from 'vue'
+import { defineComponent, h, nextTick } from 'vue'
 import { readBody, setResponseStatus } from 'h3'
 import type { H3Event } from 'h3'
 import type { Me, PrayerGeneratedImage, PrayerGeneration, PrayerGenerationGroup } from '#shared/types/api'
@@ -271,6 +271,21 @@ describe('/peticiones/generaciones/<id>', () => {
       // Lo que no depende de la diapositiva sigue ahí.
       expect(buttonsWithText(wrapper, 'Descargar varias')).toHaveLength(1)
       expect(links(wrapper, 'Volver')).toHaveLength(1)
+    })
+
+    it('el pase recibe la posición de ?i= desde su primera pintura (el HTML del servidor no pinta antes la imagen 1)', async () => {
+      // Regresión: la página empezaba en 0 y dejaba que el pase corrigiera el índice al montarse, y eso no llega al SSR.
+      const seen: number[] = []
+      const Slideshow = defineComponent({
+        props: { index: { type: Number, default: 0 } },
+        setup(props) {
+          seen.push(props.index)
+          return () => h('div')
+        },
+      })
+      await mountSuspended(GenerationPage, { attachTo: document.body, route: `${PATH}?i=2`, global: { stubs: { Slideshow } } })
+      await flush()
+      expect(seen).toEqual([1])
     })
 
     it('con una sola imagen lista no se ofrece «Descargar varias»', async () => {

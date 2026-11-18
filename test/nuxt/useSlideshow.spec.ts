@@ -6,7 +6,7 @@ import { mountSuspended } from '@nuxt/test-utils/runtime'
 import { enableAutoUnmount } from '@vue/test-utils'
 import { defineComponent, h, nextTick, ref } from 'vue'
 import type { Me } from '#shared/types/api'
-import { useSlideshow } from '~/composables/useSlideshow'
+import { slideIndexFromQuery, useSlideshow } from '~/composables/useSlideshow'
 import { flush } from './helpers/api'
 
 enableAutoUnmount(afterEach)
@@ -38,6 +38,7 @@ async function mountHost(options: HostOptions = {}) {
           h('button', { 'type': 'button', 'aria-label': 'Dentro' }),
           h('input', { 'type': 'text', 'aria-label': 'Texto' }),
           h('input', { 'type': 'checkbox', 'aria-label': 'Casilla' }),
+          h('input', { 'type': 'radio', 'name': 'opcion', 'aria-label': 'Opción' }),
           h('textarea', { 'aria-label': 'Nota' }),
           h('select', { 'aria-label': 'Lista' }, [h('option', 'a'), h('option', 'b')]),
           h('div', { 'contenteditable': 'true', 'tabindex': '0', 'aria-label': 'Editable' }),
@@ -197,6 +198,14 @@ describe('useSlideshow: posición en la query', () => {
     }
   })
 
+  it('slideIndexFromQuery: la posición de la query como índice, acotada si se sabe cuántas hay', () => {
+    expect(slideIndexFromQuery('3')).toBe(2)
+    expect(slideIndexFromQuery('40')).toBe(39)
+    expect(slideIndexFromQuery('40', 3)).toBe(2)
+    expect(slideIndexFromQuery('2', 3)).toBe(1)
+    for (const value of ['abc', '0', '-2', '2.5', '', undefined, null, ['1', '2']]) expect(slideIndexFromQuery(value, 3), String(value)).toBeNull()
+  })
+
   it('sin query configurada no lee ni escribe la URL', async () => {
     const replace = vi.spyOn(useRouter(), 'replace')
     const { index, api } = await mountHost({ route: '/archivos?i=3' })
@@ -288,7 +297,8 @@ describe('useSlideshow: teclado', () => {
 
   it('los controles que usan las flechas se las quedan', async () => {
     const { index, el, focus } = await mountHost()
-    for (const label of ['Texto', 'Nota', 'Lista', 'Editable']) {
+    // Un grupo de radios se recorre con ← →: quitarle la tecla lo dejaría sin teclado.
+    for (const label of ['Texto', 'Nota', 'Lista', 'Editable', 'Opción']) {
       focus(label)
       expect(press(el(label), 'ArrowRight').defaultPrevented, label).toBe(false)
       expect(index.value, label).toBe(0)

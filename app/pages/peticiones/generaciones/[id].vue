@@ -42,7 +42,9 @@ const author = computed(() => {
   return person ? (person.active ? person.name : messages.youtube.inactiveUser) : ''
 })
 
-const current = ref(0)
+// La posición de `?i=` desde la primera pintura (también en el HTML del servidor): así un enlace compartido no pinta y
+// descarga antes la imagen 1.
+const current = ref(slideIndexFromQuery(route.query.i, slides.value.length) ?? 0)
 
 // ---- Pie de la diapositiva
 function caption(slide: PrayerGenerationSlide, total: number) {

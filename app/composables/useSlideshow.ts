@@ -17,11 +17,22 @@ export interface SlideshowOptions {
   query?: string | false
 }
 
-/** Los controles de formulario usan las flechas: ahí no se cambia de diapositiva. */
+/** Los controles de formulario usan las flechas (un grupo de radios se recorre con ellas): ahí no se cambia de diapositiva. */
 function ownsArrows(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false
   if (target.isContentEditable || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement) return true
-  return target instanceof HTMLInputElement && !['checkbox', 'radio', 'button'].includes(target.type)
+  return target instanceof HTMLInputElement && !['checkbox', 'button'].includes(target.type)
+}
+
+/**
+ * Índice (0-based) que pide la query (`?i=3`, 1-based), acotado a `count` si ya se sabe cuántas diapositivas hay; `null`
+ * si el valor no es una posición. La página que guarda el índice lo usa para su valor inicial: lo que `useSlideshow`
+ * escribe durante el setup del hijo ya no llega al HTML del servidor (el padre no se vuelve a pintar en el SSR).
+ */
+export function slideIndexFromQuery(value: unknown, count = 0): number | null {
+  const raw = Number(value)
+  if (!Number.isInteger(raw) || raw < 1) return null
+  return count > 0 ? Math.min(raw - 1, count - 1) : raw - 1
 }
 
 export function useSlideshow({ count, index, root, stage, query = false }: SlideshowOptions) {
@@ -41,8 +52,8 @@ export function useSlideshow({ count, index, root, stage, query = false }: Slide
   // recién escrito hasta que el padre vuelve a pintar, así que acotar después leyéndolo de vuelta no serviría (`?i=9` con 3
   // imágenes dejaba el pase vacío).
   if (query) {
-    const raw = Number(route.query[query])
-    if (Number.isInteger(raw) && raw >= 1) index.value = clamp(raw - 1)
+    const initial = slideIndexFromQuery(route.query[query], total.value)
+    if (initial !== null) index.value = initial
   }
 
   // Si la lista se acorta (o llega después que la query), el índice queda dentro.
