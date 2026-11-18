@@ -217,8 +217,8 @@ const PRIVATE_ROUTES = [
   '/youtube', '/youtube/:id', '/youtube/:id/ventana',
   // Página Canciones (feature 006): `:id` es una canción sembrada en esta corrida.
   '/canciones', '/canciones/:id',
-  // Página Peticiones (feature 007).
-  '/peticiones',
+  // Página Peticiones (feature 007) y la de una generación (`:id` es una generación sembrada en esta corrida).
+  '/peticiones', '/peticiones/generaciones/:id',
 ]
 const PUBLIC_ROUTES = ['/login', '/registro', '/recuperar', '/restablecer', '/upload', '/acceso-denegado']
 const PENDING_ROUTES = ['/pendiente']
@@ -395,7 +395,7 @@ describe('US9 · recorrido de rutas (T151)', () => {
 
   describe('privadas, como administradora', () => {
     const pool = pagePool(viewport => pageAs('admin', ADMIN, viewport))
-    let seed: { folderId: string, fileId: string, songId: string } | null = null
+    let seed: { folderId: string, fileId: string, songId: string, generationId: string } | null = null
 
     afterAll(() => pool.closeAll())
 
@@ -408,7 +408,12 @@ describe('US9 · recorrido de rutas (T151)', () => {
         const [song] = await sql`INSERT INTO songs (source_url, title, artist, lyrics)
           VALUES (${`https://letras.com/e2e/recorrido-${runId()}`}, ${`Recorrido ${runId()}`}, 'Cloudy', ${JSON.stringify([['Primera línea', 'Segunda línea']])}::jsonb)
           RETURNING id` as { id: string }[]
-        seed = { folderId, fileId: await seedFile(`Recorrido ${runId()}.pptx`, owner, folderId), songId: song!.id }
+        const fileId = await seedFile(`Recorrido ${runId()}.pptx`, owner, folderId)
+        // Una generación sin imágenes (un grupo con un id cualquiera): la página muestra su diapositiva «Sin terminar».
+        const [generation] = await sql`INSERT INTO prayer_generations (created_by, groups)
+          VALUES (${owner}, ${JSON.stringify([[fileId]])}::jsonb)
+          RETURNING id` as { id: string }[]
+        seed = { folderId, fileId, songId: song!.id, generationId: generation!.id }
       }
       return seed
     }
@@ -416,8 +421,9 @@ describe('US9 · recorrido de rutas (T151)', () => {
     it.each(PRIVATE_ROUTES)('%s', async (pattern) => {
       for (const viewport of VIEWPORTS) {
         const { page, errors } = await pool.get(viewport)
-        const { folderId, fileId, songId } = await seeded()
-        const path = pattern.replace(':folderId', folderId).replace(':fileId', fileId).replace(':id', pattern.startsWith('/canciones/') ? songId : 'okShortVid1')
+        const { folderId, fileId, songId, generationId } = await seeded()
+        const routeId = pattern.startsWith('/canciones/') ? songId : pattern.startsWith('/peticiones/generaciones/') ? generationId : 'okShortVid1'
+        const path = pattern.replace(':folderId', folderId).replace(':fileId', fileId).replace(':id', routeId)
         for (const theme of THEMES) await audit(page, errors, path, theme, viewport)
       }
     })

@@ -497,7 +497,8 @@ describe('US4 · buscar, filtrar por fecha y ordenar', () => {
 
   it('Más antiguas primero recorre la lista sin repetir ni omitir; cambiar filtros no cambia la selección; sin coincidencias → Quitar filtros', async () => {
     const token = `orden${runId()}`
-    const names = await seedMany(`Orden ${token}`, 14)
+    const seeded = await seedRequests(`Orden ${token}`, 14)
+    const names = seeded.map(s => s.name)
     const page = await editorPage()
     await openPage(page)
     await search(page, token)
@@ -519,16 +520,30 @@ describe('US4 · buscar, filtrar por fecha y ordenar', () => {
     await search(page, `nadie-${token}`)
     await expect.poll(() => page.getByText('No hay peticiones con esos filtros').isVisible()).toBe(true)
     expect(await bar(page).innerText()).toContain('2 peticiones → 1 imagen')
-    // Las elegidas se generan aunque el filtro las oculte.
-    await resetStub()
-    await bar(page).getByRole('button', { name: 'Generar imágenes', exact: true }).click()
-    await expect.poll(async () => (await prayerCalls()).length, { timeout: 30_000 }).toBe(1)
-    expect((await prayerCalls())[0]!.photos).toHaveLength(2)
 
     await page.getByRole('button', { name: 'Quitar filtros' }).last().click()
     await expect.poll(() => page.getByText('No hay peticiones con esos filtros').isVisible()).toBe(false)
     expect(await searchBox(page).inputValue()).toBe('')
     await expect.poll(async () => (await visibleNames(page)).length).toBe(12)
+    expect(await bar(page).innerText()).toContain('2 peticiones → 1 imagen')
+
+    // Las elegidas se generan aunque el filtro las oculte: la revisión las trae de la selección y el modelo recibe su texto verificado.
+    await search(page, `nadie-${token}`)
+    await expect.poll(() => page.getByText('No hay peticiones con esos filtros').isVisible()).toBe(true)
+    await resetStub()
+    const texts = [`Texto uno ${token}`, `Texto dos ${token}`]
+    await seedPrayerTranscript(seeded[0]!.fileId, owner, { text: texts[0]! })
+    await seedPrayerTranscript(seeded[1]!.fileId, owner, { text: texts[1]! })
+    await bar(page).getByRole('button', { name: 'Generar imágenes', exact: true }).click()
+    const dialog = page.getByRole('dialog', { name: 'Revisa el texto de las peticiones' })
+    const generate = dialog.getByRole('button', { name: 'Generar imágenes', exact: true })
+    await expect.poll(() => generate.isEnabled(), { timeout: 15_000 }).toBe(true)
+    await generate.click()
+    await page.waitForURL(url => url.pathname.startsWith('/peticiones/generaciones/'))
+    await expect.poll(async () => (await prayerCalls()).length, { timeout: 30_000 }).toBe(1)
+    const [call] = await prayerCalls()
+    expect(call!.photos).toHaveLength(0)
+    expect([...call!.texts].sort()).toEqual([...texts].sort())
     await page.close()
   })
 
