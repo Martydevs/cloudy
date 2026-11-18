@@ -74,6 +74,27 @@ describe('generatePrayerImage', () => {
     expect((user?.content as { type: string }[]).filter(part => part.type === 'file')).toHaveLength(1)
   })
 
+  it('la plantilla como URL firmada viaja tal cual (el modelo acepta https): sus bytes no se descargan ni se mandan', async () => {
+    const url = new URL('https://bucket.test/b/peticiones/plantilla-0123456789abcdef.jpg?X-Amz-Signature=f00')
+    const model = new MockLanguageModelV4({
+      supportedUrls: { 'image/*': [/^https:\/\/.+$/i] },
+      doGenerate: answer([{ type: 'file', mediaType: 'image/png', data: PNG }]) as DoGenerate,
+    })
+    expect(await generatePrayerImage({ texts, template: url, model })).toMatchObject({ status: 'ready' })
+    const user = model.doGenerateCalls[0]!.prompt.find(m => m.role === 'user')
+    expect(user?.content[1]).toMatchObject({ type: 'file', mediaType: 'image/jpeg', data: { type: 'url', url } })
+    expect((user?.content as { type: string }[]).filter(part => part.type === 'file')).toHaveLength(1)
+  })
+
+  it('pide la salida acotada: image_config con la relación de aspecto de la plantilla y el tamaño 1K', async () => {
+    const model = draws([{ type: 'file', mediaType: 'image/png', data: PNG }])
+    await generatePrayerImage({ texts, template, aspectRatio: '16:9', model })
+    expect(model.doGenerateCalls[0]!.providerOptions).toEqual({ openrouter: { image_config: { aspect_ratio: '16:9', image_size: '1K' } } })
+    // Sin relación conocida solo viaja el tamaño.
+    await generatePrayerImage({ texts, template, aspectRatio: null, model })
+    expect(model.doGenerateCalls[1]!.providerOptions).toEqual({ openrouter: { image_config: { image_size: '1K' } } })
+  })
+
   it('ignora archivos que no son imagen', async () => {
     const model = draws([{ type: 'file', mediaType: 'application/pdf', data: PNG }, { type: 'file', mediaType: 'image/png', data: PNG }])
     expect(await generatePrayerImage({ texts, template, model })).toMatchObject({ status: 'ready', mediaType: 'image/png' })
@@ -119,6 +140,8 @@ describe('generatePrayerImage', () => {
     ['un texto en blanco', ['Hola', '  \n '], template],
     ['un texto de más de 1000 caracteres', ['a'.repeat(1001)], template],
     ['algo que no es texto', [{ url: 'https://bucket.test/x' }], template],
+    ['una plantilla por http', ['Hola'], new URL('http://bucket.test/plantilla.jpg')],
+    ['una plantilla que es un texto', ['Hola'], 'https://bucket.test/plantilla.jpg'],
     ['plantilla vacía', ['Hola'], new Uint8Array()],
   ])('%s → invalid_input sin llamar al modelo', async (_, input, tpl) => {
     const model = draws([{ type: 'file', mediaType: 'image/png', data: PNG }])
@@ -179,7 +202,7 @@ describe('generatePrayerImage', () => {
       usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 },
     }))
     vi.stubGlobal('fetch', fetch)
-    const result = await generatePrayerImage({ texts, template })
+    const result = await generatePrayerImage({ texts, template, aspectRatio: '16:9' })
     expect(result).toMatchObject({ status: 'ready', mediaType: 'image/png' })
     expect(Array.from((result as { data: Uint8Array }).data)).toEqual(Array.from(PNG))
     const [url, init] = fetch.mock.calls[0]!
@@ -187,6 +210,7 @@ describe('generatePrayerImage', () => {
     const body = JSON.parse(init.body as string)
     expect(body.model).toBe('@preset/pray-requests-image-generation')
     expect(body.modalities).toEqual(['image', 'text'])
+    expect(body.image_config).toEqual({ aspect_ratio: '16:9', image_size: '1K' })
     const parts = body.messages[0].content as { type: string, text?: string, image_url?: { url: string } }[]
     const images = parts.filter(part => part.type === 'image_url').map(part => part.image_url!.url)
     // La única imagen es la plantilla, en base64: ninguna foto de invitado.
@@ -194,6 +218,30 @@ describe('generatePrayerImage', () => {
     expect(images[0]).toMatch(/^data:image\/jpeg;base64,/)
     expect(fetch).toHaveBeenCalledTimes(1)
     expect(parts.filter(part => part.type === 'text').map(part => part.text)).toEqual([buildPrayerPrompt(2), prayerTextBlock(TEXT_A), prayerTextBlock(TEXT_B)])
+  })
+
+  it('con la plantilla como URL firmada el cuerpo lleva esa URL y ningún base64: OpenRouter la descarga del bucket', async () => {
+    vi.stubGlobal('useRuntimeConfig', () => ({ openrouterApikey: 'sk-or-x', openrouterBaseUrl: 'http://openrouter.test/v1' }))
+    const b64 = Buffer.from(PNG).toString('base64')
+    const fetch = vi.fn(async (_url: string, _init: RequestInit) => Response.json({
+      id: 'gen-1',
+      model: 'preset',
+      choices: [{
+        index: 0,
+        message: { role: 'assistant', content: '', images: [{ type: 'image_url', image_url: { url: `data:image/png;base64,${b64}` } }] },
+        finish_reason: 'stop',
+      }],
+      usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 },
+    }))
+    vi.stubGlobal('fetch', fetch)
+    const signed = 'https://bucket.test/b/peticiones/plantilla-0123456789abcdef.jpg?X-Amz-Signature=f00'
+    expect(await generatePrayerImage({ texts, template: new URL(signed) })).toMatchObject({ status: 'ready' })
+    // Una sola llamada: la de chat completions (el AI SDK no descargó la plantilla).
+    expect(fetch).toHaveBeenCalledTimes(1)
+    const raw = fetch.mock.calls[0]![1].body as string
+    const parts = JSON.parse(raw).messages[0].content as { type: string, image_url?: { url: string } }[]
+    expect(parts.filter(part => part.type === 'image_url').map(part => part.image_url!.url)).toEqual([signed])
+    expect(raw).not.toContain('base64')
   })
 
   // Regresión: con una clave borrada en OpenRouter, la API responde 401 «User not found.» y la página mostraba un 502

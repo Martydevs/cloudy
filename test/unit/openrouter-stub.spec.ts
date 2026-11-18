@@ -108,12 +108,36 @@ describe('generación (preset de imágenes)', () => {
       model: PRAYER_PRESET,
       modalities: ['image', 'text'],
       template: true,
+      templateKind: 'bytes',
+      imageConfig: null,
       photos: [],
       texts: ['Por mi mamá\ny mi abuela', 'Por mi trabajo'],
       prompt: 'Escribe cada texto en la plantilla\n<peticion>\nPor mi mamá\ny mi abuela\n</peticion>\n<peticion>\nPor mi trabajo\n</peticion>',
       status: 200,
     }])
     expect((await calls()).transcript).toEqual([])
+  })
+
+  it('reconoce la plantilla como URL firmada de su copia en el bucket y registra image_config', async () => {
+    const signed = 'https://bucket.test/b/e2e/run1/peticiones/plantilla-0123456789abcdef.jpg?X-Amz-Signature=f00'
+    await post('/chat/completions', {
+      model: PRAYER_PRESET,
+      modalities: ['image', 'text'],
+      image_config: { aspect_ratio: '16:9', image_size: '1K' },
+      messages: [{ role: 'user', content: [{ type: 'text', text: 'Escribe' }, { type: 'image_url', image_url: { url: signed } }, { type: 'text', text: '<peticion>\nHola\n</peticion>' }] }],
+    })
+    expect((await calls()).prayer[0]).toMatchObject({
+      template: true, templateKind: 'url', photos: [], texts: ['Hola'], imageConfig: { aspect_ratio: '16:9', image_size: '1K' },
+    })
+  })
+
+  it('la foto de un invitado en el lugar de la plantilla no cuenta como plantilla', async () => {
+    await post('/chat/completions', {
+      model: PRAYER_PRESET,
+      modalities: ['image', 'text'],
+      messages: [{ role: 'user', content: [{ type: 'image_url', image_url: { url: PHOTO_A } }] }],
+    })
+    expect((await calls()).prayer[0]).toMatchObject({ template: false, templateKind: null, photos: [PHOTO_A] })
   })
 
   it('una foto que se colara después de la plantilla queda registrada (para que la prueba falle)', async () => {

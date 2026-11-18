@@ -2,13 +2,14 @@
 // en el servidor que las peticiones sigan disponibles y que una persona haya verificado su texto, carga esos textos y la
 // plantilla, llama a la IA y traduce cada fallo a HTTP. Importa `#server/ai` solo para generar la imagen; el SQL vive en
 // `prayer-requests.ts`, `prayer-transcripts.ts`, `prayer-gallery.ts` y `prayer-collections.ts`. Al proveedor solo viajan la
-// plantilla y los textos verificados, nunca las fotos de los invitados, nombres, notas, IP ni ids, y el registro solo lleva
-// códigos.
+// plantilla (como URL firmada de su copia en el bucket, `prayer-template.ts`, o sus bytes de respaldo) y los textos
+// verificados, nunca las fotos de los invitados, nombres, notas, IP ni ids, y el registro solo lleva códigos y números.
 import { generatePrayerImage } from '#server/ai'
 import type { PrayerImageErrorCode } from '#server/ai'
 import type { PrayerErrorCode } from '#shared/constants/prayers'
 import { prayerError } from './prayer-errors'
 import { loadEligibleRequests } from './prayer-requests'
+import { loadPrayerTemplate, prayerTemplateUrl } from './prayer-template'
 import { loadVerifiedTexts } from './prayer-transcripts'
 
 /**
@@ -21,13 +22,7 @@ function httpCode(error: PrayerImageErrorCode): PrayerErrorCode {
   return error
 }
 
-/** La plantilla empaquetada como server asset (`nitro.serverAssets`); `null` si falta o está vacía. */
-async function loadTemplate(): Promise<Uint8Array | null> {
-  const raw = await useStorage('assets:peticiones').getItemRaw<Uint8Array | ArrayBuffer>('plantilla.jpg').catch(() => null)
-  if (!raw) return null
-  const bytes = raw instanceof Uint8Array ? raw : new Uint8Array(raw)
-  return bytes.byteLength > 0 ? bytes : null
-}
+const kb = (bytes: number) => Math.round(bytes / 1024)
 
 export interface PrayerImage {
   mediaType: string
@@ -51,15 +46,26 @@ export async function createPrayerImage(fileIds: string[], { abortSignal }: { ab
   }
 
   // Sin clave o sin plantilla no se llama a nadie.
-  const template = useRuntimeConfig().openrouterApikey?.trim() ? await loadTemplate() : null
+  const template = useRuntimeConfig().openrouterApikey?.trim() ? await loadPrayerTemplate() : null
   if (!template) {
     console.error('[prayer-image] not_configured')
     throw prayerError('not_configured')
   }
 
+  // La plantilla viaja como URL firmada (el cuerpo de la llamada pesa ~1 MB menos); sin almacenamiento, sus bytes.
+  const templateUrl = await prayerTemplateUrl(template)
+  const started = Date.now()
   // El orden lo decide el servidor (aprobación, envío, id), no el navegador.
-  const result = await generatePrayerImage({ texts: found.map(request => texts.get(request.id)!), template, abortSignal })
+  const result = await generatePrayerImage({
+    texts: found.map(request => texts.get(request.id)!),
+    template: templateUrl ?? template.bytes,
+    aspectRatio: template.aspectRatio,
+    abortSignal,
+  })
+  // Medición de cada llamada: solo números y códigos (duración, cómo viajó la plantilla, cuántos textos y peso de la imagen).
+  const metrics = `ms=${Date.now() - started} template=${templateUrl ? 'url' : `bytes:${kb(template.bytes.byteLength)}KB`} texts=${found.length}`
   if (result.status === 'failed') {
+    console.info(`[prayer-image] call status=failed ${metrics}`)
     const code = httpCode(result.error)
     // Saldo agotado o clave/preset rechazados piden acción de un administrador: se registran como error.
     const log = code === 'quota_exceeded' || code === 'not_configured' ? console.error : console.warn
@@ -68,5 +74,6 @@ export async function createPrayerImage(fileIds: string[], { abortSignal }: { ab
       : `[prayer-image] ${code}`)
     throw prayerError(code)
   }
+  console.info(`[prayer-image] call status=ok ${metrics} out=${kb(result.data.byteLength)}KB`)
   return { mediaType: result.mediaType, data: result.data, count: found.length }
 }

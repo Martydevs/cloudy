@@ -8,7 +8,7 @@ import { classifyProviderError } from '../errors'
 import { resolvePrayerImageModel } from '../providers/openrouter'
 import { buildPrayerPrompt, prayerTextBlock } from './prompt'
 import type { PrayerImageErrorCode } from './schemas'
-import { prayerImageInputSchema } from './schemas'
+import { PRAYER_IMAGE_SIZE, prayerImageInputSchema } from './schemas'
 
 export type { PrayerImageErrorCode } from './schemas'
 
@@ -24,8 +24,10 @@ export type PrayerImageResult =
 export interface GeneratePrayerImageOptions {
   /** 1–4 textos verificados, en el orden de la imagen. */
   texts: string[]
-  /** JPEG de la plantilla. */
-  template: Uint8Array
+  /** La plantilla: la URL firmada https de su copia en el bucket (el modelo la descarga) o, de respaldo, sus bytes JPEG. */
+  template: Uint8Array | URL
+  /** Relación de aspecto de la plantilla (`16:9`): se pide la imagen con la misma. */
+  aspectRatio?: string | null
   /** Por defecto, el de `useRuntimeConfig()`; `null` (sin clave) no llama a nadie. */
   model?: LanguageModel | null
   abortSignal?: AbortSignal
@@ -34,7 +36,7 @@ export interface GeneratePrayerImageOptions {
 const fail = (error: PrayerImageErrorCode): PrayerImageResult => ({ status: 'failed', error })
 
 export async function generatePrayerImage(options: GeneratePrayerImageOptions): Promise<PrayerImageResult> {
-  const input = prayerImageInputSchema.safeParse({ texts: options.texts, template: options.template })
+  const input = prayerImageInputSchema.safeParse({ texts: options.texts, template: options.template, aspectRatio: options.aspectRatio })
   if (!input.success) return fail('invalid_input')
 
   const model = options.model === undefined ? resolvePrayerImageModel(useRuntimeConfig()) : options.model
@@ -56,7 +58,16 @@ export async function generatePrayerImage(options: GeneratePrayerImageOptions): 
           ...input.data.texts.map(text => ({ type: 'text' as const, text: prayerTextBlock(text) })),
         ],
       }],
+      // Salida acotada (`image_config` de OpenRouter, que viaja tal cual en el cuerpo): la relación de aspecto de la
+      // plantilla y el tamaño estándar. Un modelo que no lo soporte lo ignora.
+      providerOptions: {
+        openrouter: {
+          image_config: { ...(input.data.aspectRatio ? { aspect_ratio: input.data.aspectRatio } : {}), image_size: PRAYER_IMAGE_SIZE },
+        },
+      },
       timeout: ATTEMPT_TIMEOUT_MS,
+      // Un reintento: el AI SDK solo repite errores reintentables (408, 409, 429, 5xx), nunca un 402 ni un 4xx de entrada,
+      // así que no duplica un gasto en un fallo que no se arregla solo.
       maxRetries: 1,
       abortSignal: signal,
     })

@@ -87,9 +87,10 @@ describe('arquitectura de las capas', () => {
       .map(f => f.path)
       .sort()
     expect(users).toEqual(PRAYER_SQL.filter(path => path !== 'server/utils/prayer-requests.ts').sort())
-    // La subida de la imagen generada pasa solo por la frontera de storage, desde la capa del historial.
+    // La subida de la imagen generada pasa solo por la frontera de storage, desde la capa del historial; la otra subida
+    // del servidor es la copia de la plantilla (`prayer-template.ts`).
     const putters = files.filter(f => /\bputObject\(/.test(f.code)).map(f => f.path).sort()
-    expect(putters).toEqual(['server/utils/prayer-gallery.ts', 'server/utils/storage.ts'])
+    expect(putters).toEqual(['server/utils/prayer-gallery.ts', 'server/utils/prayer-template.ts', 'server/utils/storage.ts'])
   })
 
   it('el SQL de las transcripciones solo vive en prayer-transcripts.ts', () => {
@@ -105,6 +106,11 @@ describe('arquitectura de las capas', () => {
     const code = (path: string) => files.find(f => f.path === path)!.code
     expect(code('server/utils/prayer-images.ts')).not.toMatch(/presignGet|photoSource/)
     expect(code('server/ai/prayer-image/generate.ts')).not.toMatch(/new URL\(|type: 'file' as const/)
+    // La única URL que se firma para la generación es la de la copia de la plantilla, y esa capa no conoce las peticiones:
+    // ni la base de datos ni las fotos.
+    const template = code('server/utils/prayer-template.ts')
+    expect(template).toMatch(/presignGet\(objectKey/)
+    expect(template).not.toMatch(/useDb\(|db\/schema|drizzle-orm|storageKey|previewKey|prayer-requests|photoSource/)
     expect(code('server/utils/prayer-transcripts.ts')).toMatch(/presignGet\(/)
   })
 

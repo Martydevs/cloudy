@@ -37,8 +37,12 @@ const FAIL_ONCE_CALLS = 2
 export interface PrayerCall {
   model: string | null
   modalities: string[]
-  /** La primera imagen es un `data:image/jpeg` (la plantilla). */
+  /** La primera imagen es la plantilla: la URL firmada de su copia en el bucket o, de respaldo, un `data:image/jpeg`. */
   template: boolean
+  /** Cómo viajó la plantilla. */
+  templateKind: 'url' | 'bytes' | null
+  /** `image_config` del cuerpo (relación de aspecto y tamaño pedidos), o `null`. */
+  imageConfig: Record<string, unknown> | null
   /** Imágenes después de la plantilla: la generación ya no manda fotos de invitados, así que debe ir vacío. */
   photos: string[]
   /** El texto de cada petición (lo que va entre las marcas `<peticion>`), en el orden en que llegó. */
@@ -97,6 +101,7 @@ interface ChatBody {
   model?: unknown
   modalities?: unknown
   response_format?: { type?: unknown } | null
+  image_config?: unknown
   messages?: { content?: unknown }[]
 }
 
@@ -123,14 +128,20 @@ function partsOf(body: ChatBody): { texts: string[], imageUrls: string[] } {
 }
 
 const TEXT_BLOCK_RE = /^<peticion>\n([\s\S]*)\n<\/peticion>$/
+/** La copia de la plantilla en el bucket (`server/utils/prayer-template.ts`): nunca se descarga, solo se reconoce. */
+const TEMPLATE_URL_RE = /^https:\/\/[^?]*\/peticiones\/plantilla-[0-9a-f]{16}\.jpg(\?|$)/
 
 function prayerCallOf(body: ChatBody): Omit<PrayerCall, 'status'> {
   const { texts, imageUrls } = partsOf(body)
-  const template = imageUrls[0]?.startsWith('data:image/jpeg') ?? false
+  const first = imageUrls[0] ?? ''
+  const templateKind = first.startsWith('data:image/jpeg') ? 'bytes' : TEMPLATE_URL_RE.test(first) ? 'url' : null
+  const template = templateKind !== null
   return {
     model: typeof body.model === 'string' ? body.model : null,
     modalities: Array.isArray(body.modalities) ? body.modalities.filter((m): m is string => typeof m === 'string') : [],
     template,
+    templateKind,
+    imageConfig: body.image_config && typeof body.image_config === 'object' ? body.image_config as Record<string, unknown> : null,
     photos: template ? imageUrls.slice(1) : imageUrls,
     texts: texts.flatMap(text => TEXT_BLOCK_RE.exec(text)?.[1] ?? []),
     prompt: texts.join('\n'),
