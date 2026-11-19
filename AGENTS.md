@@ -12,7 +12,7 @@ configuration must point here instead of copying these rules.
 users and roles (admin / editor), YouTube downloads and playlists, Canciones (Letras.com lyrics turned into `.pptx` slides) and
 Peticiones (approved guest prayer-request photos whose text a model reads, an editor corrects and verifies, and an OpenRouter preset
 then draws onto a template; editors can also add a request themselves from the page, approved on upload) and Calendario (the team's work days:
-admins schedule them with time ranges, members and attached material; editors only read). How each area behaves in detail, and the decisions that shaped it, are recorded in "Known gotchas" below.
+admins schedule them with time ranges, members and attached material; editors read and change the status of the days they are assigned to). How each area behaves in detail, and the decisions that shaped it, are recorded in "Known gotchas" below.
 The old background image-text extraction (`files.text_*`) was removed (migration `0011`); Peticiones reads photos on demand into its own table.
 
 ## Stack
@@ -388,14 +388,17 @@ Never print or commit their values.
   `work_day_members` + `work_day_materials` (migration `0015`). `kind` has **no default** and the form starts with no kind chosen: nothing is assumed
   from the weekday (Wednesday/Sunday only show a hint, `usualWorkDay`). Dates (`AAAA-MM-DD`) and hours (`HH:MM`) are wall-clock, with no zone; the only
   zone is `CALENDAR_TIME_ZONE` (`America/Monterrey`), which decides what "today" is so the SSR (UTC on Vercel) and the browser ask for the same
-  «Próximos días» range (`todayInCalendarZone`). Only admins write (`calendar.manage`); editors read. All SQL lives in `server/utils/work-days.ts` and
+  «Próximos días» range (`todayInCalendarZone`). Only admins write (`calendar.manage`); editors read, and an editor
+  **assigned to a day** (`work_day_members`) also changes its status, from the detail dialog and the list button: the rule is `canSetWorkDayStatus`
+  (`shared/permissions.ts`, per day, so not in the `can()` matrix) and `setWorkDayStatus` enforces it inside the same `UPDATE` (`EXISTS` on the member
+  row; nothing written → 404 if the day is gone, else **403** `not_assigned`). All SQL lives in `server/utils/work-days.ts` and
   `server/utils/work-day-materials.ts` (`architecture.spec.ts`): one `db.batch` per read (range = 3 queries, detail = 8) and, per write, one batch of
   checks and one of writes, so a day is never half written; an inactive member or missing material answers **409** (`member_unavailable` /
   `material_unavailable`, `data.ids`). `PATCH` replaces everything (slot ids change). Material is a **reference** (song collection, YouTube playlist or
   folder) with `ON DELETE CASCADE`; a folder in the trash is hidden and not counted. Past days are kept (no cron step).
   **SVAR**: `WorkCalendar.vue` is the only importer of `@svar-ui/*` and of its CSS (`@svar-ui/vue-calendar/all.css`, then
-  `app/assets/css/svar-calendar-cloudy.css`, never in `nuxt.config.ts`), loaded as `<LazyWorkCalendar>` inside `<ClientOnly>` behind a skeleton of the same
-  height (`h-[44rem]` in both places). Things that bite: pass **`:readonly="true"`** (the prop has no type: a bare `readonly` arrives as `''` and SVAR treats
+  `app/assets/css/svar-calendar-cloudy.css`, never in `nuxt.config.ts`), loaded as `<LazyWorkCalendar>` inside `<ClientOnly>` behind a skeleton that fills the same
+  box (`--calendar-h`, see **Layout and pages** below; the component's root is `h-full`). Things that bite: pass **`:readonly="true"`** (the prop has no type: a bare `readonly` arrives as `''` and SVAR treats
   the calendar as editable); the toolbar is **ours** (`toolbar: null`) because SVAR's draws its icons with a font from its CDN, skipped by `:fonts="false"`;
   every change of `events` re-initialises SVAR from its `view`/`date` props, so both are `v-model`s owned by the page; SVAR opens events with the mouse only,
   so the event content is a `<button>` (`WorkCalendarEvent`, `provide`/`inject` with `OPEN_WORK_DAY`); the month's "+N more" is hard-coded English
@@ -403,6 +406,19 @@ Never print or commit their values.
   own element, so overrides use `.cloudy-calendar .wx-willow-theme`, each `--wx-*` pointing at a daisyUI token (one theme for dark and light, no
   `WillowDark`). Month data is cached per month in `useState('work-calendar-months')` with the neighbours preloaded (`useWorkCalendar`); every write refetches
   the known months and the list. Component tests mock `@svar-ui/vue-calendar` and `@svar-ui/vue-core` (`test/nuxt/WorkCalendar.spec.ts`).
+  **Layout and pages**: the dashboard frame (drawer, top bar, toast, side menu, trays) lives in `app/components/app/AppShell.vue`; `layouts/dashboard.vue` is
+  `<AppShell>` and `layouts/calendar.vue` is `<AppShell fluid>` (no `max-w-7xl`: the whole content column), used only by `/calendario`. That layout sets
+  `--calendar-h: max(calc((100dvh - 4rem) * 0.8), 28rem)` (80 % of the height under the 4 rem top bar; computed from the viewport, so skeleton and calendar
+  match without depending on a parent's height; on short screens the 28 rem minimum wins and the page scrolls). `app/pages/calendario/index.vue` has the top
+  strip (title, the **Calendario / Lista** switch, «Agendar día» as a link) and one box of that height showing the calendar or, with `?vista=lista`, the SSR
+  list **Próximos días** scrolling inside it (the switch uses `navigateTo(..., { replace: true })`); `?fecha=AAAA-MM-DD` (validated with `parseIsoDate`) sets the
+  visible date, and the default is `useCalendarToday()` (same value in SSR and browser, so the «Agendar día» href hydrates cleanly). **The form is a page, not a
+  dialog**: `/calendario/nuevo` (`?fecha=`) and `/calendario/[id]/editar` (admins only by `definePageMeta` roles, dashboard layout) render `WorkDayForm.vue`. It
+  guards unsaved changes with a `router.beforeEach` registered while mounted (like `usePrayerLeaveGuard`, `useConfirm`) plus `beforeunload`, both off after a
+  successful save, and then navigates to `/calendario?fecha=<day's date>`; «Cancelar» just navigates and lets the guard ask. The edit page fetches the day with
+  its own key (`work-day-edit-<id>`, `server: false`) and mounts the form only once it arrived (the form reads its initial values once). The day's detail is
+  still a lazy read-only dialog (`LazyWorkDayDetailDialog`); its «Editar» navigates. In component tests `mountSuspended` navigates to `/` unless given
+  `route`, and a form left mounted with changes keeps its guard: always `unmount()`.
 - Toasts and modals: every dialog is a `<dialog>` opened with `showModal()` (top layer), so nothing outside it is painted above it, clickable or announced.
   `AppToast` (one per layout) therefore mounts the stack (`AppToastStack`, the markup and the live region) **inside the topmost open dialog** while one is open:
   `useOpenModal()` keeps the opening order with a single `MutationObserver` on `document.body` (the `open` attribute, plus dialogs removed while open), so stacked

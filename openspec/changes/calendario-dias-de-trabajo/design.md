@@ -97,10 +97,40 @@ The detail lists up to 50 songs of each attached collection and 50 videos of eac
 `/canciones/<songId>` and `/youtube/<videoId>`; a folder links to `/archivos/<folderId>` and lists no files (its contents
 are one click away and can be thousands of rows).
 
+### D10. Own layout `calendar`, calendar at 80 % of the height
+The dashboard frame (drawer, top bar, toast, side menu, trays and their logic) moves from `layouts/dashboard.vue` to
+`app/components/app/AppShell.vue`, with one prop, `fluid`. `layouts/dashboard.vue` is `<AppShell>` and
+`layouts/calendar.vue` is `<AppShell fluid>`: `main` drops `max-w-7xl mx-auto` and uses the whole content column with a
+smaller padding. Only `/calendario` uses it. The calendar's height is a CSS variable computed from the viewport, not
+from its parent: `--calendar-h: max(calc((100dvh - 4rem) * 0.8), 28rem)` (4 rem = the top bar). On short screens the
+28 rem minimum wins and the page scrolls. The loading skeleton uses the same variable (no CLS) and `WorkCalendar.vue`'s
+root is `h-full` inside that box. The strip above (the other 20 %) holds the title, the switch (D12) and «Agendar día».
+
+*Alternative rejected:* a `fluid` flag in `definePageMeta` read by the dashboard layout: a named layout states the
+difference where Nuxt expects it and keeps the dashboard layout free of per-page conditions.
+
+### D11. The form is a page
+«Agendar día» and «Editar día» are routes (`/calendario/nuevo`, `/calendario/[id]/editar`, admins only through
+`definePageMeta` roles, dashboard layout) that render one component, `WorkDayForm.vue` (the former `WorkDayDialog.vue`
+without the `<dialog>`): same fields and rules, two columns from `lg` (data and time ranges; members and material).
+`app/pages/calendario.vue` becomes `calendario/index.vue`, otherwise Nuxt would treat it as the parent route of the
+folder. Unsaved changes are guarded twice: a `router.beforeEach` registered while the form is mounted (the project's pattern, `usePrayerLeaveGuard`; it does not depend on being the `<RouterView>` component) asks through `useConfirm`, and `beforeunload` covers
+reload and tab close; both are off after a successful save. Saving navigates to `/calendario?fecha=<date of the day>`,
+which opens the calendar on that month; a failed save stays on the page and focuses the first invalid field. The edit
+page loads the day with `server: false` and renders loading, error with retry and «not found» before the form. The
+day's detail stays a lazy read-only dialog; its «Editar» navigates to the edit page.
+
+### D12. Calendario / Lista switch in the URL
+The calendar and the list share the same 80 % box and only one is shown: `?vista=lista` shows **Próximos días**
+(scrolling inside the box), no parameter shows the calendar (also on phones, in the day view). The switch changes the
+query with `replace`, so the choice is linkable, survives a reload and renders on the server. `?fecha=AAAA-MM-DD`
+(validated; ignored otherwise) sets the visible date, and «Agendar día» links to `/calendario/nuevo?fecha=<visible date>`.
+
 ### Route budget
 `/calendario` adds only the page, the SSR list and small helpers to the initial JS. SVAR, its CSS and the theme travel in
-the lazy chunk of `LazyWorkCalendar` (inside `<ClientOnly>`, behind a skeleton of the same height, so no CLS), and both
-dialogs are `Lazy*` behind `v-if`. `performance.spec.ts` audits the route.
+the lazy chunk of `LazyWorkCalendar` (inside `<ClientOnly>`, behind a skeleton of the same height, so no CLS), and the
+detail dialog is `Lazy*` behind `v-if`. The form is no longer in `/calendario` at all: it travels in the chunks of its
+own two routes. `performance.spec.ts` audits `/calendario` and `/calendario/nuevo`.
 
 ## Risks / Trade-offs
 
@@ -108,6 +138,8 @@ dialogs are `Lazy*` behind `v-if`. `performance.spec.ts` audits the route.
 - Month bars are 22 px tall (SVAR layout): below the 44 px touch target. The list **Próximos días** is the accessible
   and touch-friendly alternative, and the day view (default on phones) has full-size events.
 - A month with many days on one date grows that week row (`expand`) instead of hiding events.
+- Extracting `AppShell` touches the frame of every dashboard page → `dashboard-layout.spec.ts` passes unchanged and an
+  existing page is checked in the browser.
 
 ## Migration Plan
 

@@ -9,16 +9,22 @@ everybody sees the work days and the admins schedule them.
 
 ## What Changes
 
-- **New page `/calendario`** (editors and admins) with a menu entry. It has an SSR list **Próximos días** (next 30 days)
-  and an event calendar (day, week and month views).
+- **New page `/calendario`** (editors and admins) with a menu entry. It has an event calendar (day, week and month
+  views) and an SSR list **Próximos días** (next 30 days); a **Calendario / Lista** switch shows one or the other.
+- **Own layout for `/calendario`** (Nuxt layout `calendar`): the page uses the full width of the content column (side
+  menu, top bar, toasts and trays stay) and the calendar takes 80 % of the height below the top bar; the strip above it
+  carries the title, the switch and «Agendar día».
+- **Scheduling and editing are pages, not dialogs**: `/calendario/nuevo` and `/calendario/[id]/editar` (admins only)
+  share one form component, which warns before leaving with unsaved changes. The day's detail stays a read-only dialog.
 - **Work days**: title, date, kind (normal or special), status (`Sin iniciar` / `En proceso` / `Finalizado`), one
   auditorium (default `Skykids Auditorium`), 1 to 6 non-overlapping time ranges, 0 to 30 members and attached material.
   The kind is **required and has no initial value**: nothing is assumed from the weekday; Wednesday and Sunday only show a
   hint.
 - **Material is a reference, never a copy**: song collections, YouTube playlists and drive folders. Deleting the
   collection, playlist or folder removes the attachment; a folder in the trash is hidden.
-- **Permissions**: only admins create, edit, change status, assign members, attach material and delete
-  (`calendar.manage`). Editors only read (calendar, list and detail).
+- **Permissions**: only admins create, edit, assign members, attach material and delete (`calendar.manage`). Editors
+  read (calendar, list and detail); the change `calendario-estado-editores` lets an editor change the status of a day
+  they are assigned to.
 - **Seven endpoints** under `/api/calendario`, four tables (migration `0015`) and a Cloudy CSS theme for the calendar
   component.
 
@@ -55,7 +61,9 @@ None.
   `server/api/calendario/**` (7 handlers).
 - **Shared**: `shared/constants/calendar.ts`, `shared/validation/calendar.ts`, `calendar.manage` in
   `shared/permissions.ts`, types in `shared/types/api.ts`.
-- **App**: `app/pages/calendario.vue`, `app/components/calendar/*`, `app/composables/useWorkCalendar.ts`,
+- **App**: `app/pages/calendario/index.vue`, `app/pages/calendario/nuevo.vue`, `app/pages/calendario/[id]/editar.vue`,
+  `app/layouts/calendar.vue`, `app/components/app/AppShell.vue` (the dashboard frame, extracted so both layouts share
+  it), `app/components/calendar/*` (`WorkDayForm.vue` is the form), `app/composables/useWorkCalendar.ts`,
   `app/utils/work-calendar.ts`, `app/assets/css/svar-calendar-cloudy.css`, `workDaySchema`, messages and the menu entry.
 - **Tests**: unit, component and e2e specs; architecture, endpoint-guard, route-access and performance specs extended.
 - **Docs**: `AGENTS.md` (product areas, stack, gotchas).

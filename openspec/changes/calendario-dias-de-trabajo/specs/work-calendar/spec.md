@@ -7,12 +7,17 @@ The team sees its work days on `/calendario` and admins schedule them, with memb
 ## ADDED Requirements
 
 ### Requirement: Team members see the work days
-The system SHALL show active editors and admins a page with the work days of the next 30 days as a list and an event
-calendar with day, week and month views, where each time range of a day is one event.
+The system SHALL show active editors and admins a page with an event calendar with day, week and month views, where
+each time range of a day is one event, and with the work days of the next 30 days as a list, one of the two at a time,
+chosen with a switch.
 
 #### Scenario: Editor opens the calendar
 - **WHEN** an editor opens `/calendario`
-- **THEN** the list of upcoming days and the calendar are shown, without any control to schedule, edit, change status or delete
+- **THEN** the calendar and the Calendario / Lista switch are shown, without any control to schedule, edit or delete
+
+#### Scenario: Switching to the list
+- **WHEN** the person chooses «Lista»
+- **THEN** the list of upcoming days replaces the calendar, the address carries `?vista=lista` and reloading it shows the list again
 
 #### Scenario: No session
 - **WHEN** a visitor without a session opens `/calendario`
@@ -22,12 +27,54 @@ calendar with day, week and month views, where each time range of a day is one e
 - **WHEN** the page is opened at 360 px
 - **THEN** there is no horizontal scroll, the calendar opens in the day view and the controls are at least 44 px tall
 
+### Requirement: The calendar page uses the whole content area
+The system SHALL render `/calendario` across the full width of the content column, keeping the side menu and the top
+bar, with the calendar (or the list) taking 80 % of the height below the top bar and the title, the switch and the
+scheduling control above it.
+
+#### Scenario: Desktop
+- **WHEN** the page is opened at 1280 px or wider
+- **THEN** the calendar spans the content column without a maximum width and is about 80 % of the height below the top bar
+
+#### Scenario: Short screen
+- **WHEN** the viewport is too short for that proportion
+- **THEN** the calendar keeps a minimum height of 28 rem and the page scrolls vertically
+
+### Requirement: Scheduling and editing are pages for admins
+The system SHALL offer scheduling at `/calendario/nuevo` and editing at `/calendario/<id>/editar` as pages with the same
+form, SHALL allow only admins to open them and SHALL return to the calendar on the saved day's month after saving.
+
+#### Scenario: Admin schedules a day
+- **WHEN** an admin follows «Agendar día», fills the form and saves
+- **THEN** the day is created, a toast confirms it and the calendar is shown on the month of that day
+
+#### Scenario: Editor opens a form page
+- **WHEN** an editor opens `/calendario/nuevo` or `/calendario/<id>/editar`
+- **THEN** they are redirected to `/acceso-denegado`
+
+#### Scenario: Editing a day that no longer exists
+- **WHEN** an admin opens the edit page of a deleted day
+- **THEN** the page says the day no longer exists and links back to the calendar
+
+### Requirement: Unsaved changes are not lost silently
+The system SHALL ask for confirmation before leaving a form page with unsaved changes and SHALL NOT ask after a
+successful save or when nothing changed.
+
+#### Scenario: Leaving with changes
+- **WHEN** the admin changed a field and follows a link out of the form
+- **THEN** a confirmation asks whether to leave without saving, and declining keeps the form and its values
+
+#### Scenario: Leaving without changes
+- **WHEN** the admin changed nothing and chooses «Cancelar»
+- **THEN** the calendar is shown without any confirmation
+
 ### Requirement: Only admins manage work days
-The system SHALL allow only admins to create, edit, change the status of and delete work days, to assign members and to
-attach material, and SHALL enforce it on the server.
+The system SHALL allow only admins to create, edit and delete work days, to assign members and to attach material, and
+SHALL enforce it on the server. Who changes the status of a day is defined by the change `calendario-estado-editores`
+(admins, and the editors assigned to that day).
 
 #### Scenario: Editor calls a write endpoint
-- **WHEN** an editor sends a create, edit, status or delete request
+- **WHEN** an editor sends a create, edit or delete request
 - **THEN** the server answers 403 and nothing changes
 
 #### Scenario: Admin deletes a day
