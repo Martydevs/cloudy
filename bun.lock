@@ -15,6 +15,10 @@
         "@regle/core": "^1.29.5",
         "@regle/nuxt": "^1.29.5",
         "@regle/schemas": "^1.29.5",
+        "@svar-ui/calendar-locales": "2.7.0",
+        "@svar-ui/core-locales": "2.6.1",
+        "@svar-ui/vue-calendar": "2.7.1",
+        "@svar-ui/vue-core": "2.6.1",
         "@tailwindcss/vite": "^4.3.3",
         "@vercel/functions": "^3.10.1",
         "@vueuse/nuxt": "15.0.0",
@@ -802,6 +806,34 @@
     "@standard-schema/utils": ["@standard-schema/utils@0.3.0", "", {}, "sha512-e7Mew686owMaPJVNNLs55PUvgz371nKgwsc4vxE49zsODpJEnxgxRo2y/OKrqueavXgZNMDVj3DdHFlaSAeU8g=="],
 
     "@supabase/auth-js": ["@supabase/auth-js@2.79.0", "", { "dependencies": { "tslib": "2.8.1" } }, "sha512-p2GKvdbF9d/6C+dtS6iNcSicPr6eUfkvovD60HWlWsD+oOjC483DzFWrzGjNpBwnswhfMRP8Qn3rYA0VWaOfjw=="],
+
+    "@svar-ui/calendar-ical": ["@svar-ui/calendar-ical@2.7.0", "", {}, "sha512-hkHMhuKPOAT/qS90wGv933vUupuofIQhUbq2BR9OjUVaPRuH1wczaoDOotZ2TBS8N14a9cAugdwq2TqB2BQ6rA=="],
+
+    "@svar-ui/calendar-locales": ["@svar-ui/calendar-locales@2.7.0", "", {}, "sha512-nzJKH3SLqm8ISiHizmyMQdBnXW5MHwbs1BVrDofHM1YbvdTkVR4oTwVqYhOmyvuSSioKc9971ptDoKHX/9sY1Q=="],
+
+    "@svar-ui/calendar-provider": ["@svar-ui/calendar-provider@2.7.0", "", {}, "sha512-ZcZAuc1D8UecqjxyYHbNXrpqbRTeYgj6y300JB/hUfvHvTH6ALq5gTDMsM3B8cr9yzZTExDCqnlj9a03sBkxNA=="],
+
+    "@svar-ui/calendar-store": ["@svar-ui/calendar-store@2.7.0", "", { "dependencies": { "@svar-ui/lib-dom": "0.14.0", "@svar-ui/lib-state": "1.9.7" } }, "sha512-G5kkwwnXsr+mUCQlBRY46HmLYGr1fbFHQloriOv44GrGsdw4CH2kb2ALh6PC9zvNlIcwg+w/hJ4dKvhTgrzw0g=="],
+
+    "@svar-ui/core-locales": ["@svar-ui/core-locales@2.6.1", "", {}, "sha512-18xu7qn8Bxwi2EHguVV3Xya5kS+A+6Gnuo2wl55dofp9y948iZ5z7HIRh1+Mj1BgzbdVt6+B04JOCDMLJXyjtg=="],
+
+    "@svar-ui/editor-locales": ["@svar-ui/editor-locales@2.7.0", "", {}, "sha512-Bp3yK6zoUC21ejfbzPclWJylICHrXVhvy/ebXrOJ3rvhEvX1C1lmqe/1rEXqZi4ETUY7/q5AoLRjLgDiTTrw7Q=="],
+
+    "@svar-ui/lib-dom": ["@svar-ui/lib-dom@0.14.0", "", {}, "sha512-9uao5ebcQmuW0RoMu1LCesPsZ7i6G3xIvYAQzX/aeg662Yy/ETsNVy1pXoSa2q5v6ccAMjVxFrFCYReK7fzaJQ=="],
+
+    "@svar-ui/lib-state": ["@svar-ui/lib-state@1.9.7", "", {}, "sha512-nxRdk+54m1RJjGT2yDH7NjxAM5KECxA39kdTZezEIj1ixykyefssB9BrgxKy2jIseYxJMtd6lPZvQ3SZXuvn2g=="],
+
+    "@svar-ui/lib-vue": ["@svar-ui/lib-vue@1.1.0", "", { "peerDependencies": { "vue": "^3.5.29" } }, "sha512-fv+2jpCGKWSUlB8cVuipHV6IgngxvA8bjnqMOd9klJAQ+JaV+mOl0oV6UoR7MrLBJ03WD3g7uK+jR5c85+ByCw=="],
+
+    "@svar-ui/vue-calendar": ["@svar-ui/vue-calendar@2.7.1", "", { "dependencies": { "@svar-ui/calendar-ical": "2.7.0", "@svar-ui/calendar-locales": "2.7.0", "@svar-ui/calendar-provider": "2.7.0", "@svar-ui/calendar-store": "2.7.0", "@svar-ui/core-locales": "2.6.1", "@svar-ui/lib-dom": "0.14.0", "@svar-ui/lib-state": "1.9.7", "@svar-ui/lib-vue": "1.1.0", "@svar-ui/vue-core": "2.6.1", "@svar-ui/vue-editor": "2.7.0", "@svar-ui/vue-menu": "2.6.1", "@svar-ui/vue-toolbar": "2.6.1" }, "peerDependencies": { "vue": "^3.0.0" } }, "sha512-7jDiewKZqMlPO6QRQmwmPfA+fgYOvIveRcKEAudBBLpnq8FHt11N98HHdiYlq4ZBF59GMS8aYh30939axSuRQw=="],
+
+    "@svar-ui/vue-core": ["@svar-ui/vue-core@2.6.1", "", { "dependencies": { "@svar-ui/core-locales": "2.6.1", "@svar-ui/lib-dom": "0.14.0", "@svar-ui/lib-vue": "1.1.0" }, "peerDependencies": { "vue": "^3.0.0" } }, "sha512-qeggqt6V2ptCB5Iu9FiMKi+aQRnsDmqlApDN0iIQuubZoDL7tte50txDuQnZlNVpKDdM/9gmDO0SyTKtJeyKww=="],
+
+    "@svar-ui/vue-editor": ["@svar-ui/vue-editor@2.7.0", "", { "dependencies": { "@svar-ui/core-locales": "2.6.1", "@svar-ui/editor-locales": "2.7.0", "@svar-ui/lib-dom": "0.14.0", "@svar-ui/lib-state": "1.9.7", "@svar-ui/lib-vue": "1.1.0", "@svar-ui/vue-core": "2.6.1", "@svar-ui/vue-toolbar": "2.6.1" }, "peerDependencies": { "vue": "^3.0.0" } }, "sha512-RBfjH8TreBHrcNxXaH8RxV2cC/0+Is7/zB3VCMrTfPxc3YTSRaXIzxYJ/nAZ2Ncsg8xwtnzK/76xduCtdlsMlw=="],
+
+    "@svar-ui/vue-menu": ["@svar-ui/vue-menu@2.6.1", "", { "dependencies": { "@svar-ui/lib-dom": "0.14.0", "@svar-ui/lib-vue": "1.1.0", "@svar-ui/vue-core": "2.6.1" }, "peerDependencies": { "vue": "^3.0.0" } }, "sha512-vhgj1i0oJz8mLytUW3VqQbA3Yu5HwwJPZ71Udmr4te3GHBkG1o8iODDC5NzqoOIkP0Ik1HRY8LvDWn4nJdznRQ=="],
+
+    "@svar-ui/vue-toolbar": ["@svar-ui/vue-toolbar@2.6.1", "", { "dependencies": { "@svar-ui/lib-dom": "0.14.0", "@svar-ui/lib-vue": "1.1.0", "@svar-ui/vue-core": "2.6.1" }, "peerDependencies": { "vue": "^3.0.0" } }, "sha512-r/vE2RJkpRj6SMN8IcggfPwGlU2lIVORqLLNbVyejd7U+ZoGZIbI745F+KUqCGFEcYyUFePxAT0Nbb/y8owS9w=="],
 
     "@tailwindcss/node": ["@tailwindcss/node@4.3.3", "", { "dependencies": { "@jridgewell/remapping": "^2.3.5", "enhanced-resolve": "^5.24.1", "jiti": "^2.7.0", "lightningcss": "1.32.0", "magic-string": "^0.30.21", "source-map-js": "^1.2.1", "tailwindcss": "4.3.3" } }, "sha512-/T8IKEsf9VTU6tLjgC7+sv2mOPtQxzE2jMw7u4Tt40Tx+QSZxpzh95/H6cMKoja9XuW7iMdLJYBB0o9G1CaAgg=="],
 
@@ -2522,6 +2554,8 @@
     "ast-walker-scope/ast-kit": ["ast-kit@3.0.0", "", { "dependencies": { "@babel/parser": "^8.0.0", "estree-walker": "^3.0.3", "pathe": "^2.0.3" } }, "sha512-8OG92q3R35qjC/4i6BLBMg8IB+fClWu/1PEwg2Z9Rn+BuNaiEgJzpzn+pxWOdHJWDCAwu2JP0wCDTozAM4QirQ=="],
 
     "autoprefixer/picocolors": ["picocolors@1.1.1", "", {}, "sha512-xceH2snhtb5M9liqDsmEw56le376mTZkEX/jEb/RxNFyegNul7eNslCXP9FDj/Lcu0X8KEyMceP2ntpaHrDEVA=="],
+
+    "better-auth/@better-auth/core": ["@better-auth/core@1.7.6", "", { "dependencies": { "@opentelemetry/semantic-conventions": "^1.41.1", "@standard-schema/spec": "^1.1.0", "zod": "^4.5.4" }, "peerDependencies": { "@better-auth/utils": "0.4.2", "@better-fetch/fetch": "1.3.2", "@opentelemetry/api": "^1.9.0", "better-call": "1.4.0", "jose": "^6.1.0", "kysely": "^0.28.5 || ^0.29.0", "nanostores": "^1.0.1" }, "optionalPeers": ["@opentelemetry/api"] }, "sha512-yBDDO0J4VCHT1qEZtzj6aMexX4etyLesitoxehcWHzPrzYqrFHwe/hgskye+imlGhQVOysuljMg8M8BA6GrtIg=="],
 
     "better-auth/jose": ["jose@6.2.5", "", {}, "sha512-2E5L2yRp03FnwreJLJX8/r7mHiZICCf8kG7fAsTWkSQTDAcc46NIZoQLKy+EJ8sPoJlxyS4OQR5H70LjIZZlIQ=="],
 
