@@ -15,6 +15,7 @@ import { parseYoutubeUrl, playlistName, YOUTUBE_URL_MESSAGES } from '#shared/val
 import { SONG_URL_MESSAGES } from '#shared/constants/songs'
 import { parseLetrasUrl, songCollectionName } from '#shared/validation/songs'
 import { prayerCollectionName, prayerTranscriptSaveInput } from '#shared/validation/prayers'
+import { workDayFieldsInput } from '#shared/validation/calendar'
 import { useFormSchema } from '~/utils/form-schema'
 import {
   changePasswordSchema,
@@ -33,6 +34,7 @@ import {
   prayerTranscriptSchema,
   songCollectionSchema,
   songUrlSchema,
+  workDaySchema,
   youtubePlaylistSchema,
   youtubeUrlSchema,
 } from '~/utils/form-schemas'
@@ -73,6 +75,8 @@ interface Case {
 const register = (changes: State = {}): State => ({ name: 'Ana', email: 'ana@iglesia.org', password: '12345678', confirm: '12345678', ...changes })
 const change = (changes: State = {}): State => ({ currentPassword: 'vieja', password: '12345678', confirm: '12345678', ...changes })
 const reset = (changes: State = {}): State => ({ password: '12345678', confirm: '12345678', ...changes })
+
+const workDay = (changes: State = {}): State => ({ title: 'Servicio dominical', date: '2026-11-22', kind: 'normal', status: 'not_started', auditorium: 'Skykids Auditorium', ...changes })
 
 const cases: Case[] = [
   {
@@ -176,6 +180,27 @@ const cases: Case[] = [
     validator: object({ name: prayerCollectionName() }),
     schema: prayerCollectionSchema,
     samples: [{ name: 'Domingo' }, { name: '' }, { name: '   ' }, { name: pad(L(80)) }, { name: L(81) }],
+  },
+  {
+    // El tipo empieza vacío y es obligatorio, sea el día que sea; el resto son listas que no pasan por el esquema.
+    name: 'día de trabajo del calendario',
+    validator: workDayFieldsInput,
+    schema: workDaySchema,
+    samples: [
+      workDay(),
+      workDay({ kind: 'special', status: 'finished' }),
+      workDay({ kind: '' }),
+      workDay({ kind: 'fiesta' }),
+      workDay({ title: '', date: '', kind: '', auditorium: '' }),
+      workDay({ title: '   ' }),
+      workDay({ title: pad(L(120)) }),
+      workDay({ title: L(121) }),
+      workDay({ auditorium: pad(L(80)) }),
+      workDay({ auditorium: L(81) }),
+      workDay({ date: '2026-02-30' }),
+      workDay({ date: '22/11/2026' }),
+      workDay({ status: 'pausado' }),
+    ],
   },
   {
     // «Guardar y verificar»: el diálogo siempre guarda como verificado.

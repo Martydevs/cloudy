@@ -94,4 +94,14 @@ describe('messages', () => {
     // Un lote que falla entero con causas distintas: manda a ver la de cada video.
     expect(messages.youtube.downloads.failed).toMatch(/Revisa el motivo de cada uno/)
   })
+
+  it('calendario: los avisos nombran el día y el estado nuevo', () => {
+    const { created, updated, deleted, statusChanged, deleteConfirm } = messages.calendar
+    expect(created('Ensayo')).toBe('Se agendó «Ensayo»')
+    expect(updated('Ensayo')).toBe('Se guardaron los cambios de «Ensayo»')
+    expect(deleted('Ensayo')).toBe('Se eliminó «Ensayo» del calendario')
+    expect(statusChanged('Ensayo', 'En proceso')).toBe('«Ensayo» ahora está: En proceso')
+    expect(deleteConfirm('Ensayo')).toBe('¿Eliminar «Ensayo» del calendario?')
+    expect(messages.calendar.usualDayHint).toBe('Los miércoles y domingos suelen ser días normales')
+  })
 })

@@ -22,6 +22,8 @@ import { SONG_COLLECTION_NAME_MAX, SONG_URL_MESSAGES } from '#shared/constants/s
 import { parseLetrasUrl } from '#shared/validation/songs'
 import { PRAYER_TEXT_MAX_LENGTH } from '#shared/constants/prayers'
 import { PRAYER_TEXT_REQUIRED_MESSAGE } from '#shared/validation/prayers'
+import { CALENDAR_MESSAGES, WORK_DAY_AUDITORIUM_MAX, WORK_DAY_KINDS, WORK_DAY_STATUSES, WORK_DAY_TITLE_MAX } from '#shared/constants/calendar'
+import { parseIsoDate } from '#shared/validation/calendar'
 
 /**
  * Obligatorio: un texto de solo espacios cuenta como vacío. Va siempre primero en cada campo, que es el error que se
@@ -149,6 +151,18 @@ export const prayerTranscriptSchema = z.object({
     z.refine<string>(value => value.trim().length > 0, { error: PRAYER_TEXT_REQUIRED_MESSAGE }),
     maxChars(PRAYER_TEXT_MAX_LENGTH),
   ),
+})
+
+/**
+ * Campos de texto de un día de trabajo (`WorkDayDialog`), como `workDayFieldsInput` del servidor. El tipo empieza vacío y
+ * es obligatorio: nada se asume por el día de la semana. Los rangos de hora se validan aparte con `validateSlots`.
+ */
+export const workDaySchema = z.object({
+  title: z.string().check(filled, maxChars(WORK_DAY_TITLE_MAX)),
+  date: z.string().check(z.refine<string>(value => parseIsoDate(value) !== null, { error: CALENDAR_MESSAGES.date })),
+  kind: z.string().check(z.refine<string>(value => (WORK_DAY_KINDS as readonly string[]).includes(value), { error: CALENDAR_MESSAGES.kindRequired })),
+  status: z.string().check(z.refine<string>(value => (WORK_DAY_STATUSES as readonly string[]).includes(value), { error: 'Estado no válido' })),
+  auditorium: z.string().check(filled, maxChars(WORK_DAY_AUDITORIUM_MAX)),
 })
 
 export type RegisterForm = z.infer<typeof registerSchema>

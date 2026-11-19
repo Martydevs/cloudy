@@ -11,6 +11,7 @@ import {
   SONG_URL_MESSAGES,
 } from '#shared/constants/songs'
 import { PRAYER_IMAGE_RETENTION_DAYS, PRAYER_MAX_SELECTION } from '#shared/constants/prayers'
+import { CALENDAR_MESSAGES, USUAL_WORK_DAY_HINT, WORK_DAY_MAX_SLOTS } from '#shared/constants/calendar'
 
 /** «1 elemento» / «4 elementos». */
 export function pluralize(n: number, singular: string, plural: string): string {
@@ -654,6 +655,44 @@ export const messages = {
       loading: 'Cargando colecciones…',
       load: `No pudimos cargar las colecciones. ${CONNECTION}`,
       loadOne: `No pudimos cargar la colección. ${CONNECTION}`,
+    },
+  },
+  /** Calendario de días de trabajo (`/calendario`). Los textos de validación viven en `shared/constants/calendar.ts`. */
+  calendar: {
+    title: 'Calendario',
+    description: 'Los días de trabajo del equipo: los habituales de la iglesia y los eventos especiales que cubrimos.',
+    schedule: 'Agendar día',
+    upcomingTitle: 'Próximos días',
+    upcomingEmpty: 'No hay días agendados en los próximos 30 días',
+    upcomingEmptyAdmin: 'Agenda el primero con «Agendar día».',
+    upcomingEmptyEditor: 'Cuando un administrador agende uno, aparecerá aquí.',
+    monthEmpty: 'No hay días agendados en este periodo.',
+    usualDayHint: USUAL_WORK_DAY_HINT,
+    slotsLimit: `Máximo ${WORK_DAY_MAX_SLOTS} rangos por día`,
+    inactiveMember: 'Persona inactiva',
+    noMembers: 'Sin miembros asignados',
+    noMaterial: 'Sin material adjunto',
+    created: (title: string) => `Se agendó «${title}»`,
+    updated: (title: string) => `Se guardaron los cambios de «${title}»`,
+    deleted: (title: string) => `Se eliminó «${title}» del calendario`,
+    statusChanged: (title: string, status: string) => `«${title}» ahora está: ${status}`,
+    createFailed: `No pudimos agendar el día. ${RETRY}`,
+    updateFailed: `No pudimos guardar los cambios. ${RETRY}`,
+    deleteFailed: `No pudimos eliminar el día. ${RETRY}`,
+    statusFailed: `No pudimos cambiar el estado. ${RETRY}`,
+    deleteConfirm: (title: string) => `¿Eliminar «${title}» del calendario?`,
+    deleteBody: 'Se quitan sus horarios, miembros y material adjunto. Las colecciones, listas y carpetas no se borran.',
+    discardConfirm: '¿Salir sin guardar?',
+    discardBody: 'Los cambios que hiciste en este día se perderán.',
+    gone: CALENDAR_MESSAGES.notFound,
+    load: {
+      upcoming: `No pudimos cargar los próximos días. ${CONNECTION}`,
+      month: `No pudimos cargar el calendario. ${CONNECTION}`,
+      day: `No pudimos cargar el día. ${CONNECTION}`,
+      members: `No pudimos cargar a los miembros. ${CONNECTION}`,
+      songCollections: `No pudimos cargar las colecciones. ${CONNECTION}`,
+      youtubePlaylists: `No pudimos cargar las listas. ${CONNECTION}`,
+      folders: `No pudimos cargar las carpetas. ${CONNECTION}`,
     },
   },
 } as const
