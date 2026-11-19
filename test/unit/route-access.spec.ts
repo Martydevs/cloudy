@@ -91,3 +91,22 @@ describe('rutas de Canciones (feature 006)', () => {
     expect(resolveAccess(rule, admin, '/canciones')).toEqual(allow)
   })
 })
+
+describe('ruta del Calendario', () => {
+  const meta = readFileSync(fileURLToPath(new URL('../../app/pages/calendario.vue', import.meta.url)), 'utf8')
+
+  it('calendario.vue es privada para editor y admin (los editores ven; solo los admins agendan)', () => {
+    expect(meta).toMatch(/definePageMeta\(\{[^}]*layout: 'dashboard'[^}]*access: 'private'[^}]*roles: \['editor', 'admin'\]/)
+    // El botón de agendar depende del permiso, no del rol escrito a mano.
+    expect(meta).toMatch(/can\(profile\.value\?\.role, 'calendar\.manage'\)/)
+  })
+
+  it('las reglas de acceso aplican como a las demás privadas', () => {
+    const rule = { access: 'private' as const, roles: ['editor', 'admin'] as ('editor' | 'admin')[] }
+    expect(resolveAccess(rule, none, '/calendario')).toEqual({ redirect: '/login?redirect=%2Fcalendario' })
+    expect(resolveAccess(rule, pending, '/calendario')).toEqual({ redirect: '/pendiente' })
+    expect(resolveAccess(rule, disabled, '/calendario')).toEqual({ redirect: '/pendiente' })
+    expect(resolveAccess(rule, editor, '/calendario')).toEqual(allow)
+    expect(resolveAccess(rule, admin, '/calendario')).toEqual(allow)
+  })
+})

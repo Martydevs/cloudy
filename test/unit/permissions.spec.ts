@@ -4,9 +4,9 @@ import { can } from '../../shared/permissions'
 
 const ACTIONS: Action[] = [
   'content.read', 'content.write', 'submissions.review', 'trash.empty',
-  'users.manage', 'activity.read', 'comments.moderate', 'youtube.moderate', 'songs.moderate', 'prayers.moderate',
+  'users.manage', 'activity.read', 'comments.moderate', 'youtube.moderate', 'songs.moderate', 'prayers.moderate', 'calendar.manage',
 ]
-const ADMIN_ONLY = new Set<Action>(['trash.empty', 'users.manage', 'activity.read', 'comments.moderate', 'youtube.moderate', 'songs.moderate', 'prayers.moderate'])
+const ADMIN_ONLY = new Set<Action>(['trash.empty', 'users.manage', 'activity.read', 'comments.moderate', 'youtube.moderate', 'songs.moderate', 'prayers.moderate', 'calendar.manage'])
 
 describe('can(role, action)', () => {
   it.each(ACTIONS)('admin puede %s', (action) => {
@@ -35,6 +35,13 @@ describe('can(role, action)', () => {
     expect(can('editor', 'songs.moderate')).toBe(false)
     expect(can(null, 'songs.moderate')).toBe(false)
     expect(can(undefined, 'songs.moderate')).toBe(false)
+  })
+
+  it('calendar.manage (agendar, editar, cambiar el estado y borrar días de trabajo) es solo del admin', () => {
+    expect(can('admin', 'calendar.manage')).toBe(true)
+    expect(can('editor', 'calendar.manage')).toBe(false)
+    expect(can(null, 'calendar.manage')).toBe(false)
+    expect(can(undefined, 'calendar.manage')).toBe(false)
   })
 
   it.each(ACTIONS)('sin rol no puede %s', (action) => {

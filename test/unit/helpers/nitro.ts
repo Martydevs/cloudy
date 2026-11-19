@@ -39,6 +39,8 @@ import * as youtubeDownloads from '../../../server/utils/youtube-downloads'
 import * as lyricsParser from '../../../server/utils/lyrics-parser'
 import * as songsUtils from '../../../server/utils/songs'
 import * as songCollections from '../../../server/utils/song-collections'
+import * as workDays from '../../../server/utils/work-days'
+import * as workDayMaterials from '../../../server/utils/work-day-materials'
 import type { AuthContext, ProfileRow } from '../../../server/utils/session'
 import { fakeDb } from './fake-db'
 
@@ -95,6 +97,8 @@ export function installNitro(results: unknown[] = [], overrides: Record<string, 
     ...lyricsParser,
     ...songsUtils,
     ...songCollections,
+    ...workDays,
+    ...workDayMaterials,
     // La frontera con Apify se reemplaza en cada prueba (`overrides.crawlLetras`): nunca hay red.
     crawlLetras: () => { throw new Error('crawlLetras sin simular') },
     defineEventHandler: (handler: unknown) => handler,

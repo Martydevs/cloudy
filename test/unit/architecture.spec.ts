@@ -230,6 +230,28 @@ describe('arquitectura de las capas', () => {
     expect(callers).toEqual([BOUNDARY])
   })
 
+  // Calendario de días de trabajo: SVAR detrás de un solo componente y el SQL en sus dos capas.
+  it('solo WorkCalendar.vue importa @svar-ui/* (el calendario se puede cambiar tocando un archivo)', () => {
+    const users = files.filter(f => imports(f.code).some(spec => spec.startsWith('@svar-ui/'))).map(f => f.path)
+    expect(users).toEqual(['app/components/calendar/WorkCalendar.vue'])
+    // Su CSS viaja con ese componente (el chunk de /calendario), no en el CSS global.
+    expect(readFileSync(join(ROOT, 'nuxt.config.ts'), 'utf8')).not.toMatch(/svar/i)
+  })
+
+  it('el SQL de las tablas work_* solo vive en work-days.ts y work-day-materials.ts; los endpoints del calendario no tocan drizzle', () => {
+    const withoutComments = (code: string) => code.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '')
+    const tables = /\b(workDays|workDaySlots|workDayMembers|workDayMaterials)\b|\bwork_day(s|_slots|_members|_materials)\b/
+    const users = files
+      .filter(f => f.path !== 'server/db/schema.ts')
+      .filter(f => tables.test(withoutComments(f.code)))
+      .map(f => f.path)
+      .sort()
+    expect(users).toEqual(['server/utils/work-day-materials.ts', 'server/utils/work-days.ts'])
+    const endpoints = files.filter(f => f.path.startsWith('server/api/calendario/'))
+    expect(endpoints).toHaveLength(7)
+    expect(endpoints.filter(f => imports(f.code).some(spec => spec.startsWith('drizzle-orm') || spec.includes('db/schema'))).map(f => f.path)).toEqual([])
+  })
+
   it('heic-to solo se carga con import() dinámico desde app/utils/heic-to-jpeg.ts', () => {
     const users = files.filter(f => imports(f.code).includes('heic-to')).map(f => f.path)
     expect(users).toEqual(['app/utils/heic-to-jpeg.ts'])

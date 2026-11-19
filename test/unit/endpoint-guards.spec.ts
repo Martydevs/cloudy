@@ -138,6 +138,22 @@ describe('guards de los endpoints', () => {
     expect(files.filter(f => (isPublic(f) || isCron(f)) && f.includes('peticiones'))).toEqual([])
   })
 
+  it('los 7 endpoints del calendario: leer es del equipo; agendar, editar, cambiar el estado, borrar y listar miembros, solo del admin', () => {
+    const calendar = files.filter(f => f.startsWith('calendario/'))
+    const adminOnly = [
+      'calendario/[id]/estado.patch.ts',
+      'calendario/[id]/index.delete.ts',
+      'calendario/[id]/index.patch.ts',
+      'calendario/index.post.ts',
+      'calendario/miembros.get.ts',
+    ]
+    const team = ['calendario/[id]/index.get.ts', 'calendario/index.get.ts']
+    expect(calendar).toEqual([...adminOnly, ...team].sort())
+    for (const file of adminOnly) expect(source(file), file).toMatch(/\brequireRole\(event, 'admin'\)/)
+    for (const file of team) expect(source(file), file).toMatch(/\brequireRole\(event, 'editor'\)/)
+    expect(files.filter(f => (isPublic(f) || isCron(f)) && f.includes('calendario'))).toEqual([])
+  })
+
   it('la solicitud de acceso de invitados se retiró: no quedan sus endpoints', () => {
     expect(files.filter(f => f.startsWith('access-requests/') || f.startsWith('public/access/'))).toEqual([])
   })

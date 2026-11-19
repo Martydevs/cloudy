@@ -4,6 +4,7 @@ import type { AnyPgColumn } from 'drizzle-orm/pg-core'
 import {
   bigint,
   check,
+  date,
   index,
   integer,
   jsonb,
@@ -11,6 +12,7 @@ import {
   pgTable,
   primaryKey,
   text,
+  time,
   timestamp,
   uniqueIndex,
   uuid,
@@ -421,6 +423,77 @@ export const prayerImageCollectionItems = pgTable('prayer_image_collection_items
 }, t => [
   primaryKey({ columns: [t.collectionId, t.imageId] }),
   index('prayer_image_collection_items_image_idx').on(t.imageId),
+])
+
+// ---------------------------------------------------------------- calendario de días de trabajo (`/calendario`)
+
+export const workDayKind = pgEnum('work_day_kind', ['normal', 'special'])
+export const workDayStatus = pgEnum('work_day_status', ['not_started', 'in_progress', 'finished'])
+
+/**
+ * Día de trabajo del equipo. `kind` no tiene valor por defecto: quien agenda lo elige siempre (nada se asume por el día
+ * de la semana). Fecha y horas son «de pared», sin zona. Los días pasados quedan como historial.
+ */
+export const workDays = pgTable('work_days', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  /** 1–120 car.; es el texto que se ve en el calendario */
+  title: text('title').notNull(),
+  workDate: date('work_date', { mode: 'string' }).notNull(),
+  kind: workDayKind('kind').notNull(),
+  status: workDayStatus('status').notNull().default('not_started'),
+  /** 1–80 car. */
+  auditorium: text('auditorium').notNull().default('Skykids Auditorium'),
+  createdBy: text('created_by').notNull().references(() => profiles.userId),
+  ...timestamps,
+}, t => [
+  // Consulta por rango del calendario y de «Próximos días», en orden estable.
+  index('work_days_date_idx').on(t.workDate, t.id),
+  check('work_days_title_length', sql`char_length(${t.title}) BETWEEN 1 AND 120 AND ${t.title} = btrim(${t.title})`),
+  check('work_days_auditorium_length', sql`char_length(${t.auditorium}) BETWEEN 1 AND 80 AND ${t.auditorium} = btrim(${t.auditorium})`),
+])
+
+/** Rango de hora de un día (1–6, sin cruzarse: lo valida el servidor). Cada rango es un evento del calendario. */
+export const workDaySlots = pgTable('work_day_slots', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  workDayId: uuid('work_day_id').notNull().references(() => workDays.id, { onDelete: 'cascade' }),
+  startTime: time('start_time').notNull(),
+  endTime: time('end_time').notNull(),
+}, t => [
+  index('work_day_slots_day_idx').on(t.workDayId, t.startTime),
+  check('work_day_slots_order', sql`${t.endTime} > ${t.startTime}`),
+])
+
+/** Persona asignada a un día. Sin cascada al perfil: los perfiles no se borran (quedan `removed`). */
+export const workDayMembers = pgTable('work_day_members', {
+  workDayId: uuid('work_day_id').notNull().references(() => workDays.id, { onDelete: 'cascade' }),
+  userId: text('user_id').notNull().references(() => profiles.userId),
+}, t => [
+  primaryKey({ columns: [t.workDayId, t.userId] }),
+  index('work_day_members_user_idx').on(t.userId),
+])
+
+/**
+ * Material adjunto a un día: una referencia (no una copia) a una colección de canciones, una lista de YouTube o una
+ * carpeta del drive. Exactamente una de las tres. Borrar lo referido (o purgar la carpeta) elimina el adjunto.
+ */
+export const workDayMaterials = pgTable('work_day_materials', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  workDayId: uuid('work_day_id').notNull().references(() => workDays.id, { onDelete: 'cascade' }),
+  songCollectionId: uuid('song_collection_id').references(() => songCollections.id, { onDelete: 'cascade' }),
+  youtubePlaylistId: uuid('youtube_playlist_id').references(() => youtubePlaylists.id, { onDelete: 'cascade' }),
+  folderId: uuid('folder_id').references(() => folders.id, { onDelete: 'cascade' }),
+  addedBy: text('added_by').notNull().references(() => profiles.userId),
+  addedAt: timestamp('added_at', { withTimezone: true }).notNull().defaultNow(),
+}, t => [
+  check('work_day_materials_one_ref', sql`num_nonnulls(${t.songCollectionId}, ${t.youtubePlaylistId}, ${t.folderId}) = 1`),
+  // Una misma colección, lista o carpeta solo una vez por día; el primero sirve también para leer los adjuntos de un día.
+  uniqueIndex('work_day_materials_song_collection_key').on(t.workDayId, t.songCollectionId).where(sql`${t.songCollectionId} IS NOT NULL`),
+  uniqueIndex('work_day_materials_youtube_playlist_key').on(t.workDayId, t.youtubePlaylistId).where(sql`${t.youtubePlaylistId} IS NOT NULL`),
+  uniqueIndex('work_day_materials_folder_key').on(t.workDayId, t.folderId).where(sql`${t.folderId} IS NOT NULL`),
+  // Las cascadas al borrar una colección, lista o carpeta buscan por estas columnas.
+  index('work_day_materials_song_collection_idx').on(t.songCollectionId),
+  index('work_day_materials_youtube_playlist_idx').on(t.youtubePlaylistId),
+  index('work_day_materials_folder_idx').on(t.folderId),
 ])
 
 // ---------------------------------------------------------------- relations

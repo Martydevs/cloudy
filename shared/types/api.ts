@@ -3,6 +3,7 @@ import type { FileCategory } from '../constants/files'
 import type { Role } from '../permissions'
 import type { YoutubeBlockReason, YoutubeFormat } from '../constants/youtube'
 import type { SongPresentationItemError } from '../constants/songs'
+import type { WorkDayKind, WorkDayMaterialType, WorkDayStatus } from '../constants/calendar'
 
 export type UserStatus = 'pending' | 'active' | 'disabled' | 'removed'
 export type FileOrigin = 'team' | 'guest'
@@ -409,3 +410,51 @@ export interface SongPresentationBatchItem {
   arrangedBy: 'llm' | 'fallback' | null
   errorCode: SongPresentationItemError | null
 }
+
+// ---------------------------------------------------------------- calendario de días de trabajo (`/calendario`)
+
+export type { WorkDayKind, WorkDayMaterialType, WorkDayStatus }
+
+/** Rango de hora «de pared» (`HH:MM`), sin zona. */
+export interface WorkDaySlot { id: string, start: string, end: string }
+
+/** `active: false` → la interfaz muestra «Persona inactiva». */
+export type WorkDayMember = SongPerson
+
+/** Un día como lo traen el calendario y la lista «Próximos días». */
+export interface WorkDay {
+  id: string
+  title: string
+  /** `AAAA-MM-DD`. */
+  date: string
+  kind: WorkDayKind
+  status: WorkDayStatus
+  auditorium: string
+  /** Ordenados por hora de inicio. */
+  slots: WorkDaySlot[]
+  members: WorkDayMember[]
+  materialCount: number
+}
+
+export interface WorkDayList { items: WorkDay[] }
+
+/** Material adjunto ya resuelto: el nombre actual de la colección, lista o carpeta y, salvo en carpetas, sus elementos. */
+export interface WorkDayMaterial {
+  type: WorkDayMaterialType
+  /** Id de la colección, lista o carpeta. */
+  refId: string
+  name: string
+  itemCount: number
+  /** Hasta 50: canciones (`id` = canción) o videos (`id` = id de YouTube). Vacío en carpetas. */
+  items: { id: string, title: string }[]
+}
+
+export interface WorkDayDetail extends WorkDay {
+  materials: WorkDayMaterial[]
+  createdBy: SongPerson
+  createdAt: string
+  updatedAt: string
+}
+
+/** Persona que se puede asignar a un día (cuentas activas). */
+export interface CalendarMember { id: string, name: string, role: Role }

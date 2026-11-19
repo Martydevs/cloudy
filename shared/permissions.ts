@@ -16,6 +16,8 @@ export type Action =
   | 'songs.moderate'
   /** Eliminar una imagen de peticiones ajena o renombrar/eliminar una colección de imágenes ajena (feature 007). */
   | 'prayers.moderate'
+  /** Agendar, editar, cambiar el estado y borrar días de trabajo del calendario (`/calendario`). Los editores solo ven. */
+  | 'calendar.manage'
 
 const ADMIN_ONLY: ReadonlySet<Action> = new Set<Action>([
   'trash.empty',
@@ -25,6 +27,7 @@ const ADMIN_ONLY: ReadonlySet<Action> = new Set<Action>([
   'youtube.moderate',
   'songs.moderate',
   'prayers.moderate',
+  'calendar.manage',
 ])
 
 export function can(role: Role | null | undefined, action: Action): boolean {
