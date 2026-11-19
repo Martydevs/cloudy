@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Action } from '../../shared/permissions'
-import { can } from '../../shared/permissions'
+import { can, canSetWorkDayStatus } from '../../shared/permissions'
 
 const ACTIONS: Action[] = [
   'content.read', 'content.write', 'submissions.review', 'trash.empty',
@@ -37,7 +37,7 @@ describe('can(role, action)', () => {
     expect(can(undefined, 'songs.moderate')).toBe(false)
   })
 
-  it('calendar.manage (agendar, editar, cambiar el estado y borrar días de trabajo) es solo del admin', () => {
+  it('calendar.manage (agendar, editar y borrar días de trabajo, y el estado de cualquiera) es solo del admin', () => {
     expect(can('admin', 'calendar.manage')).toBe(true)
     expect(can('editor', 'calendar.manage')).toBe(false)
     expect(can(null, 'calendar.manage')).toBe(false)
@@ -47,5 +47,29 @@ describe('can(role, action)', () => {
   it.each(ACTIONS)('sin rol no puede %s', (action) => {
     expect(can(null, action)).toBe(false)
     expect(can(undefined, action)).toBe(false)
+  })
+})
+
+describe('canSetWorkDayStatus(role, userId, members)', () => {
+  const members = [{ userId: 'u1' }, { userId: 'u2' }]
+
+  it('quien administra cambia el estado de cualquier día, esté o no asignado', () => {
+    expect(canSetWorkDayStatus('admin', 'u9', members)).toBe(true)
+    expect(canSetWorkDayStatus('admin', 'u9', [])).toBe(true)
+  })
+
+  it('un editor solo el de los días en los que está asignado', () => {
+    expect(canSetWorkDayStatus('editor', 'u1', members)).toBe(true)
+    expect(canSetWorkDayStatus('editor', 'u2', members)).toBe(true)
+    expect(canSetWorkDayStatus('editor', 'u5', members)).toBe(false)
+    expect(canSetWorkDayStatus('editor', 'u1', [])).toBe(false)
+  })
+
+  it('sin rol o sin usuario, nunca', () => {
+    expect(canSetWorkDayStatus(null, 'u1', members)).toBe(false)
+    expect(canSetWorkDayStatus(undefined, 'u1', members)).toBe(false)
+    expect(canSetWorkDayStatus('editor', null, members)).toBe(false)
+    expect(canSetWorkDayStatus('editor', undefined, members)).toBe(false)
+    expect(canSetWorkDayStatus('editor', '', [{ userId: '' }])).toBe(false)
   })
 })

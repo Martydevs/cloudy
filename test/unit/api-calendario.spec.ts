@@ -334,13 +334,48 @@ describe('PATCH /api/calendario/:id', () => {
 })
 
 describe('PATCH /api/calendario/:id/estado', () => {
-  it('cambia solo el estado', async () => {
+  const editor = authAs({ userId: 'u1', role: 'editor' })
+  const patch = (auth: typeof admin, status = 'in_progress') => makeEvent({ auth, method: 'PATCH', params: { id: UUID }, body: { status } })
+  const where = (fake: ReturnType<typeof installNitro>) => sqlText(fake.calls.find(call => call.method === 'where')!.args[0])
+
+  it('quien administra cambia solo el estado, de cualquier día (sin condición de miembro)', async () => {
     vi.useFakeTimers({ now: created, toFake: ['Date'] })
     const fake = installNitro([[{ id: UUID }]])
     const handler = await loadHandler('api/calendario/[id]/estado.patch.ts')
-    expect(await handler(makeEvent({ auth: admin, method: 'PATCH', params: { id: UUID }, body: { status: 'in_progress' } }))).toEqual({ id: UUID, status: 'in_progress' })
+    expect(await handler(patch(admin))).toEqual({ id: UUID, status: 'in_progress' })
     expect(fake.calls.find(call => call.method === 'set')!.args[0]).toEqual({ status: 'in_progress', updatedAt: created })
-    await expectGuarded(handler, { method: 'PATCH', params: { id: UUID }, body: { status: 'in_progress' } }, 'admin')
+    expect(where(fake)).not.toContain('work_day_members')
+    await expectGuarded(handler, { method: 'PATCH', params: { id: UUID }, body: { status: 'in_progress' } })
+  })
+
+  it('el editor asignado lo cambia: la condición de miembro va en el mismo UPDATE', async () => {
+    vi.useFakeTimers({ now: created, toFake: ['Date'] })
+    const fake = installNitro([[{ id: UUID }]])
+    const handler = await loadHandler('api/calendario/[id]/estado.patch.ts')
+    expect(await handler(patch(editor, 'finished'))).toEqual({ id: UUID, status: 'finished' })
+    expect(fake.calls.find(call => call.method === 'set')!.args[0]).toEqual({ status: 'finished', updatedAt: created })
+    const text = where(fake)
+    expect(text).toContain('exists (select 1 from "work_day_members" where "work_day_members"."work_day_id" = $2 and "work_day_members"."user_id" = $3)')
+    expect(text).toContain(JSON.stringify([UUID, UUID, 'u1']))
+    // Una sola consulta: no hay lectura previa ni posterior.
+    expect(fake.calls.filter(call => call.method === 'select')).toHaveLength(0)
+  })
+
+  it('403 not_assigned si el editor no está asignado: no se escribió nada y el día sigue existiendo', async () => {
+    const fake = installNitro([[], [{ id: UUID }]])
+    const handler = await loadHandler('api/calendario/[id]/estado.patch.ts')
+    const error = await expectStatus(Promise.resolve(handler(patch(editor))), 403)
+    expect(error.message).toBe(CALENDAR_MESSAGES.notAssigned)
+    expect(error.data).toEqual({ code: 'not_assigned' })
+    expect(fake.calls.filter(call => call.method === 'update')).toHaveLength(1)
+    expect(fake.calls.filter(call => call.method === 'select')).toHaveLength(1)
+  })
+
+  it('404 para el editor si el día ya no existe', async () => {
+    installNitro([[], []])
+    const handler = await loadHandler('api/calendario/[id]/estado.patch.ts')
+    const error = await expectStatus(Promise.resolve(handler(patch(editor))), 404)
+    expect(error.message).toBe(CALENDAR_MESSAGES.notFound)
   })
 
   it('422 con un estado desconocido y 404 si el día ya no existe', async () => {

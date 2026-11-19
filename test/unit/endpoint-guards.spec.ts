@@ -138,19 +138,20 @@ describe('guards de los endpoints', () => {
     expect(files.filter(f => (isPublic(f) || isCron(f)) && f.includes('peticiones'))).toEqual([])
   })
 
-  it('los 7 endpoints del calendario: leer es del equipo; agendar, editar, cambiar el estado, borrar y listar miembros, solo del admin', () => {
+  it('los 7 endpoints del calendario: leer y cambiar el estado es del equipo (el estado, solo del día propio: lo comprueba `setWorkDayStatus`); agendar, editar, borrar y listar miembros, solo del admin', () => {
     const calendar = files.filter(f => f.startsWith('calendario/'))
     const adminOnly = [
-      'calendario/[id]/estado.patch.ts',
       'calendario/[id]/index.delete.ts',
       'calendario/[id]/index.patch.ts',
       'calendario/index.post.ts',
       'calendario/miembros.get.ts',
     ]
-    const team = ['calendario/[id]/index.get.ts', 'calendario/index.get.ts']
+    const team = ['calendario/[id]/estado.patch.ts', 'calendario/[id]/index.get.ts', 'calendario/index.get.ts']
     expect(calendar).toEqual([...adminOnly, ...team].sort())
     for (const file of adminOnly) expect(source(file), file).toMatch(/\brequireRole\(event, 'admin'\)/)
     for (const file of team) expect(source(file), file).toMatch(/\brequireRole\(event, 'editor'\)/)
+    // El permiso por día no se puede saltar: el endpoint entrega a `setWorkDayStatus` quién llama.
+    expect(source('calendario/[id]/estado.patch.ts')).toMatch(/setWorkDayStatus\(id, status, profile\)/)
     expect(files.filter(f => (isPublic(f) || isCron(f)) && f.includes('calendario'))).toEqual([])
   })
 

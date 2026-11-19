@@ -231,13 +231,25 @@ export async function updateWorkDay(id: string, input: WorkDayInput, me: Pick<Pr
   ])
 }
 
-export async function setWorkDayStatus(id: string, status: WorkDayStatus): Promise<void> {
-  const rows = await useDb()
+/**
+ * Cambia solo el estado. Quien administra, el de cualquier día; un editor, solo el de un día en el que está asignado: la
+ * condición va en el mismo `UPDATE`, así que no hay carrera entre comprobar y escribir. Si no se escribió nada, una
+ * lectura distingue «ya no existe» (404) de «no estás asignado» (403 `not_assigned`).
+ */
+export async function setWorkDayStatus(id: string, status: WorkDayStatus, actor: Pick<ProfileRow, 'userId' | 'role'>): Promise<void> {
+  const db = useDb()
+  const isAdmin = actor.role === 'admin'
+  const assigned = sql`exists (select 1 from ${workDayMembers} where ${workDayMembers.workDayId} = ${id} and ${workDayMembers.userId} = ${actor.userId})`
+  const rows = await db
     .update(workDays)
     .set({ status, updatedAt: new Date() })
-    .where(eq(workDays.id, id))
+    .where(isAdmin ? eq(workDays.id, id) : and(eq(workDays.id, id), assigned))
     .returning({ id: workDays.id })
-  if (rows.length === 0) throw workDayNotFound()
+  if (rows.length > 0) return
+  if (isAdmin) throw workDayNotFound()
+  const found = await db.select({ id: workDays.id }).from(workDays).where(eq(workDays.id, id)).limit(1)
+  if (found.length === 0) throw workDayNotFound()
+  throw createError({ statusCode: 403, statusMessage: 'Forbidden', message: CALENDAR_MESSAGES.notAssigned, data: { code: 'not_assigned' } })
 }
 
 /** Borra el día; sus rangos, miembros y adjuntos se van por cascada. */

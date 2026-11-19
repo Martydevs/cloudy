@@ -53,6 +53,7 @@ export const CALENDAR_MESSAGES = {
   materialsMax: `Puedes adjuntar como máximo ${WORK_DAY_MAX_MATERIALS} de cada tipo`,
   range: `Elige un rango de hasta ${CALENDAR_MAX_RANGE_DAYS} días`,
   notFound: 'Ese día ya no está en el calendario.',
+  notAssigned: 'Solo quienes están asignados al día pueden cambiar su estado.',
   memberUnavailable: 'Una de las personas elegidas ya no está activa. Revisa los miembros e inténtalo de nuevo.',
   materialUnavailable: 'Parte del material elegido ya no existe. Revísalo e inténtalo de nuevo.',
 } as const
