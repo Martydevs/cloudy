@@ -1,10 +1,11 @@
 // Formulario de un día de trabajo: tipo obligatorio y sin preselección (con la pista de miércoles y domingo, que no
 // elige nada), repetidor de rangos con errores por fila, auditorio y estado por defecto, miembros con filtro, material
-// que se pide al abrir su pestaña, aviso de cambios sin guardar y edición.
-import { beforeEach, describe, expect, it } from 'vitest'
+// que se pide al abrir su pestaña y edición. Es contenido de página: al guardar vuelve al calendario (en el mes del día)
+// y, con cambios sin guardar, pregunta antes de salir (navegación interna) y avisa al cerrar o recargar la pestaña.
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { mountSuspended } from '@nuxt/test-utils/runtime'
 import type { H3Event } from 'h3'
-import WorkDayDialog from '~/components/calendar/WorkDayDialog.vue'
+import WorkDayForm from '~/components/calendar/WorkDayForm.vue'
 import { buttonsWithText, calls, failFromServer, failWith, flush, mockApi, resetCalls } from './helpers/api'
 import { setMe, toasts, workDayDetail } from './calendar-fixtures'
 
@@ -16,7 +17,12 @@ const members = [
   { id: 'u9', name: 'Pastor', role: 'admin' },
 ]
 
-beforeEach(() => {
+/** Dónde quedó la navegación (`mount` deja cada prueba en la página de agendar). */
+const location = () => useRouter().currentRoute.value.fullPath
+/** Tras guardar se navega al calendario, cuya página llega en otro trozo la primera vez. */
+const backAtCalendar = () => vi.waitUntil(() => location() === '/calendario?fecha=2026-11-22', { timeout: 5000 })
+
+beforeEach(async () => {
   clearNuxtData()
   resetCalls()
   useToast().toasts.value = []
@@ -39,7 +45,7 @@ beforeEach(() => {
 })
 
 async function mount(props: Record<string, unknown> = { initialDate: '2026-11-20' }) {
-  const wrapper = await mountSuspended(WorkDayDialog, { props, attachTo: document.body })
+  const wrapper = await mountSuspended(WorkDayForm, { props, attachTo: document.body, route: '/calendario/nuevo?fecha=2026-11-20' })
   await flush(10)
   return wrapper
 }
@@ -62,10 +68,10 @@ async function fill(wrapper: Wrapper) {
   await times(wrapper)[1]!.setValue('20:00')
 }
 
-describe('WorkDayDialog — agendar', () => {
+describe('WorkDayForm — agendar', () => {
   it('abre con la fecha del calendario, sin tipo elegido, «Skykids Auditorium» y «Sin iniciar»', async () => {
     const wrapper = await mount()
-    expect(wrapper.get('h2').text()).toBe('Agendar día')
+    expect(wrapper.get('h1').text()).toBe('Agendar día')
     expect((field(wrapper, 'Fecha').element as HTMLInputElement).value).toBe('2026-11-20')
     expect(radios(wrapper).map(radio => (radio.element as HTMLInputElement).checked)).toEqual([false, false])
     expect((field(wrapper, 'Auditorio').element as HTMLInputElement).value).toBe('Skykids Auditorium')
@@ -100,7 +106,7 @@ describe('WorkDayDialog — agendar', () => {
     expect(wrapper.text()).toContain('Escribe una hora válida')
     expect(field(wrapper, 'Título del evento').attributes('aria-invalid')).toBe('true')
     expect(posted()).toBeUndefined()
-    expect(wrapper.emitted('saved')).toBeUndefined()
+    expect(location()).toBe('/calendario/nuevo?fecha=2026-11-20')
     wrapper.unmount()
   })
 
@@ -209,7 +215,7 @@ describe('WorkDayDialog — agendar', () => {
     wrapper.unmount()
   })
 
-  it('agenda el día con todo lo elegido, avisa y cierra', async () => {
+  it('agenda el día con todo lo elegido, avisa y vuelve al calendario en el mes del día', async () => {
     const wrapper = await mount()
     await fill(wrapper)
     await buttonsWithText(wrapper, 'Agregar rango')[0]!.trigger('click')
@@ -236,46 +242,69 @@ describe('WorkDayDialog — agendar', () => {
       folderIds: [],
     })
     expect(toasts()).toContain('Se agendó «Conferencia»')
-    expect(wrapper.emitted('saved')).toHaveLength(1)
+    // Con el formulario lleno, pero ya guardado: sale sin preguntar, a la fecha del día guardado.
+    expect(useConfirm().options.value).toBeNull()
+    await backAtCalendar()
     wrapper.unmount()
   })
 
-  it('si el servidor rechaza, muestra su motivo y el formulario sigue abierto con lo escrito', async () => {
+  it('si el servidor rechaza, muestra su motivo y el formulario sigue en pantalla con lo escrito', async () => {
     mockApi('POST', '/api/calendario', failFromServer(409, 'Conflict', 'Parte del material elegido ya no existe. Revísalo e inténtalo de nuevo.', { code: 'material_unavailable', ids: [] }))
     const wrapper = await mount()
     await fill(wrapper)
     await wrapper.get('form').trigger('submit')
     await flush(15)
     expect(toasts()).toContain('Parte del material elegido ya no existe. Revísalo e inténtalo de nuevo.')
-    expect(wrapper.emitted('saved')).toBeUndefined()
+    expect(location()).toBe('/calendario/nuevo?fecha=2026-11-20')
     expect((field(wrapper, 'Título del evento').element as HTMLInputElement).value).toBe('  Conferencia  ')
     wrapper.unmount()
   })
 
-  it('sin cambios cierra directo; con cambios pregunta antes de perderlos', async () => {
+  it('sin cambios sale directo, a la fecha con la que se abrió; con cambios pregunta antes de perderlos', async () => {
     const clean = await mount()
+    expect(clean.get('a').text()).toBe('Volver al calendario')
     await buttonsWithText(clean, 'Cancelar')[0]!.trigger('click')
-    await flush()
-    expect(clean.emitted('close')).toHaveLength(1)
+    await flush(10)
+    expect(useConfirm().options.value).toBeNull()
+    expect(location()).toBe('/calendario?fecha=2026-11-20')
     clean.unmount()
 
     const wrapper = await mount()
     await field(wrapper, 'Título del evento').setValue('Borrador')
-    await wrapper.get('button[aria-label="Cerrar"]').trigger('click')
+    await buttonsWithText(wrapper, 'Cancelar')[0]!.trigger('click')
     await flush()
     expect(useConfirm().options.value).toMatchObject({ title: '¿Salir sin guardar?', confirmLabel: 'Salir sin guardar', danger: true })
     useConfirm().cancel()
     await flush(10)
-    expect(wrapper.emitted('close')).toBeUndefined()
-    await wrapper.get('dialog').trigger('cancel')
+    expect(location()).toBe('/calendario/nuevo?fecha=2026-11-20')
+    expect((field(wrapper, 'Título del evento').element as HTMLInputElement).value).toBe('Borrador')
+    // Cualquier otra salida (el menú, el enlace de volver) pasa por la misma pregunta.
+    const leaving = useRouter().push('/perfil')
     await flush()
     useConfirm().accept()
-    await flush(10)
-    expect(wrapper.emitted('close')).toHaveLength(1)
+    await leaving
+    expect(location()).toBe('/perfil')
     wrapper.unmount()
   })
 
-  it('mientras guarda no se cierra ni se envía dos veces', async () => {
+  it('al cerrar o recargar la pestaña, el navegador avisa solo si hay cambios sin guardar', async () => {
+    const wrapper = await mount()
+    const unload = () => {
+      const event = new Event('beforeunload', { cancelable: true })
+      window.dispatchEvent(event)
+      return event.defaultPrevented
+    }
+    expect(unload()).toBe(false)
+    await field(wrapper, 'Título del evento').setValue('Borrador')
+    expect(unload()).toBe(true)
+    wrapper.unmount()
+    // Desmontado, el guardián ya no pregunta.
+    await useRouter().push('/perfil')
+    expect(useConfirm().options.value).toBeNull()
+    expect(unload()).toBe(false)
+  })
+
+  it('mientras guarda no se sale ni se envía dos veces', async () => {
     let release: (() => void) | undefined
     mockApi('POST', '/api/calendario', () => new Promise(resolve => (release = () => resolve(workDayDetail()))))
     const wrapper = await mount()
@@ -284,24 +313,25 @@ describe('WorkDayDialog — agendar', () => {
     await flush(10)
     expect(wrapper.get('[role="status"].sr-only').text()).toBe('Guardando…')
     expect(buttonsWithText(wrapper, 'Cancelar')[0]!.attributes('disabled')).toBeDefined()
-    await wrapper.get('dialog').trigger('cancel')
+    await useRouter().push('/perfil')
     await wrapper.get('form').trigger('submit')
     await flush(5)
-    expect(wrapper.emitted('close')).toBeUndefined()
+    expect(useConfirm().options.value).toBeNull()
+    expect(location()).toBe('/calendario/nuevo?fecha=2026-11-20')
     expect(calls.filter(call => call.method === 'POST')).toHaveLength(1)
     release!()
     await flush(15)
-    expect(wrapper.emitted('saved')).toHaveLength(1)
+    await backAtCalendar()
     wrapper.unmount()
   })
 })
 
-describe('WorkDayDialog — editar', () => {
+describe('WorkDayForm — editar', () => {
   const day = workDayDetail({ kind: 'special', status: 'in_progress', auditorium: 'Auditorio B' })
 
   it('llega con los datos del día, sus rangos, miembros (el inactivo como «Persona inactiva») y material', async () => {
     const wrapper = await mount({ day })
-    expect(wrapper.get('h2').text()).toBe('Editar día')
+    expect(wrapper.get('h1').text()).toBe('Editar día')
     expect((field(wrapper, 'Título del evento').element as HTMLInputElement).value).toBe('Servicio dominical')
     expect(radios(wrapper).map(radio => (radio.element as HTMLInputElement).checked)).toEqual([false, true])
     expect(times(wrapper).map(input => (input.element as HTMLInputElement).value)).toEqual(['09:00', '11:00', '18:00', '20:00'])
@@ -341,7 +371,7 @@ describe('WorkDayDialog — editar', () => {
       },
     })
     expect(toasts()).toContain('Se guardaron los cambios de «Servicio de jóvenes»')
-    expect(wrapper.emitted('saved')).toHaveLength(1)
+    await backAtCalendar()
     wrapper.unmount()
   })
 
@@ -351,6 +381,7 @@ describe('WorkDayDialog — editar', () => {
     await wrapper.get('form').trigger('submit')
     await flush(15)
     expect(toasts()).toContain('No pudimos guardar los cambios. Inténtalo de nuevo.')
+    expect(location()).toBe('/calendario/nuevo?fecha=2026-11-20')
     wrapper.unmount()
   })
 })

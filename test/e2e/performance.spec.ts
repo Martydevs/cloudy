@@ -201,8 +201,9 @@ describe('Constitución I · Web Vitals en móvil 4G (T155)', () => {
     await audit('/solicitudes', annotate)
   })
 
-  // Calendario: el LCP es texto de la lista «Próximos días» (SSR); SVAR llega después de hidratar, en su propio trozo, y su
-  // esqueleto mide lo mismo que el calendario (sin CLS). `audit` también comprueba el JS inicial de la ruta.
+  // Calendario: el LCP es texto de la franja superior (SSR); SVAR llega después de hidratar, en su propio trozo, y su
+  // esqueleto llena la misma caja que el calendario (`--calendar-h`, sin CLS). `audit` también comprueba el JS inicial de
+  // la ruta, que ya no incluye el formulario (vive en sus propias páginas).
   it('/calendario con 20 días agendados en los próximos 30', async ({ annotate }) => {
     await seeded()
     const owner = await profileUserId(email(ADMIN))
@@ -218,6 +219,12 @@ describe('Constitución I · Web Vitals en móvil 4G (T155)', () => {
       SELECT id, '09:00', '11:00' FROM days
     `
     await audit('/calendario', annotate)
+  })
+
+  // El formulario de un día como página: su JS viaja solo en esta ruta (y en la de editar) y debe caber en el presupuesto.
+  it('/calendario/nuevo (formulario de agendar)', async ({ annotate }) => {
+    await seeded()
+    await audit('/calendario/nuevo', annotate)
   })
 
   // Feature 005 · SC-007: el historial compartido con 5 000 videos; la primera página responde en < 2 s.

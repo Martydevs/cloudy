@@ -12,6 +12,7 @@
 //   y se actualizan cuando el propio calendario navega (clic en el número de un día del mes → vista de día).
 // - SVAR abre un evento solo con el ratón; el botón de `WorkCalendarEvent` lo abre también con el teclado.
 // - La semana empieza en domingo (`calendar.weekStart`) y la hora es de 24 h (`timeScaleFormat` del idioma `es`).
+// - Ocupa el alto de su contenedor (`h-full`): la página le da la caja de `--calendar-h`.
 // - No renderiza en el servidor (usa `ResizeObserver`): se monta dentro de `<ClientOnly>`.
 import { Calendar, Willow } from '@svar-ui/vue-calendar'
 import { Locale } from '@svar-ui/vue-core'
@@ -67,7 +68,7 @@ const eventCss = ({ event }: { event: Record<string, unknown> }) => eventClass(e
 </script>
 
 <template>
-  <div class="cloudy-calendar flex h-[44rem] flex-col gap-3">
+  <div class="cloudy-calendar flex h-full flex-col gap-3">
     <div class="flex flex-wrap items-center gap-2">
       <div class="join" role="group" aria-label="Cambiar de periodo">
         <button type="button" class="btn btn-square join-item" aria-label="Periodo anterior" @click="step(-1)">

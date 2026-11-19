@@ -1,5 +1,5 @@
-// Detalle de un día: solo lectura para el equipo (cuatro estados, material con enlaces a su página) y, para quien
-// administra, cambio de estado, editar y eliminar con confirmación.
+// Detalle de un día: solo lectura para el equipo (cuatro estados, material con enlaces a su página); el estado lo cambia
+// quien administra y el editor asignado al día; editar y eliminar (con confirmación), solo quien administra.
 import { beforeEach, describe, expect, it } from 'vitest'
 import { mountSuspended } from '@nuxt/test-utils/runtime'
 import WorkDayDetailDialog from '~/components/calendar/WorkDayDetailDialog.vue'
@@ -17,7 +17,13 @@ beforeEach(() => {
   mockApi('GET', '/api/calendario/d1', workDayDetail())
 })
 
-const mount = (canManage = false) => mountSuspended(WorkDayDetailDialog, { props: { dayId: 'd1', canManage }, attachTo: document.body })
+const HINT = 'Solo quienes están asignados a este día pueden cambiar su estado.'
+
+/** `canManage` monta como administrador (u9); sin él, como el editor de `beforeEach` (u1, asignado al día de muestra). */
+function mount(canManage = false) {
+  if (canManage) setMe('admin', 'u9')
+  return mountSuspended(WorkDayDetailDialog, { props: { dayId: 'd1', canManage }, attachTo: document.body })
+}
 
 describe('WorkDayDetailDialog', () => {
   it('muestra fecha, auditorio, horario, tipo, estado, miembros y quién lo agendó', async () => {
@@ -61,10 +67,43 @@ describe('WorkDayDetailDialog', () => {
     wrapper.unmount()
   })
 
-  it('el editor solo ve: sin estado, editar ni eliminar', async () => {
+  it('el editor asignado al día cambia su estado, pero no edita ni elimina', async () => {
+    mockApi('PATCH', '/api/calendario/d1/estado', { id: 'd1', status: 'in_progress' })
+    const wrapper = await mount()
+    await flush(10)
+    expect(wrapper.text()).not.toContain(HINT)
+    expect(buttonsWithText(wrapper, 'Editar')).toHaveLength(0)
+    expect(buttonsWithText(wrapper, 'Eliminar')).toHaveLength(0)
+    const select = wrapper.get('select')
+    expect(wrapper.get(`label[for="${select.attributes('id')}"]`).text()).toBe('Estado')
+    mockApi('GET', '/api/calendario/d1', workDayDetail({ status: 'in_progress' }))
+    await select.setValue('in_progress')
+    await flush(10)
+    expect(calls.find(call => call.method === 'PATCH')).toEqual({ method: 'PATCH', url: '/api/calendario/d1/estado', body: { status: 'in_progress' } })
+    expect(toasts()).toContain('«Servicio dominical» ahora está: En proceso')
+    expect((wrapper.get('select').element as HTMLSelectElement).value).toBe('in_progress')
+    wrapper.unmount()
+  })
+
+  it('si al guardar ya no está asignado (403), avisa con el texto del servidor y, al refrescar, el control desaparece', async () => {
+    mockApi('PATCH', '/api/calendario/d1/estado', failFromServer(403, 'Forbidden', 'Solo quienes están asignados al día pueden cambiar su estado.'))
+    const wrapper = await mount()
+    await flush(10)
+    mockApi('GET', '/api/calendario/d1', workDayDetail({ members: [] }))
+    await wrapper.get('select').setValue('finished')
+    await flush(10)
+    expect(toasts()).toContain('Solo quienes están asignados al día pueden cambiar su estado.')
+    expect(wrapper.find('select').exists()).toBe(false)
+    expect(wrapper.text()).toContain(HINT)
+    wrapper.unmount()
+  })
+
+  it('el editor que no está asignado solo ve: sin estado, editar ni eliminar, y se le explica por qué', async () => {
+    setMe('editor', 'u5')
     const wrapper = await mount()
     await flush(10)
     expect(wrapper.find('select').exists()).toBe(false)
+    expect(wrapper.text()).toContain(HINT)
     expect(buttonsWithText(wrapper, 'Editar')).toHaveLength(0)
     expect(buttonsWithText(wrapper, 'Eliminar')).toHaveLength(0)
     await wrapper.get('button[aria-label="Cerrar"]').trigger('click')
@@ -96,6 +135,7 @@ describe('WorkDayDetailDialog', () => {
     mockApi('PATCH', '/api/calendario/d1/estado', { id: 'd1', status: 'finished' })
     const wrapper = await mount(true)
     await flush(10)
+    expect(wrapper.text()).not.toContain(HINT)
     const select = wrapper.get('select')
     expect((select.element as HTMLSelectElement).value).toBe('not_started')
     expect(select.findAll('option').map(option => option.text())).toEqual(['Sin iniciar', 'En proceso', 'Finalizado'])

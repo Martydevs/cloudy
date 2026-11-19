@@ -154,7 +154,7 @@ export const prayerTranscriptSchema = z.object({
 })
 
 /**
- * Campos de texto de un día de trabajo (`WorkDayDialog`), como `workDayFieldsInput` del servidor. El tipo empieza vacío y
+ * Campos de texto de un día de trabajo (`WorkDayForm`), como `workDayFieldsInput` del servidor. El tipo empieza vacío y
  * es obligatorio: nada se asume por el día de la semana. Los rangos de hora se validan aparte con `validateSlots`.
  */
 export const workDaySchema = z.object({

@@ -93,10 +93,11 @@ describe('rutas de Canciones (feature 006)', () => {
 })
 
 describe('ruta del Calendario', () => {
-  const meta = readFileSync(fileURLToPath(new URL('../../app/pages/calendario.vue', import.meta.url)), 'utf8')
+  const page = (path: string) => readFileSync(fileURLToPath(new URL(`../../app/pages/calendario/${path}`, import.meta.url)), 'utf8')
+  const meta = page('index.vue')
 
-  it('calendario.vue es privada para editor y admin (los editores ven; solo los admins agendan)', () => {
-    expect(meta).toMatch(/definePageMeta\(\{[^}]*layout: 'dashboard'[^}]*access: 'private'[^}]*roles: \['editor', 'admin'\]/)
+  it('calendario/index.vue es privada para editor y admin, con su layout propio (los editores ven; solo los admins agendan)', () => {
+    expect(meta).toMatch(/definePageMeta\(\{[^}]*layout: 'calendar'[^}]*access: 'private'[^}]*roles: \['editor', 'admin'\]/)
     // El botón de agendar depende del permiso, no del rol escrito a mano.
     expect(meta).toMatch(/can\(profile\.value\?\.role, 'calendar\.manage'\)/)
   })
@@ -108,5 +109,18 @@ describe('ruta del Calendario', () => {
     expect(resolveAccess(rule, disabled, '/calendario')).toEqual({ redirect: '/pendiente' })
     expect(resolveAccess(rule, editor, '/calendario')).toEqual(allow)
     expect(resolveAccess(rule, admin, '/calendario')).toEqual(allow)
+  })
+
+  it('agendar y editar son páginas solo de administradores', () => {
+    for (const file of ['nuevo.vue', '[id]/editar.vue']) {
+      expect(page(file), file).toMatch(/definePageMeta\(\{[^}]*layout: 'dashboard'[^}]*access: 'private'[^}]*roles: \['admin'\]/)
+    }
+    const rule = { access: 'private' as const, roles: ['admin'] as ('editor' | 'admin')[] }
+    for (const path of ['/calendario/nuevo', '/calendario/abc/editar']) {
+      expect(resolveAccess(rule, none, path)).toEqual({ redirect: `/login?redirect=${encodeURIComponent(path)}` })
+      expect(resolveAccess(rule, pending, path)).toEqual({ redirect: '/pendiente' })
+      expect(resolveAccess(rule, editor, path)).toEqual({ redirect: '/acceso-denegado' })
+      expect(resolveAccess(rule, admin, path)).toEqual(allow)
+    }
   })
 })

@@ -1,7 +1,9 @@
 // Calendario de días de trabajo (`/calendario`): un administrador agenda un día especial con dos rangos, miembros y
-// material, lo edita, cambia su estado y lo borra; el editor ve el calendario y el detalle pero no agenda (y la API le
-// responde 403); sin sesión redirige a login; a 360 px no hay scroll horizontal y los controles miden al menos 44 px; los
-// eventos normal y especial se distinguen en ambos temas; y el material cuya colección se borra deja de aparecer.
+// material en la página /calendario/nuevo, lo edita en /calendario/<id>/editar, cambia su estado y lo borra; el editor ve
+// el calendario y el detalle pero no agenda (las páginas del formulario lo llevan a «Acceso denegado» y la API le
+// responde 403) y solo cambia el estado de los días en los que está asignado (lista y detalle; en los demás, 403); sin sesión redirige a login; el calendario ocupa todo el ancho y el 80 % del alto, y se alterna con la
+// lista; a 360 px no hay scroll horizontal y los controles miden al menos 44 px; los eventos normal y especial se
+// distinguen en ambos temas; y el material cuya colección se borra deja de aparecer.
 // Todos los datos llevan el `runId` y viven en la rama de pruebas.
 import { createPage, setup } from '@nuxt/test-utils/e2e'
 import type { Page } from 'playwright-core'
@@ -41,7 +43,19 @@ async function seedWorkDay(owner: string, { title, date, kind = 'normal' as 'nor
   return id
 }
 
+/** Asigna una cuenta como miembro de un día sembrado. */
+async function seedMember(dayId: string, userId: string) {
+  await sql`INSERT INTO work_day_members (work_day_id, user_id) VALUES (${dayId}, ${userId})`
+}
+
+/** La lista «Próximos días» es la otra vista de la página (`?vista=lista`). */
+async function openList(page: Page) {
+  await page.goto(`${E2E_URL}/calendario?vista=lista`)
+  await waitForHydration(page)
+}
+
 const upcoming = (page: Page) => page.getByRole('list', { name: 'Próximos días' })
+const main = (page: Page) => page.getByRole('main')
 const toast = (page: Page, text: string) => page.getByText(text, { exact: true })
 const dialog = (page: Page) => page.getByRole('dialog')
 
@@ -58,9 +72,19 @@ describe('calendario · administrador', () => {
     const date = await dateIn(3)
 
     await openCalendar(page)
-    await page.getByRole('button', { name: 'Agendar día' }).first().click()
-    const form = dialog(page)
+    await page.getByRole('link', { name: 'Agendar día' }).click()
+    await page.waitForURL(url => url.pathname === '/calendario/nuevo')
+    const form = main(page)
+    await expect.poll(() => form.getByRole('heading', { name: 'Agendar día', level: 1 }).isVisible()).toBe(true)
     await form.getByLabel('Título del evento').fill(title)
+
+    // Con cambios sin guardar, salir pregunta; al quedarse, lo escrito sigue ahí.
+    await form.getByRole('link', { name: 'Volver al calendario' }).click()
+    await expect.poll(() => page.getByRole('heading', { name: '¿Salir sin guardar?' }).isVisible()).toBe(true)
+    await dialog(page).getByRole('button', { name: 'Cancelar' }).click()
+    expect(new URL(page.url()).pathname).toBe('/calendario/nuevo')
+    expect(await form.getByLabel('Título del evento').inputValue()).toBe(title)
+
     await form.getByLabel('Fecha').fill(date)
     // El tipo no viene elegido: sin él no se puede guardar.
     expect(await form.getByRole('radio', { name: 'Normal' }).isChecked()).toBe(false)
@@ -87,6 +111,10 @@ describe('calendario · administrador', () => {
     await form.getByRole('button', { name: 'Agendar día' }).click()
 
     await expect.poll(() => toast(page, `Se agendó «${title}»`).isVisible()).toBe(true)
+    // Vuelve al calendario, en el mes del día agendado.
+    await page.waitForURL(url => url.pathname === '/calendario' && url.searchParams.get('fecha') === date)
+    await page.getByRole('button', { name: 'Lista', exact: true }).click()
+    await page.waitForURL(url => url.searchParams.get('vista') === 'lista')
     await expect.poll(() => upcoming(page).innerText()).toContain(title)
     expect(await upcoming(page).innerText()).toContain('09:00–12:00 · 18:00–20:00')
     const [row] = await sql`
@@ -101,15 +129,18 @@ describe('calendario · administrador', () => {
 
   it('lo edita desde el detalle y cambia su estado con un toque', async () => {
     const page = await pageAs('admin', ADMIN)
-    await openCalendar(page)
+    await openList(page)
     await upcoming(page).getByRole('button', { name: new RegExp(`^Ver ${title}`) }).click()
     await expect.poll(() => dialog(page).getByText('Colección de canciones').isVisible()).toBe(true)
     await dialog(page).getByRole('button', { name: 'Editar' }).click()
-    const form = dialog(page)
-    await expect.poll(() => form.getByRole('heading', { name: 'Editar día' }).isVisible()).toBe(true)
+    await page.waitForURL(url => /^\/calendario\/[^/]+\/editar$/.test(url.pathname))
+    const form = main(page)
+    await expect.poll(() => form.getByRole('heading', { name: 'Editar día', level: 1 }).isVisible()).toBe(true)
     await form.getByLabel('Título del evento').fill(edited)
     await form.getByRole('button', { name: 'Guardar cambios' }).click()
     await expect.poll(() => toast(page, `Se guardaron los cambios de «${edited}»`).isVisible()).toBe(true)
+    await page.waitForURL(url => url.pathname === '/calendario')
+    await openList(page)
 
     await upcoming(page).getByRole('button', { name: new RegExp(`^Iniciar ${edited}`) }).click()
     await expect.poll(() => toast(page, `«${edited}» ahora está: En proceso`).isVisible()).toBe(true)
@@ -122,16 +153,25 @@ describe('calendario · administrador', () => {
     const page = await pageAs('admin', ADMIN)
     // La cascada de la base quita el adjunto: el día sigue, con un adjunto menos.
     await page.request.delete(`${E2E_URL}/api/songs/collections/${(await sql`SELECT id FROM song_collections WHERE name = ${collection}`)[0]!.id}`)
-    await openCalendar(page)
+    await openList(page)
     await upcoming(page).getByRole('button', { name: new RegExp(`^Ver ${edited}`) }).click()
     await expect.poll(() => dialog(page).getByText(`Carpeta calendario ${runId()}`).isVisible()).toBe(true)
     expect(await dialog(page).getByText(collection).count()).toBe(0)
     await page.close()
   })
 
+  it('editar un día que ya no existe lo dice y ofrece volver', async () => {
+    const page = await pageAs('admin', ADMIN)
+    await page.goto(`${E2E_URL}/calendario/00000000-0000-0000-0000-000000000000/editar`)
+    await expect.poll(() => page.getByText('Ese día ya no está en el calendario.').isVisible()).toBe(true)
+    await page.getByRole('link', { name: 'Volver al calendario' }).click()
+    await page.waitForURL(url => url.pathname === '/calendario')
+    await page.close()
+  })
+
   it('lo borra con confirmación', async () => {
     const page = await pageAs('admin', ADMIN)
-    await openCalendar(page)
+    await openList(page)
     await upcoming(page).getByRole('button', { name: new RegExp(`^Ver ${edited}`) }).click()
     await dialog(page).getByRole('button', { name: 'Eliminar' }).click()
     await page.getByRole('button', { name: 'Eliminar día' }).click()
@@ -153,20 +193,75 @@ describe('calendario · editor y accesos', () => {
 
     const page = await pageAs('editor', EDITOR)
     await openCalendar(page)
-    expect(await page.getByRole('button', { name: 'Agendar día' }).count()).toBe(0)
+    expect(await page.getByRole('link', { name: 'Agendar día' }).count()).toBe(0)
+    await page.getByRole('button', { name: 'Lista', exact: true }).click()
+    await page.waitForURL(url => url.searchParams.get('vista') === 'lista')
+    // Recargar conserva la vista elegida.
+    await page.reload()
+    await waitForHydration(page)
+    expect(await page.getByRole('button', { name: 'Lista', exact: true }).getAttribute('aria-pressed')).toBe('true')
     await upcoming(page).getByRole('button', { name: new RegExp(`^Ver ${title}`) }).click()
     await expect.poll(() => dialog(page).getByRole('heading', { name: title }).isVisible()).toBe(true)
     expect(await dialog(page).getByRole('button', { name: 'Editar' }).count()).toBe(0)
     expect(await dialog(page).getByRole('button', { name: 'Eliminar' }).count()).toBe(0)
+    // No está asignado a este día: no hay control de estado y se le explica por qué.
     expect(await dialog(page).getByLabel('Estado').count()).toBe(0)
+    expect(await dialog(page).getByText('Solo quienes están asignados a este día pueden cambiar su estado.').isVisible()).toBe(true)
+    expect(await upcoming(page).getByRole('button', { name: new RegExp(`^Iniciar ${title}`) }).count()).toBe(0)
 
     const body = { title: 'No debería', date: await dateIn(2), kind: 'normal', auditorium: 'A', slots: [{ start: '09:00', end: '10:00' }] }
     expect((await page.request.post(`${E2E_URL}/api/calendario`, { data: body })).status()).toBe(403)
     expect((await page.request.patch(`${E2E_URL}/api/calendario/${id}`, { data: body })).status()).toBe(403)
-    expect((await page.request.patch(`${E2E_URL}/api/calendario/${id}/estado`, { data: { status: 'finished' } })).status()).toBe(403)
+    const status = await page.request.patch(`${E2E_URL}/api/calendario/${id}/estado`, { data: { status: 'finished' } })
+    expect(status.status()).toBe(403)
+    expect((await status.json()).data).toEqual({ code: 'not_assigned' })
+    expect((await sql`SELECT status FROM work_days WHERE id = ${id}`)[0]!.status).toBe('not_started')
     expect((await page.request.delete(`${E2E_URL}/api/calendario/${id}`)).status()).toBe(403)
     expect((await page.request.get(`${E2E_URL}/api/calendario/miembros`)).status()).toBe(403)
     expect((await page.request.get(`${E2E_URL}/api/calendario/${id}`)).status()).toBe(200)
+
+    // Las páginas del formulario son solo de administradores.
+    for (const path of ['/calendario/nuevo', `/calendario/${id}/editar`]) {
+      await page.goto(`${E2E_URL}${path}`)
+      await page.waitForURL(url => url.pathname === '/acceso-denegado')
+    }
+    await page.close()
+  })
+
+  it('el editor asignado a un día cambia su estado desde la lista y desde el detalle, pero no lo edita ni lo borra', async () => {
+    const admin = await pageAs('admin', ADMIN)
+    const owner = await profileUserId(email(ADMIN))
+    await admin.close()
+    const page = await pageAs('editor', EDITOR)
+    const me = await profileUserId(email(EDITOR))
+    const title = `Asignado ${runId()}`
+    const id = await seedWorkDay(owner, { title, date: await dateIn(1), start: '12:00', end: '13:00' })
+    await seedMember(id, me)
+
+    // Un toque en la lista: Sin iniciar → En proceso.
+    await openList(page)
+    await upcoming(page).getByRole('button', { name: new RegExp(`^Iniciar ${title}`) }).click()
+    await expect.poll(() => toast(page, `«${title}» ahora está: En proceso`).isVisible()).toBe(true)
+    await expect.poll(async () => (await sql`SELECT status FROM work_days WHERE id = ${id}`)[0]!.status).toBe('in_progress')
+    await expect.poll(() => upcoming(page).getByRole('button', { name: new RegExp(`^Finalizar ${title}`) }).count()).toBe(1)
+
+    // Desde el detalle: el select «Estado», sin «Editar» ni «Eliminar».
+    await upcoming(page).getByRole('button', { name: new RegExp(`^Ver ${title}`) }).click()
+    await expect.poll(() => dialog(page).getByRole('heading', { name: title }).isVisible()).toBe(true)
+    expect(await dialog(page).getByRole('button', { name: 'Editar' }).count()).toBe(0)
+    expect(await dialog(page).getByRole('button', { name: 'Eliminar' }).count()).toBe(0)
+    expect(await dialog(page).getByText('Solo quienes están asignados a este día pueden cambiar su estado.').count()).toBe(0)
+    await dialog(page).getByLabel('Estado').selectOption('finished')
+    await expect.poll(() => page.getByText(`«${title}» ahora está: Finalizado`, { exact: true }).count()).toBeGreaterThan(0)
+    await expect.poll(async () => (await sql`SELECT status FROM work_days WHERE id = ${id}`)[0]!.status).toBe('finished')
+    await expect.poll(() => dialog(page).getByLabel('Estado').inputValue()).toBe('finished')
+
+    // Sigue sin poder editarlo ni borrarlo.
+    const body = { title: 'No debería', date: await dateIn(2), kind: 'normal', auditorium: 'A', slots: [{ start: '09:00', end: '10:00' }] }
+    expect((await page.request.patch(`${E2E_URL}/api/calendario/${id}`, { data: body })).status()).toBe(403)
+    expect((await page.request.delete(`${E2E_URL}/api/calendario/${id}`)).status()).toBe(403)
+    // Un día que ya no existe: 404, no 403.
+    expect((await page.request.patch(`${E2E_URL}/api/calendario/00000000-0000-4000-8000-000000000000/estado`, { data: { status: 'finished' } })).status()).toBe(404)
     await page.close()
   })
 
@@ -175,6 +270,36 @@ describe('calendario · editor y accesos', () => {
     await page.goto(`${E2E_URL}/calendario`)
     await page.waitForURL(url => url.pathname === '/login')
     expect(new URL(page.url()).searchParams.get('redirect')).toBe('/calendario')
+    await page.close()
+  })
+})
+
+describe('calendario · layout', () => {
+  it('en escritorio el calendario ocupa todo el ancho del contenido y el 80 % del alto bajo la barra', async () => {
+    const page = await pageAs('admin', ADMIN, { width: 1440, height: 900 })
+    await openCalendar(page)
+    const box = await page.evaluate(() => {
+      const calendar = document.querySelector<HTMLElement>('.cloudy-calendar')!.closest('section')!.getBoundingClientRect()
+      const content = document.querySelector<HTMLElement>('main')!
+      const style = getComputedStyle(content)
+      const inner = content.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight)
+      return { height: calendar.height, width: calendar.width, inner, viewport: window.innerHeight, maxWidth: style.maxWidth }
+    })
+    expect(box.maxWidth).toBe('none')
+    expect(Math.abs(box.width - box.inner)).toBeLessThanOrEqual(1)
+    // 80 % de (alto − 4 rem de la barra superior).
+    expect(Math.abs(box.height - (box.viewport - 64) * 0.8)).toBeLessThanOrEqual(2)
+    // Los controles quedan arriba y nada obliga a desplazar la página.
+    expect(await page.evaluate(() => document.documentElement.scrollHeight - window.innerHeight)).toBeLessThanOrEqual(0)
+    await page.close()
+  })
+
+  it('en una pantalla corta el calendario conserva 28 rem y la página se desplaza', async () => {
+    const page = await pageAs('admin', ADMIN, { width: 1280, height: 420 })
+    await openCalendar(page)
+    const height = await page.evaluate(() => document.querySelector<HTMLElement>('.cloudy-calendar')!.closest('section')!.getBoundingClientRect().height)
+    expect(Math.abs(height - 448)).toBeLessThanOrEqual(1)
+    expect(await page.evaluate(() => document.documentElement.scrollHeight > window.innerHeight)).toBe(true)
     await page.close()
   })
 })
@@ -191,6 +316,16 @@ describe('calendario · móvil y temas', () => {
       .map(el => ({ name: el.getAttribute('aria-label') ?? el.textContent?.trim() ?? '', height: Math.round(el.getBoundingClientRect().height) }))
       .filter(el => el.height < 44))
     expect(short).toEqual([])
+
+    // El formulario, como página, tampoco se desborda ni tiene controles pequeños.
+    await page.goto(`${E2E_URL}/calendario/nuevo`)
+    await waitForHydration(page)
+    expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(0)
+    const shortInForm = await page.evaluate(() => [...document.querySelectorAll<HTMLElement>('main button, main a, main input:not([type="checkbox"]):not([type="radio"]), main select')]
+      .filter(el => el.offsetParent !== null)
+      .map(el => ({ name: el.getAttribute('aria-label') ?? el.textContent?.trim() ?? el.id, height: Math.round(el.getBoundingClientRect().height) }))
+      .filter(el => el.height < 44))
+    expect(shortInForm).toEqual([])
     await page.close()
   })
 

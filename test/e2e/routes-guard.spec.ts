@@ -14,7 +14,7 @@ const PRIVATE_ROUTES = [
   // Página Peticiones (feature 007).
   '/peticiones',
   // Calendario de días de trabajo.
-  '/calendario',
+  '/calendario', '/calendario/nuevo', '/calendario/00000000-0000-0000-0000-000000000000/editar',
 ]
 
 describe('US6 · protección de rutas', () => {
@@ -54,7 +54,8 @@ describe('US6 · protección de rutas', () => {
   it('un editor en una ruta de admin ve "Acceso denegado" y las APIs de admin responden 403 (T127)', async () => {
     const page = await createPage()
     await signedInAs(page, 'editor', 'guard-editor')
-    for (const path of ['/usuarios', '/actividad']) {
+    // Agendar y editar un día de trabajo también son páginas solo de administradores.
+    for (const path of ['/usuarios', '/actividad', '/calendario/nuevo', '/calendario/00000000-0000-0000-0000-000000000000/editar']) {
       await page.goto(`${E2E_URL}${path}`)
       await page.waitForURL(url => url.pathname === '/acceso-denegado')
       await expect.poll(() => page.getByText('No tienes permiso para ver esta página').isVisible()).toBe(true)

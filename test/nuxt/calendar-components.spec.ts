@@ -48,16 +48,26 @@ describe('UpcomingWorkDays', () => {
     expect(second!.text()).toContain('En proceso')
     expect(second!.text()).toContain('Sin miembros asignados')
     expect(second!.text()).not.toContain('adjunto')
-    // El editor solo ve: no hay botones de estado.
+    // Sin permiso sobre ningún día no hay botones de estado.
     expect(buttonsWithText(wrapper, 'Iniciar')).toHaveLength(0)
 
     await first!.get('button').trigger('click')
     expect(wrapper.emitted('open')![0]).toEqual([days[0]])
   })
 
+  it('el botón de estado sale solo en los días que la persona puede cambiar (el editor, los suyos)', async () => {
+    const days = [workDay(), workDay({ id: 'd2', title: 'Conferencia', members: [] }), workDay({ id: 'd3', status: 'in_progress', members: [] })]
+    const canChangeStatus = (day: { members: { userId: string }[] }) => day.members.some(member => member.userId === 'u1')
+    const wrapper = await mountSuspended(UpcomingWorkDays, { props: { days, canChangeStatus } })
+    expect(buttonsWithText(wrapper, 'Iniciar').map(button => button.attributes('aria-label'))).toEqual(['Iniciar Servicio dominical (ahora: Sin iniciar)'])
+    expect(buttonsWithText(wrapper, 'Finalizar')).toHaveLength(0)
+    await buttonsWithText(wrapper, 'Iniciar')[0]!.trigger('click')
+    expect(wrapper.emitted('status')![0]).toEqual([days[0], 'in_progress'])
+  })
+
   it('quien administra avanza el estado con un toque: Iniciar → Finalizar, y un día finalizado ya no ofrece nada', async () => {
     const days = [workDay(), workDay({ id: 'd2', status: 'in_progress' }), workDay({ id: 'd3', status: 'finished' })]
-    const wrapper = await mountSuspended(UpcomingWorkDays, { props: { days, canManage: true, busyId: 'd2' } })
+    const wrapper = await mountSuspended(UpcomingWorkDays, { props: { days, canManage: true, canChangeStatus: () => true, busyId: 'd2' } })
     const start = buttonsWithText(wrapper, 'Iniciar')
     const finish = buttonsWithText(wrapper, 'Finalizar')
     expect(start).toHaveLength(1)

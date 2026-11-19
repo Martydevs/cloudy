@@ -1,6 +1,7 @@
 <script setup lang="ts">
 // Lista «Próximos días» (30 días). Va en el SSR: es la lectura rápida en el teléfono y la alternativa accesible al
-// calendario (todo lo que se ve allí está aquí como texto y botones). Quien administra avanza el estado con un toque.
+// calendario (todo lo que se ve allí está aquí como texto y botones). Quien puede cambiar el estado de un día
+// (quien administra, o el editor asignado a ese día: `canChangeStatus`) lo avanza con un toque.
 import { WORK_DAY_STATUS_LABELS } from '#shared/constants/calendar'
 import type { WorkDay, WorkDayStatus } from '#shared/types/api'
 
@@ -9,9 +10,11 @@ const props = withDefaults(defineProps<{
   pending?: boolean
   error?: Error | null
   canManage?: boolean
+  /** Si la persona puede cambiar el estado de ese día (depende de si está asignada). Sin la prop, nadie. */
+  canChangeStatus?: (day: WorkDay) => boolean
   /** Id del día cuyo estado se está guardando. */
   busyId?: string | null
-}>(), { pending: false, error: null, canManage: false, busyId: null })
+}>(), { pending: false, error: null, canManage: false, canChangeStatus: () => false, busyId: null })
 
 const emit = defineEmits<{
   retry: []
@@ -79,7 +82,7 @@ const items = computed(() => props.days ?? [])
         </span>
       </button>
       <button
-        v-if="canManage && ADVANCE[day.status]"
+        v-if="ADVANCE[day.status] && canChangeStatus(day)"
         type="button"
         class="btn sm:self-center"
         :disabled="busyId === day.id"

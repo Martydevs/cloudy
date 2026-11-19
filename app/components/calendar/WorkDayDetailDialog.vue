@@ -1,8 +1,10 @@
 <script setup lang="ts">
-// Detalle de un día de trabajo: solo lectura para todo el equipo; quien administra además cambia el estado, edita y
-// elimina. El material llega resuelto (nombres actuales) y enlaza a su página. Se carga diferido
-// (`LazyWorkDayDetailDialog`). Título y auditorio son texto plano.
+// Detalle de un día de trabajo: solo lectura para todo el equipo; quien administra además edita y elimina. El estado lo
+// cambia quien administra y también el editor asignado al día (`canSetWorkDayStatus`; el servidor lo vuelve a comprobar).
+// El material llega resuelto (nombres actuales) y enlaza a su página. Se carga diferido (`LazyWorkDayDetailDialog`).
+// Título y auditorio son texto plano.
 import { WORK_DAY_STATUSES, WORK_DAY_STATUS_LABELS } from '#shared/constants/calendar'
+import { canSetWorkDayStatus } from '#shared/permissions'
 import type { WorkDayDetail, WorkDayMaterial, WorkDayStatus } from '#shared/types/api'
 
 const props = withDefaults(defineProps<{ dayId: string, canManage?: boolean }>(), { canManage: false })
@@ -18,6 +20,9 @@ const busy = ref(false)
 const url = computed(() => `/api/calendario/${props.dayId}`)
 const { data: day, pending, error, refresh } = useApiFetch<WorkDayDetail>(url, { server: false, key: `work-day-${props.dayId}` })
 const gone = computed(() => error.value?.statusCode === 404)
+
+const { profile } = useMe()
+const canStatus = computed(() => !!day.value && canSetWorkDayStatus(profile.value?.role, profile.value?.userId, day.value.members))
 
 const MATERIAL: Record<WorkDayMaterial['type'], { icon: string, label: string, noun: [string, string] }> = {
   song_collection: { icon: 'lucide:music', label: 'Colección de canciones', noun: ['canción', 'canciones'] },
@@ -72,6 +77,7 @@ function close() {
         <ErrorState v-else-if="error && !day" :message="m.load.day" @retry="refresh()" />
         <template v-else-if="day">
           <WorkDayBadges :kind="day.kind" :status="day.status" />
+          <p v-if="!canStatus" class="text-sm text-base-content/70">{{ m.statusOnlyAssigned }}</p>
 
           <dl class="grid gap-3 sm:grid-cols-2">
             <div>
@@ -138,18 +144,18 @@ function close() {
             Agendado por {{ day.createdBy.active ? day.createdBy.name : m.inactiveMember }}
           </p>
 
-          <div v-if="canManage" class="flex flex-col gap-3 border-t border-base-300 pt-4 sm:flex-row sm:items-end">
-            <div class="flex flex-1 flex-col gap-1">
+          <div v-if="canStatus || canManage" class="flex flex-col gap-3 border-t border-base-300 pt-4 sm:flex-row sm:items-end">
+            <div v-if="canStatus" class="flex flex-1 flex-col gap-1">
               <label :for="statusId" class="text-sm font-medium">Estado</label>
               <select :id="statusId" class="select w-full" :value="day.status" :disabled="busy" @change="changeStatus">
                 <option v-for="status in WORK_DAY_STATUSES" :key="status" :value="status">{{ WORK_DAY_STATUS_LABELS[status] }}</option>
               </select>
             </div>
-            <button type="button" class="btn" :disabled="busy" @click="emit('edit', day)">
+            <button v-if="canManage" type="button" class="btn" :disabled="busy" @click="emit('edit', day)">
               <Icon name="lucide:pencil" class="size-4" aria-hidden="true" />
               Editar
             </button>
-            <button type="button" class="btn btn-error btn-soft" :disabled="busy" @click="remove">
+            <button v-if="canManage" type="button" class="btn btn-error btn-soft" :disabled="busy" @click="remove">
               <Icon name="lucide:trash-2" class="size-4" aria-hidden="true" />
               Eliminar
             </button>
