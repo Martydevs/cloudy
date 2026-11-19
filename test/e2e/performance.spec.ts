@@ -6,7 +6,7 @@ import { createPage, setup } from '@nuxt/test-utils/e2e'
 import type { BrowserContext, Page } from 'playwright-core'
 import { afterAll, describe, expect, it } from 'vitest'
 import type { TestContext } from 'vitest'
-import { E2E_URL, email, profileUserId, routeYoutubeThumbnails, runId, seedFiles, seedFolder, seedPrayerRequest, seedYoutubeHistory, signedInAs, viewports, waitForHydration } from './setup/fixtures'
+import { E2E_URL, email, profileUserId, routeYoutubeThumbnails, runId, seedFiles, seedFolder, seedPrayerRequest, seedYoutubeHistory, signedInAs, testSql, viewports, waitForHydration } from './setup/fixtures'
 
 await setup({ host: E2E_URL, browser: true })
 
@@ -199,6 +199,25 @@ describe('Constitución I · Web Vitals en móvil 4G (T155)', () => {
   it('/solicitudes (feature 003)', async ({ annotate }) => {
     await seeded()
     await audit('/solicitudes', annotate)
+  })
+
+  // Calendario: el LCP es texto de la lista «Próximos días» (SSR); SVAR llega después de hidratar, en su propio trozo, y su
+  // esqueleto mide lo mismo que el calendario (sin CLS). `audit` también comprueba el JS inicial de la ruta.
+  it('/calendario con 20 días agendados en los próximos 30', async ({ annotate }) => {
+    await seeded()
+    const owner = await profileUserId(email(ADMIN))
+    const sql = testSql()
+    await sql`
+      WITH days AS (
+        INSERT INTO work_days (title, work_date, kind, created_by)
+        SELECT 'Rendimiento ' || ${runId()} || ' ' || n, (now() AT TIME ZONE 'America/Monterrey')::date + n, CASE WHEN n % 3 = 0 THEN 'special' ELSE 'normal' END::work_day_kind, ${owner}
+        FROM generate_series(0, 19) AS n
+        RETURNING id
+      )
+      INSERT INTO work_day_slots (work_day_id, start_time, end_time)
+      SELECT id, '09:00', '11:00' FROM days
+    `
+    await audit('/calendario', annotate)
   })
 
   // Feature 005 · SC-007: el historial compartido con 5 000 videos; la primera página responde en < 2 s.

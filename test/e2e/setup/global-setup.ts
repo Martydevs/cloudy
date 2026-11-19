@@ -18,6 +18,7 @@ const TABLES = [
   'youtube_videos', 'youtube_playlists', 'youtube_playlist_items', 'youtube_downloads',
   'songs', 'song_collections', 'song_collection_items',
   'prayer_images', 'prayer_image_collections', 'prayer_image_collection_items',
+  'work_days', 'work_day_slots', 'work_day_members', 'work_day_materials',
 ]
 
 declare module 'vitest' {

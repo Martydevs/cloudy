@@ -13,6 +13,8 @@ const PRIVATE_ROUTES = [
   '/canciones', '/canciones/00000000-0000-0000-0000-000000000000',
   // Página Peticiones (feature 007).
   '/peticiones',
+  // Calendario de días de trabajo.
+  '/calendario',
 ]
 
 describe('US6 · protección de rutas', () => {
@@ -205,6 +207,14 @@ describe('US6 · protección de rutas', () => {
       // Alta manual de una petición: sin sesión de equipo no se crea ni se aprueba nada.
       ['POST', '/api/peticiones/manual'],
       ['POST', `/api/peticiones/manual/${id}/complete`],
+      // Calendario de días de trabajo: los 7 endpoints.
+      ['GET', '/api/calendario?from=2026-11-01&to=2026-11-30'],
+      ['POST', '/api/calendario'],
+      ['GET', '/api/calendario/miembros'],
+      ['GET', `/api/calendario/${id}`],
+      ['PATCH', `/api/calendario/${id}`],
+      ['PATCH', `/api/calendario/${id}/estado`],
+      ['DELETE', `/api/calendario/${id}`],
     ] as const
     for (const [method, path] of commentRoutes) {
       const init: { method: string, headers: Record<string, string>, body?: string } = method === 'GET' || method === 'DELETE'
