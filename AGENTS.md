@@ -11,7 +11,8 @@ configuration must point here instead of copying these rules.
 **Product areas today**: the shared drive (folders, files, comments, trash, activity), guest uploads and the team's approval queue,
 users and roles (admin / editor), YouTube downloads and playlists, Canciones (Letras.com lyrics turned into `.pptx` slides) and
 Peticiones (approved guest prayer-request photos whose text a model reads, an editor corrects and verifies, and an OpenRouter preset
-then draws onto a template; editors can also add a request themselves from the page, approved on upload). How each area behaves in detail, and the decisions that shaped it, are recorded in "Known gotchas" below.
+then draws onto a template; editors can also add a request themselves from the page, approved on upload) and Calendario (the team's work days:
+admins schedule them with time ranges, members and attached material; editors only read). How each area behaves in detail, and the decisions that shaped it, are recorded in "Known gotchas" below.
 The old background image-text extraction (`files.text_*`) was removed (migration `0011`); Peticiones reads photos on demand into its own table.
 
 ## Stack
@@ -24,6 +25,7 @@ The old background image-text extraction (`files.text_*`) was removed (migration
 | File storage | Neon Object Storage (S3-compatible, path-style) via `@aws-sdk/client-s3` + `@aws-sdk/s3-request-presigner` |
 | UI | Tailwind CSS 4 + daisyUI 5 (themes `cloudy` dark default, `cloudy-light`) · `@nuxt/icon` with **lucide** only · `@nuxt/fonts` (DM Sans) · plain `<img>` (no `@nuxt/image`: media is private, served by presigned redirects) |
 | Utilities | `@vueuse/nuxt` (auto-imported) |
+| Calendar | SVAR Vue Calendar (`@svar-ui/vue-calendar` + `vue-core`, `calendar-locales`, `core-locales`, **exact versions**), open edition (day/week/month), read-only, only inside `app/components/calendar/WorkCalendar.vue` |
 | Forms | Regle (`@regle/schemas`) over zod schemas (`zod/mini`) in `app/utils/form-schemas.ts`, always through `useFormSchema` (`app/utils/form-schema.ts`) · `@regle/nuxt` (auto-imports and its plugin, loaded normally) |
 | Tests | Vitest projects `unit` / `nuxt` / `e2e` · `@nuxt/test-utils` · `playwright-core` (Chromium) |
 | AI | AI SDK v7 (`generateText`) · OpenRouter as the only provider via `@openrouter/ai-sdk-provider`, two use cases, both in Peticiones, each with its own preset that picks model and routing and carries the system prompt (edited in OpenRouter): `@preset/pray-requests-transcription` reads one guest photo (signed URL, structured output `{ hasText, text }`, `server/ai/prayer-transcript/`) and `@preset/pray-requests-image-generation` draws the verified texts on the template (no guest photos, `server/ai/prayer-image/`); the code sends only the short user prompt · isolated in `server/ai/` |
@@ -382,6 +384,25 @@ Never print or commit their values.
   `files` rows in the drive root. It is never "pending with ready files", so the pending queue and the pulse (`status = 'pending'`) never see it; it does show under
   «Aprobados» in Solicitudes, like any approved submission. Activity is `submission.approve` with `meta.manual = true` (no new enum value). No migration: the request is a
   normal `guest_submissions` + `files` pair, and an abandoned upload is cleaned by the daily cron like a guest's.
+- Calendario (`/calendario`, change `calendario-dias-de-trabajo`): work days live in `work_days` + `work_day_slots` (1–6 ranges, one calendar event each) +
+  `work_day_members` + `work_day_materials` (migration `0015`). `kind` has **no default** and the form starts with no kind chosen: nothing is assumed
+  from the weekday (Wednesday/Sunday only show a hint, `usualWorkDay`). Dates (`AAAA-MM-DD`) and hours (`HH:MM`) are wall-clock, with no zone; the only
+  zone is `CALENDAR_TIME_ZONE` (`America/Monterrey`), which decides what "today" is so the SSR (UTC on Vercel) and the browser ask for the same
+  «Próximos días» range (`todayInCalendarZone`). Only admins write (`calendar.manage`); editors read. All SQL lives in `server/utils/work-days.ts` and
+  `server/utils/work-day-materials.ts` (`architecture.spec.ts`): one `db.batch` per read (range = 3 queries, detail = 8) and, per write, one batch of
+  checks and one of writes, so a day is never half written; an inactive member or missing material answers **409** (`member_unavailable` /
+  `material_unavailable`, `data.ids`). `PATCH` replaces everything (slot ids change). Material is a **reference** (song collection, YouTube playlist or
+  folder) with `ON DELETE CASCADE`; a folder in the trash is hidden and not counted. Past days are kept (no cron step).
+  **SVAR**: `WorkCalendar.vue` is the only importer of `@svar-ui/*` and of its CSS (`@svar-ui/vue-calendar/all.css`, then
+  `app/assets/css/svar-calendar-cloudy.css`, never in `nuxt.config.ts`), loaded as `<LazyWorkCalendar>` inside `<ClientOnly>` behind a skeleton of the same
+  height (`h-[44rem]` in both places). Things that bite: pass **`:readonly="true"`** (the prop has no type: a bare `readonly` arrives as `''` and SVAR treats
+  the calendar as editable); the toolbar is **ours** (`toolbar: null`) because SVAR's draws its icons with a font from its CDN, skipped by `:fonts="false"`;
+  every change of `events` re-initialises SVAR from its `view`/`date` props, so both are `v-model`s owned by the page; SVAR opens events with the mouse only,
+  so the event content is a `<button>` (`WorkCalendarEvent`, `provide`/`inject` with `OPEN_WORK_DAY`); the month's "+N more" is hard-coded English
+  (`eventOverflow: 'expand'` avoids it); day/week grids default to 08–18 (we set 06, or the earliest range, to 24). Theme: Willow sets its variables on its
+  own element, so overrides use `.cloudy-calendar .wx-willow-theme`, each `--wx-*` pointing at a daisyUI token (one theme for dark and light, no
+  `WillowDark`). Month data is cached per month in `useState('work-calendar-months')` with the neighbours preloaded (`useWorkCalendar`); every write refetches
+  the known months and the list. Component tests mock `@svar-ui/vue-calendar` and `@svar-ui/vue-core` (`test/nuxt/WorkCalendar.spec.ts`).
 - Toasts and modals: every dialog is a `<dialog>` opened with `showModal()` (top layer), so nothing outside it is painted above it, clickable or announced.
   `AppToast` (one per layout) therefore mounts the stack (`AppToastStack`, the markup and the live region) **inside the topmost open dialog** while one is open:
   `useOpenModal()` keeps the opening order with a single `MutationObserver` on `document.body` (the `open` attribute, plus dialogs removed while open), so stacked
